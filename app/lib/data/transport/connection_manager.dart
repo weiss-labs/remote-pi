@@ -1037,6 +1037,9 @@ class ConnectionManager extends Service {
   /// reopens the socket when it is down.
   Future<void> resync({String? preferredEpk}) async {
     if (_controlLink == null) {
+      // Offline or mid-backoff: drop the retry timer and the stale peer so
+      // boot() actually reopens the socket instead of returning early.
+      await _teardownActive(emitNoPeer: true);
       await boot(preferredEpk: preferredEpk);
       return;
     }
