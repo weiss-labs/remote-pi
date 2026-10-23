@@ -4,6 +4,7 @@ import 'package:app/protocol/protocol.dart' show RoomInfo;
 import 'package:app/routing/adaptive.dart';
 import 'package:app/ui/core/themes/themes.dart';
 import 'package:app/ui/home/states/home_state.dart';
+import 'package:app/ui/home/pane_path.dart';
 import 'package:app/ui/settings/settings_sheet.dart';
 import 'package:app/ui/home/viewmodels/home_viewmodel.dart';
 import 'package:app/ui/home/widgets/widgets.dart';
@@ -132,15 +133,22 @@ class HomePage extends StatelessWidget {
                       mainAxisSize: MainAxisSize.min,
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        Text(
-                          'Remote Pi',
-                          style: brandTextStyle(
-                            fontSize: 32,
-                            fontWeight: FontWeight.w700,
-                            color: colors.text,
-                            letterSpacing: -0.5,
-                            height: 1.05,
-                          ),
+                        Row(
+                          children: [
+                            Image.asset('assets/weiss-labs-logo.png',
+                                height: 36, width: 36),
+                            const SizedBox(width: 10),
+                            Text(
+                              'Remote Pi',
+                              style: brandTextStyle(
+                                fontSize: 32,
+                                fontWeight: FontWeight.w700,
+                                color: colors.text,
+                                letterSpacing: -0.5,
+                                height: 1.05,
+                              ),
+                            ),
+                          ],
                         ),
                         const SizedBox(height: 6),
                         subtitle,
@@ -268,6 +276,7 @@ class HomePage extends StatelessWidget {
     HomeViewModel vm,
     HomeList state,
   ) {
+    final colors = context.colors;
     final counts = vm.counts;
     // Globally empty (paired Pi, no rooms at all): keep the original lonely
     // state and DON'T show the tabs — there's nothing to filter.
@@ -308,18 +317,62 @@ class HomePage extends StatelessWidget {
     // even when there's a single Mac, per the mock. A peer with no visible
     // item in this filter contributes no header (the `lastEpk` cursor only
     // advances on rows we actually render).
+    // Weiss Labs: rows follow the Herdr tree. The Mac names each pane
+    // "Workspace›Tab›Pane" (underscores for spaces); we split that path and
+    // emit a header whenever the workspace or tab changes. Items are sorted
+    // by peer then path so siblings land together.
+    final sorted = [...visible]..sort((a, b) {
+        final c = a.peer.remoteEpk.compareTo(b.peer.remoteEpk);
+        return c != 0 ? c : panePath(a).join('/').compareTo(panePath(b).join('/'));
+      });
     final children = <Widget>[];
     String? lastEpk;
-    for (final it in visible) {
+    var lastBranch = const <String>[];
+    for (final it in sorted) {
       if (it.peer.remoteEpk != lastEpk) {
         children.add(PeerSectionHeader(peer: it.peer));
         lastEpk = it.peer.remoteEpk;
+        lastBranch = const [];
       }
-      children.add(_buildItemRowAt(context, vm, state, it));
+      final path = panePath(it);
+      final branch = path.sublist(0, path.length - 1);
+      for (var d = 0; d < branch.length; d++) {
+        final same = d < lastBranch.length && lastBranch[d] == branch[d] &&
+            lastBranch.sublist(0, d).join('/') == branch.sublist(0, d).join('/');
+        if (!same) children.add(_TreeHeader(label: branch[d], depth: d));
+      }
+      lastBranch = branch;
+      children.add(Padding(
+        padding: EdgeInsets.only(left: 16.0 * branch.length),
+        child: _buildItemRowAt(context, vm, state, it, title: path.last),
+      ));
     }
+    final search = SliverToBoxAdapter(
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(20, 4, 20, 4),
+        child: TextFormField(
+          initialValue: vm.query,
+          onChanged: vm.setQuery,
+          style: TextStyle(color: colors.text, fontFamily: kMonoFamily),
+          decoration: InputDecoration(
+            hintText: 'Search panes',
+            hintStyle: TextStyle(color: colors.muted, fontFamily: kMonoFamily),
+            prefixIcon: Icon(LucideIcons.search, color: colors.muted, size: 18),
+            isDense: true,
+            filled: true,
+            fillColor: colors.surface,
+            border: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(8),
+              borderSide: BorderSide(color: colors.border),
+            ),
+          ),
+        ),
+      ),
+    );
     return SliverMainAxisGroup(
       slivers: [
         tabs,
+        search,
         SliverPadding(
           padding: const EdgeInsets.fromLTRB(0, 0, 0, 24),
           sliver: SliverList(
@@ -337,8 +390,9 @@ class HomePage extends StatelessWidget {
     BuildContext context,
     HomeViewModel vm,
     HomeList state,
-    HomeItem it,
-  ) {
+    HomeItem it, {
+    String? title,
+  }) {
     final colors = context.colors;
     final isLive = vm.isRoomLive(it.peer.remoteEpk, it.room.roomId);
     final isReconnecting = !vm.isRelayConnected;
@@ -362,6 +416,7 @@ class HomePage extends StatelessWidget {
           isWorking: isWorking,
           isSelected: isSelected,
           room: it.room,
+          title: title,
           onOpen: () => _open(context, vm, it.peer, it.room),
           onLongPress: () => _showSessionMenu(context, vm, it, isLive: isLive),
         ),
@@ -664,6 +719,30 @@ class _EmptyState extends StatelessWidget {
               ),
             ],
           ),
+        ),
+      ),
+    );
+  }
+}
+
+/// Weiss Labs: one Herdr workspace or tab heading inside a peer group.
+class _TreeHeader extends StatelessWidget {
+  final String label;
+  final int depth;
+  const _TreeHeader({required this.label, required this.depth});
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.colors;
+    return Padding(
+      padding: EdgeInsets.fromLTRB(20 + 16.0 * depth, depth == 0 ? 14 : 8, 20, 4),
+      child: Text(
+        label,
+        style: TextStyle(
+          fontFamily: kMonoFamily,
+          fontSize: depth == 0 ? 13 : 12,
+          fontWeight: depth == 0 ? FontWeight.w700 : FontWeight.w600,
+          color: depth == 0 ? colors.text : colors.muted,
         ),
       ),
     );

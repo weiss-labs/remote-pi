@@ -30,6 +30,8 @@ class SessionTile extends StatelessWidget {
   /// dialog (rename + delete-offline). Optional; when null the tile
   /// only responds to tap.
   final VoidCallback? onLongPress;
+  /// Weiss Labs: explicit row title (the Herdr pane leaf) when set.
+  final String? title;
 
   const SessionTile({
     super.key,
@@ -41,6 +43,7 @@ class SessionTile extends StatelessWidget {
     this.isWorking = false,
     this.isSelected = false,
     this.onLongPress,
+    this.title,
   });
 
   @override
@@ -71,7 +74,7 @@ class SessionTile extends StatelessWidget {
                 _Avatar(name: _avatarName()),
                 const SizedBox(width: 14),
                 Expanded(
-                  child: _TitleBlock(peer: peer, room: room),
+                  child: _TitleBlock(peer: peer, room: room, titleOverride: title),
                 ),
                 _PresenceDot(
                   isLive: isLive,
@@ -137,7 +140,8 @@ class _PresenceDot extends StatelessWidget {
 class _TitleBlock extends StatelessWidget {
   final PeerRecord peer;
   final RoomInfo? room;
-  const _TitleBlock({required this.peer, required this.room});
+  final String? titleOverride;
+  const _TitleBlock({required this.peer, required this.room, this.titleOverride});
 
   @override
   Widget build(BuildContext context) {
@@ -147,7 +151,9 @@ class _TitleBlock extends StatelessWidget {
     // nickname → session name. The cwd path line was dropped on purpose
     // — the tile now shows just title + subtitle (model / paired date).
     final String title;
-    if (r != null) {
+    if (titleOverride != null) {
+      title = titleOverride!;
+    } else if (r != null) {
       if (r.name != null && r.name!.isNotEmpty) {
         title = r.name!;
       } else if (r.cwd != null && r.cwd!.isNotEmpty) {

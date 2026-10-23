@@ -7,6 +7,7 @@ import 'package:app/pairing/storage.dart';
 import 'package:app/protocol/protocol.dart';
 import 'package:app/ui/core/viewmodel/viewmodel.dart';
 import 'package:app/ui/home/states/home_state.dart';
+import 'package:app/ui/home/pane_path.dart';
 
 /// HomeViewModel — passive list of paired peers + live presence dots
 /// + rooms discovered on each peer (plan 17). A single tile per
@@ -149,11 +150,23 @@ class HomeViewModel extends ViewModel<HomeState> {
     final s = state;
     if (s is! HomeList) return const [];
     final all = s.items(normalizeEpk: normalizeEpkForLookup);
-    return switch (s.filter) {
+    final byTab = switch (s.filter) {
       HomeFilter.all => all,
       HomeFilter.online => all.where(_online).toList(),
       HomeFilter.offline => all.where((i) => !_online(i)).toList(),
     };
+    final q = _query.trim().toLowerCase();
+    if (q.isEmpty) return byTab;
+    return byTab.where((i) => panePath(i).join(' ').toLowerCase().contains(q)).toList();
+  }
+
+  // Weiss Labs: search box over the pane list.
+  String _query = '';
+  String get query => _query;
+  void setQuery(String q) {
+    if (q == _query) return;
+    _query = q;
+    notifyListeners();
   }
 
   /// Plan-38 Fase 3 — per-tab counts for the filter badges. Independent of

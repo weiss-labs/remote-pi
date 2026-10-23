@@ -1,5 +1,4 @@
 import 'dart:async';
-import 'dart:io' show Platform;
 
 import 'package:app/config/utils/injector.dart';
 import 'package:app/data/actions/actions_repository.dart';
