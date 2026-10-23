@@ -671,6 +671,8 @@ class ConnectionManager extends Service {
         :final working,
         :final hasModel,
         :final hasThinking,
+        :final footer,
+        :final hasFooter,
       ):
         final key = toStandardB64(peer);
         final list = _roomsByPeer[key];
@@ -691,15 +693,18 @@ class ConnectionManager extends Service {
         // non-null sets it. This is what carries the relay's
         // turn_start/turn_end broadcast to the Home dot for EVERY room.
         final nextWorking = working ?? current.working;
+        final nextFooter = hasFooter ? footer : current.footer;
         if (current.model == nextModel &&
             current.thinking == nextThinking &&
-            current.working == nextWorking) {
+            current.working == nextWorking &&
+            current.footer == nextFooter) {
           break; // dedup: nothing actually changed
         }
         list[idx] = current.copyWith(
           model: nextModel,
           thinking: nextThinking,
           working: nextWorking,
+          footer: nextFooter,
         );
         roomsDirty = true;
         // ignore: unawaited_futures

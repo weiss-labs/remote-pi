@@ -94,3 +94,6 @@ graphify-out
 marketing/
 
 openspec
+node_modules/
+pi-extension/dist/
+relay/target/

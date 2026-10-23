@@ -326,9 +326,17 @@ class HomePage extends StatelessWidget {
         return c != 0 ? c : panePath(a).join('/').compareTo(panePath(b).join('/'));
       });
     final children = <Widget>[];
+    final pinned = sorted.where(vm.isPinned).toList();
+    if (pinned.isNotEmpty) {
+      children.add(const _TreeHeader(label: 'PINNED', depth: 0));
+      for (final it in pinned) {
+        children.add(_buildItemRowAt(context, vm, state, it, title: panePath(it).join(' › ')));
+      }
+    }
     String? lastEpk;
     var lastBranch = const <String>[];
     for (final it in sorted) {
+      if (vm.isPinned(it)) continue;
       if (it.peer.remoteEpk != lastEpk) {
         children.add(PeerSectionHeader(peer: it.peer));
         lastEpk = it.peer.remoteEpk;
@@ -406,7 +414,26 @@ class HomePage extends StatelessWidget {
           it.peer.remoteEpk,
           it.room.roomId,
         );
-    return Column(
+    final pinned = vm.isPinned(it);
+    return Dismissible(
+      key: ValueKey('pin-${it.peer.remoteEpk}-${it.room.roomId}'),
+      direction: DismissDirection.startToEnd,
+      // Swipe right = toggle pin. Never actually dismisses the row.
+      confirmDismiss: (_) async {
+        await vm.togglePin(it);
+        return false;
+      },
+      background: Container(
+        color: colors.accent.withValues(alpha: 0.15),
+        alignment: Alignment.centerLeft,
+        padding: const EdgeInsets.only(left: 20),
+        child: Row(mainAxisSize: MainAxisSize.min, children: [
+          Icon(pinned ? LucideIcons.pinOff : LucideIcons.pin, color: colors.accent, size: 18),
+          const SizedBox(width: 8),
+          Text(pinned ? 'Unpin' : 'Pin', style: TextStyle(color: colors.accent, fontFamily: kMonoFamily)),
+        ]),
+      ),
+      child: Column(
       mainAxisSize: MainAxisSize.min,
       children: [
         SessionTile(
@@ -422,6 +449,7 @@ class HomePage extends StatelessWidget {
         ),
         Divider(color: colors.border, height: 1),
       ],
+    ),
     );
   }
 
@@ -444,6 +472,14 @@ class HomePage extends StatelessWidget {
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
+              ListTile(
+                leading: Icon(vm.isPinned(it) ? LucideIcons.pinOff : LucideIcons.pin, color: colors.accent),
+                title: Text(vm.isPinned(it) ? 'Unpin' : 'Pin to top', style: TextStyle(color: colors.text)),
+                onTap: () {
+                  Navigator.of(sheetCtx).pop();
+                  vm.togglePin(it);
+                },
+              ),
               ListTile(
                 leading: Icon(LucideIcons.pencil, color: colors.accent),
                 title: Text(

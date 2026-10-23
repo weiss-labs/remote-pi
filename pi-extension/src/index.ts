@@ -225,7 +225,23 @@ let _myRoomId: string | null = null;   // this Pi's room id (derived from cwd)
 // open instead of starting null. The SDK fires `thinking_level_select`
 // on every change (initial load + user toggle), mirrored to room_meta
 // the same way model is — apps subscribe to one channel for both.
-let _myRoomMeta: { name: string; cwd: string; model?: string; thinking?: ThinkingLevel; working?: boolean } | null = null;
+let _myRoomMeta: { name: string; cwd: string; model?: string; thinking?: ThinkingLevel; working?: boolean; footer?: string } | null = null;
+let _currentFooter: string | undefined;
+
+/**
+ * Weiss Labs: publish the Pi footer (usage, model, context %) so the phone can
+ * show the same line the terminal does. Called by the compact-footer extension
+ * through `globalThis.__remotePiFooter`; dedups on text so re-renders are free.
+ */
+function _setFooter(text: string): void {
+  if (text === _currentFooter) return;
+  _currentFooter = text;
+  if (_myRoomMeta) _myRoomMeta = { ..._myRoomMeta, footer: text };
+  if (_relay && _myRoomId) {
+    _relay.sendControl({ type: "room_meta_update", room_id: _myRoomId, meta: { footer: text } });
+  }
+}
+(globalThis as typeof globalThis & { __remotePiFooter?: (t: string) => void }).__remotePiFooter = _setFooter;
 let _currentModel: string | undefined = undefined;  // last-known model name
 let _currentThinking: ThinkingLevel | undefined = undefined;  // last-known thinking level
 

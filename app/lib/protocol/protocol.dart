@@ -77,6 +77,8 @@ sealed class ControlInbound {
           // cleared state), so a plain nullable bool models the patch:
           // null = absent (preserve current), true/false = set.
           working: meta?['working'] as bool?,
+          footer: meta?['footer'] as String?,
+          hasFooter: meta?.containsKey('footer') ?? false,
           hasModel: hasModel,
           hasThinking: hasThinking,
         );
@@ -194,6 +196,9 @@ class RoomInfo {
   /// (idle / not reported yet).
   final bool working;
 
+  /// Weiss Labs: the Pi footer text (usage, model, context %), newline separated.
+  final String? footer;
+
   const RoomInfo({
     required this.roomId,
     required this.startedAt,
@@ -202,6 +207,7 @@ class RoomInfo {
     this.model,
     this.thinking,
     this.working = false,
+    this.footer,
   });
 
   factory RoomInfo.fromJson(Map<String, dynamic> j) {
@@ -216,6 +222,7 @@ class RoomInfo {
           ? ThinkingLevel.fromWire(rawThinking)
           : null,
       working: (j['working'] as bool?) ?? false,
+      footer: j['footer'] as String?,
     );
   }
 
@@ -227,6 +234,7 @@ class RoomInfo {
     'model': model,
     if (thinking != null) 'thinking': thinking!.wire,
     'working': working,
+    if (footer != null) 'footer': footer,
   };
 
   RoomInfo copyWith({
@@ -236,6 +244,7 @@ class RoomInfo {
     Object? model = _kRoomInfoUnset,
     Object? thinking = _kRoomInfoUnset,
     bool? working,
+    Object? footer = _kRoomInfoUnset,
   }) => RoomInfo(
     roomId: roomId,
     name: name ?? this.name,
@@ -246,6 +255,7 @@ class RoomInfo {
         ? this.thinking
         : thinking as ThinkingLevel?,
     working: working ?? this.working,
+    footer: identical(footer, _kRoomInfoUnset) ? this.footer : footer as String?,
   );
 
   @override
@@ -257,7 +267,8 @@ class RoomInfo {
       other.startedAt == startedAt &&
       other.model == model &&
       other.thinking == thinking &&
-      other.working == working;
+      other.working == working &&
+      other.footer == footer;
 
   @override
   int get hashCode =>
@@ -347,12 +358,16 @@ class RoomMetaUpdated extends ControlInbound {
   /// set. No separate `hasWorking` flag is needed because `working` can
   /// never be "explicitly null" on the wire — `false` is the off state.
   final bool? working;
+  final String? footer;
+  final bool hasFooter;
   const RoomMetaUpdated({
     required this.peer,
     required this.roomId,
     this.model,
     this.thinking,
     this.working,
+    this.footer,
+    this.hasFooter = false,
     this.hasModel = true,
     this.hasThinking = true,
   });

@@ -33,13 +33,15 @@ export interface RoomMeta {
   /** Friendly model name (e.g. "claude-sonnet-4.5"). Optional — pi-ext sends
    *  when `ExtensionContext.model` is available; relay/app tolerate absence. */
   model?: string;
+  /** Weiss Labs: Pi footer text (usage, model, context %), newline separated. */
+  footer?: string;
 }
 
 /** Control frame sent to relay (not routed to app peer). */
 export interface RoomMetaUpdateFrame {
   type: "room_meta_update";
   room_id: string;
-  meta: { model?: string };
+  meta: { model?: string; footer?: string };
 }
 
 export interface ConnectOptions {

@@ -28,6 +28,7 @@ class Preferences extends ChangeNotifier {
   static const _kOnboardingCompletedKey = 'prefs.onboarding_completed';
   static const _kThemeModeKey = 'prefs.theme_mode';
   static const _kFontScaleKey = 'prefs.font_scale';
+  static const _kPinnedKey = 'prefs.pinned';
 
   /// True → chat hides `ToolEvent` rows (only user/assistant text remain).
   bool get hideToolCalls => _hideToolCalls;
@@ -84,6 +85,16 @@ class Preferences extends ChangeNotifier {
   /// `copyWith(fontSize: …)` overrides that a typography-only change would miss.
   AppFontScale get fontScale => _fontScale;
 
+  // Weiss Labs: pinned panes, keyed "epk|roomId", always listed first on Home.
+  Set<String> _pinned = {};
+  bool isPinned(String epk, String roomId) => _pinned.contains('$epk|$roomId');
+  Future<void> togglePinned(String epk, String roomId) async {
+    final k = '$epk|$roomId';
+    if (!_pinned.remove(k)) _pinned.add(k);
+    await _store.write(key: _kPinnedKey, value: _pinned.join('\n'));
+    notifyListeners();
+  }
+
   /// Hydrate from secure storage. Safe to call multiple times.
   Future<void> load() async {
     var changed = false;
@@ -126,6 +137,13 @@ class Preferences extends ChangeNotifier {
     final scale = AppFontScale.fromName(await _store.read(key: _kFontScaleKey));
     if (scale != _fontScale) {
       _fontScale = scale;
+      changed = true;
+    }
+
+    final pinnedRaw = await _store.read(key: _kPinnedKey);
+    final pinned = (pinnedRaw ?? '').split('\n').where((s) => s.isNotEmpty).toSet();
+    if (pinned.length != _pinned.length || !pinned.containsAll(_pinned)) {
+      _pinned = pinned;
       changed = true;
     }
 

@@ -287,7 +287,7 @@ impl PeerRegistry {
         room_id: &str,
         patch: RoomMetaPatch,
     ) -> bool {
-        let (current_model, current_thinking, current_working) = {
+        let (current_model, current_thinking, current_footer, current_working) = {
             let mut lock = self.senders.lock().unwrap();
             let key = (peer_id.to_string(), room_id.to_string());
             match lock.get_mut(&key) {
@@ -299,6 +299,9 @@ impl PeerRegistry {
                         if let Some(ref t) = patch.thinking {
                             meta.thinking = t.clone();
                         }
+                        if let Some(ref f) = patch.footer {
+                            meta.footer = f.clone();
+                        }
                         if let Some(w) = patch.working {
                             meta.working = w;
                         }
@@ -309,6 +312,7 @@ impl PeerRegistry {
                     (
                         head.1.model.clone(),
                         head.1.thinking.clone(),
+                        head.1.footer.clone(),
                         head.1.working,
                     )
                 }
@@ -329,6 +333,9 @@ impl PeerRegistry {
             }
             if let Some(t) = &current_thinking {
                 meta_obj.insert("thinking".to_string(), serde_json::Value::String(t.clone()));
+            }
+            if let Some(f) = &current_footer {
+                meta_obj.insert("footer".to_string(), serde_json::Value::String(f.clone()));
             }
             // `working` is always present (non-nullable bool), so it always
             // rides along in the broadcast — subscribers can rely on it.
@@ -399,6 +406,7 @@ mod tests {
             cwd: None,
             model: None,
             thinking: None,
+            footer: None,
             working: false,
             started_at: 0,
         }

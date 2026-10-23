@@ -183,6 +183,13 @@ class _TitleBlock extends StatelessWidget {
             fontWeight: FontWeight.w500,
           ),
         ),
+        if (room?.footer != null && room!.footer!.isNotEmpty) ...[
+          const SizedBox(height: 3),
+          Text(
+            room!.footer!,
+            style: TextStyle(color: colors.muted, fontSize: 11, fontFamily: kMonoFamily, height: 1.3),
+          ),
+        ],
         const SizedBox(height: 3),
         // Subtitle = the Pi-extension's model (when surfaced via
         // `room_announced` / `room_meta_updated`), else the legacy

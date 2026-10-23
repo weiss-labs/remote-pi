@@ -160,6 +160,13 @@ class HomeViewModel extends ViewModel<HomeState> {
     return byTab.where((i) => panePath(i).join(' ').toLowerCase().contains(q)).toList();
   }
 
+  // Weiss Labs: pins.
+  bool isPinned(HomeItem it) => _prefs.isPinned(it.peer.remoteEpk, it.room.roomId);
+  Future<void> togglePin(HomeItem it) async {
+    await _prefs.togglePinned(it.peer.remoteEpk, it.room.roomId);
+    notifyListeners();
+  }
+
   // Weiss Labs: search box over the pane list.
   String _query = '';
   String get query => _query;
