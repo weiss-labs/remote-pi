@@ -97,7 +97,8 @@ class _RemotePiAppState extends State<RemotePiApp> with WidgetsBindingObserver {
           title: 'Remote Pi',
           theme: buildLightTheme(),
           darkTheme: buildDarkTheme(),
-          themeMode: prefs.themeMode,
+          // Weiss Labs: always dark, like the terminal.
+          themeMode: ThemeMode.dark,
           routerConfig: _router,
           debugShowCheckedModeBanner: false,
           // Issue #114 — user-chosen text size. Applied here rather than by

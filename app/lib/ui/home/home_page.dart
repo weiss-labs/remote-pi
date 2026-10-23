@@ -45,7 +45,12 @@ class HomePage extends StatelessWidget {
     return Scaffold(
       backgroundColor: colors.bg,
       body: SafeArea(
-        child: CustomScrollView(
+        child: RefreshIndicator(
+          color: colors.accent,
+          backgroundColor: colors.surface,
+          onRefresh: vm.refresh,
+          child: CustomScrollView(
+          physics: const AlwaysScrollableScrollPhysics(),
           slivers: [
             _buildLargeTitleBar(context, vm, state),
             // Plan 44 — Android-only update notice. Sits at the top of the
@@ -67,6 +72,7 @@ class HomePage extends StatelessWidget {
               HomeList() => _buildListSlivers(context, vm, state),
             },
           ],
+        ),
         ),
       ),
     );

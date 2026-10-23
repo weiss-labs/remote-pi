@@ -1033,6 +1033,16 @@ class ConnectionManager extends Service {
   /// `room_announced` / `room_ended` / `rooms` (snapshot) the same way
   /// presence does. Single subscription covers all per-cwd sessions on
   /// every paired Mac.
+  /// Weiss Labs: pull-to-refresh. Re-asks the relay for presence + rooms, or
+  /// reopens the socket when it is down.
+  Future<void> resync({String? preferredEpk}) async {
+    if (_controlLink == null) {
+      await boot(preferredEpk: preferredEpk);
+      return;
+    }
+    _replaySubscriptions();
+  }
+
   void _replaySubscriptions() {
     if (_subscribedEpks.isEmpty) return;
     final link = _controlLink;

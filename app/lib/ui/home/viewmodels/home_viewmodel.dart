@@ -160,6 +160,13 @@ class HomeViewModel extends ViewModel<HomeState> {
     return byTab.where((i) => panePath(i).join(' ').toLowerCase().contains(q)).toList();
   }
 
+  // Weiss Labs: pull-to-refresh.
+  Future<void> refresh() async {
+    await _load();
+    await _conn.resync(preferredEpk: _prefs.selectedPeerEpk);
+    await Future<void>.delayed(const Duration(milliseconds: 600));
+  }
+
   // Weiss Labs: pins.
   bool isPinned(HomeItem it) => _prefs.isPinned(it.peer.remoteEpk, it.room.roomId);
   Future<void> togglePin(HomeItem it) async {
