@@ -204,7 +204,8 @@ Future<void> setupDependencies() async {
       _injector.get<DismissedUpdateStore>(),
       _injector.get<UrlOpener>(),
       currentVersion: appVersion,
-      enabled: Platform.isAndroid,
+      // Weiss Labs fork ships no Android builds and publishes no update manifest.
+      enabled: false,
     ),
   );
 

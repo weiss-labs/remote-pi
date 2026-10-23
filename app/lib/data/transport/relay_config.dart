@@ -20,9 +20,8 @@
 
 import 'package:app/data/preferences/preferences.dart';
 
-/// Public community relay. Hardcoded; not configurable at build time
-/// to keep the onboarding flow deterministic.
-const String kDefaultRelayUrl = 'https://relay-rp1.jacobmoura.work';
+/// Weiss Labs relay (self-hosted on srv811922). Default for this build.
+const String kDefaultRelayUrl = 'https://relay.srv811922.hstgr.cloud';
 
 /// User-facing message returned when [isValidRelayUrl] rejects a value.
 /// Surfaced verbatim by Settings and Onboarding — keep stable for

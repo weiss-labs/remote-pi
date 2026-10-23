@@ -16,7 +16,8 @@ enum AppFontScale {
   small('Small', 0.9),
   standard('Default', 1.0),
   large('Large', 1.15),
-  extraLarge('XL', 1.3);
+  extraLarge('XL', 1.3),
+  huge('XXL', 1.5);
 
   const AppFontScale(this.label, this.factor);
 
@@ -26,12 +27,12 @@ enum AppFontScale {
   /// Multiplier applied to every text size in the app.
   final double factor;
 
-  /// Parse a persisted value. Unknown/legacy/missing → [standard], so a bad
+  /// Parse a persisted value. Unknown/legacy/missing → [extraLarge], so a bad
   /// stored string can never leave the app with unreadable text.
   static AppFontScale fromName(String? raw) {
     for (final v in AppFontScale.values) {
       if (v.name == raw) return v;
     }
-    return AppFontScale.standard;
+    return AppFontScale.extraLarge;
   }
 }

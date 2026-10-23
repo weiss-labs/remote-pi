@@ -169,11 +169,11 @@ void main() {
     );
 
     // Issue #114 — in-app text size.
-    test('fontScale defaults to standard and round-trips through storage', () async {
+    test('fontScale defaults to extraLarge and round-trips through storage', () async {
       final store = _FakeSecureStorage();
       final p = Preferences(store);
       await p.load();
-      expect(p.fontScale, AppFontScale.standard);
+      expect(p.fontScale, AppFontScale.extraLarge);
 
       await p.setFontScale(AppFontScale.large);
       expect(p.fontScale, AppFontScale.large);
@@ -183,13 +183,13 @@ void main() {
       expect(reloaded.fontScale, AppFontScale.large);
     });
 
-    test('an unknown persisted font scale falls back to standard', () async {
+    test('an unknown persisted font scale falls back to extraLarge', () async {
       final store = _FakeSecureStorage();
       // A stale/corrupt value must never leave the app at an unreadable size.
       await store.write(key: 'prefs.font_scale', value: 'gigantic');
       final p = Preferences(store);
       await p.load();
-      expect(p.fontScale, AppFontScale.standard);
+      expect(p.fontScale, AppFontScale.extraLarge);
     });
 
     test('setFontScale notifies listeners only on a real change', () async {

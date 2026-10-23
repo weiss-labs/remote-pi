@@ -71,8 +71,8 @@ class RelayStep extends StatelessWidget {
           ),
           const SizedBox(height: 12),
           _RelayCard(
-            title: 'Community relay',
-            description: 'Hosted by us. Quick to start.',
+            title: 'Weiss Labs relay',
+            description: 'Our own server. Default.',
             footer: kDefaultRelayUrl,
             selected: state.relayChoice == RelayChoice.community,
             onTap: () => onChoice(RelayChoice.community),

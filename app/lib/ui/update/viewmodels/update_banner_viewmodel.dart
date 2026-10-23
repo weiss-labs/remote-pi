@@ -47,7 +47,7 @@ class UpdateBannerViewModel extends ViewModel<UpdateBannerState> {
   final String fallbackUrl;
 
   static const String _kFallbackUrl =
-      'https://remote-pi.jacobmoura.work/download';
+      'https://github.com/weiss-labs/remote-pi/releases';
 
   bool _checked = false;
   bool _disposed = false;

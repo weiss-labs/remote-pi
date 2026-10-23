@@ -25,7 +25,7 @@ class PairingConnecting extends PairingState {
 ///
 /// Plan/27 Wave A — [hostnameHint] is what the pi-extension reported
 /// as its OS hostname in `pair_ok.hostname`. The post-pair nickname
-/// modal pre-fills its input with it (e.g. "Mac do Jacob") instead
+/// modal pre-fills its input with it (e.g. "Zach's Mac") instead
 /// of the generic "Pi" placeholder. `null` on legacy Pis that
 /// haven't been upgraded yet.
 class PairingPaired extends PairingState {

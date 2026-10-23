@@ -17,7 +17,7 @@ class Preferences extends ChangeNotifier {
   String? _relayUrl;
   bool _onboardingCompleted = false;
   ThemeMode _themeMode = ThemeMode.system;
-  AppFontScale _fontScale = AppFontScale.standard;
+  AppFontScale _fontScale = AppFontScale.extraLarge;
 
   Preferences([FlutterSecureStorage? store])
       : _store = store ?? const FlutterSecureStorage();
