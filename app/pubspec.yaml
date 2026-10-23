@@ -109,6 +109,16 @@ dev_dependencies:
 flutter:
   assets:
     - assets/weiss-labs-logo.png
+  fonts:
+    - family: SF Mono
+      fonts:
+        - asset: assets/fonts/SF-Mono-Regular.otf
+        - asset: assets/fonts/SF-Mono-Light.otf
+          weight: 300
+        - asset: assets/fonts/SF-Mono-Medium.otf
+          weight: 500
+        - asset: assets/fonts/SF-Mono-Bold.otf
+          weight: 700
   # The following line ensures that the Material Icons font is
   # included with your application, so that you can use the icons in
   # the material Icons class.

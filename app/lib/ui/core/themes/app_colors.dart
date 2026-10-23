@@ -97,26 +97,29 @@ class AppColors extends ThemeExtension<AppColors> {
   final Color inputFill;
 
   /// Dark palette (default). Mirrors the original `app_theme.dart` constants.
+  /// Dark palette. Weiss Labs: matches Zach's terminal, Ghostty ayu-dark
+  /// background with Herdr's "vesper" chrome (peach accent, mint green,
+  /// soft red, teal) so the phone looks like the desk.
   static const AppColors dark = AppColors(
-    bg: Color(0xFF000000),
-    surface: Color(0xFF0A0A0A),
-    border: Color(0xFF1A1A1A),
+    bg: Color(0xFF0B0E14),
+    surface: Color(0xFF1A1A1A),
+    border: Color(0xFF282828),
     text: Color(0xFFFFFFFF),
-    muted: Color(0xFF6B6B6B),
-    muted2: Color(0xFF8A8A8A),
-    accent: Color(0xFF00D4FF),
+    muted: Color(0xFFA0A0A0),
+    muted2: Color(0xFF7E7E7E),
+    accent: Color(0xFFFFC799),
     onAccent: Color(0xFF000000),
-    highlight: Color(0xFF9FE6FF),
-    success: Color(0xFF6CD28A),
-    error: Color(0xFFE5484D),
-    warning: Color(0xFFFFB300),
-    working: Color(0xFF3FA9F5),
-    codeBg: Color(0xFF050505),
-    userBubble: Color(0xFF1A1A1A),
-    modelBadgeBg: Color(0xFF161616),
-    modelBadgeBorder: Color(0xFF1F1F1F),
-    denyBorder: Color(0xFF2A2A2A),
-    inputFill: Color(0xFF0E0E0E),
+    highlight: Color(0xFFFFD1A8),
+    success: Color(0xFF99FFE4),
+    error: Color(0xFFFF8080),
+    warning: Color(0xFFFFC799),
+    working: Color(0xFF66DDCC),
+    codeBg: Color(0xFF101010),
+    userBubble: Color(0xFF232323),
+    modelBadgeBg: Color(0xFF1A1A1A),
+    modelBadgeBorder: Color(0xFF282828),
+    denyBorder: Color(0xFF5C5C5C),
+    inputFill: Color(0xFF161616),
   );
 
   /// Light palette — derived from [dark]. Foreground tints are tuned for

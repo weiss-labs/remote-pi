@@ -1,5 +1,4 @@
 import 'package:flutter/material.dart';
-import 'package:google_fonts/google_fonts.dart';
 
 import 'package:app/ui/core/themes/app_colors.dart';
 
@@ -9,11 +8,12 @@ import 'package:app/ui/core/themes/app_colors.dart';
 /// **To swap the app font, change this one line.** Bundle a real font in
 /// `pubspec.yaml` under this family name (e.g. JetBrains Mono) and it flows
 /// everywhere automatically. `'Courier'` is the platform fallback.
-const String kMonoFamily = 'Courier';
+// Weiss Labs: SF Mono, the font Zach's Ghostty/Herdr terminal uses.
+const String kMonoFamily = 'SF Mono';
 
 /// Sans family for body/system text. `null` → the platform default sans.
 /// Set to a bundled family name to override globally.
-const String? kSansFamily = null;
+const String kSansFamily = 'SF Mono';
 
 /// Brand wordmark style — the "Remote Pi" marca. **Always Inter** (the
 /// wireframe's `RP_SANS`: `screens.jsx` renders the title in `RP_SANS` bold),
@@ -33,7 +33,8 @@ TextStyle brandTextStyle({
   double? letterSpacing,
   double? height,
 }) {
-  return GoogleFonts.inter(
+  return TextStyle(
+    fontFamily: kMonoFamily,
     fontSize: fontSize,
     fontWeight: fontWeight,
     color: color,

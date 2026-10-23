@@ -16,7 +16,7 @@ class Preferences extends ChangeNotifier {
   String? _selectedPeerEpk;
   String? _relayUrl;
   bool _onboardingCompleted = false;
-  ThemeMode _themeMode = ThemeMode.system;
+  ThemeMode _themeMode = ThemeMode.dark; // Weiss Labs: dark like the terminal
   AppFontScale _fontScale = AppFontScale.extraLarge;
 
   Preferences([FlutterSecureStorage? store])
