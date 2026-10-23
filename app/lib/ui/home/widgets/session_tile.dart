@@ -71,8 +71,6 @@ class SessionTile extends StatelessWidget {
             child: Row(
               crossAxisAlignment: CrossAxisAlignment.center,
               children: [
-                _Avatar(name: _avatarName()),
-                const SizedBox(width: 14),
                 Expanded(
                   child: _TitleBlock(peer: peer, room: room, titleOverride: title),
                 ),
@@ -89,19 +87,6 @@ class SessionTile extends StatelessWidget {
     );
   }
 
-  String _avatarName() {
-    final r = room;
-    if (r != null) {
-      if (r.name != null && r.name!.isNotEmpty) return r.name!;
-      final cwd = r.cwd;
-      if (cwd != null && cwd.isNotEmpty) {
-        final segs = cwd.split('/').where((s) => s.isNotEmpty).toList();
-        if (segs.isNotEmpty) return segs.last;
-      }
-    }
-    if (peer.nickname?.isNotEmpty == true) return peer.nickname!;
-    return peer.sessionName;
-  }
 }
 
 class _PresenceDot extends StatelessWidget {
@@ -218,35 +203,6 @@ class _TitleBlock extends StatelessWidget {
 String _truncateModel(String name) =>
     name.length <= 24 ? name : '${name.substring(0, 21)}…';
 
-class _Avatar extends StatelessWidget {
-  final String name;
-  const _Avatar({required this.name});
-
-  @override
-  Widget build(BuildContext context) {
-    final colors = context.colors;
-    final initial = _initial(name);
-    return Container(
-      width: 40,
-      height: 40,
-      decoration: BoxDecoration(
-        shape: BoxShape.circle,
-        color: colors.surface,
-        border: Border.all(color: colors.border),
-      ),
-      alignment: Alignment.center,
-      child: Text(
-        initial,
-        style: TextStyle(
-          color: colors.accent,
-          fontFamily: kMonoFamily,
-          fontSize: 16,
-          fontWeight: FontWeight.w600,
-        ),
-      ),
-    );
-  }
-}
 
 String _initial(String name) {
   final trimmed = name.trim();

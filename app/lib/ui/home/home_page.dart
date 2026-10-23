@@ -49,6 +49,7 @@ class HomePage extends StatelessWidget {
           color: colors.accent,
           backgroundColor: colors.surface,
           onRefresh: vm.refresh,
+          edgeOffset: 124,
           child: CustomScrollView(
           physics: const AlwaysScrollableScrollPhysics(),
           slivers: [
@@ -344,7 +345,7 @@ class HomePage extends StatelessWidget {
     for (final it in sorted) {
       if (vm.isPinned(it)) continue;
       if (it.peer.remoteEpk != lastEpk) {
-        children.add(PeerSectionHeader(peer: it.peer));
+        // One Mac, one tree: no per-Mac header, the Herdr workspaces are the top level.
         lastEpk = it.peer.remoteEpk;
         lastBranch = const [];
       }

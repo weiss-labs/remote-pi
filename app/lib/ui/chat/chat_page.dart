@@ -75,17 +75,6 @@ class ChatPage extends StatelessWidget {
             if (state is ChatReady && state.pairingRevoked)
               _RevokedBanner(onRePair: () => context.go('/pair')),
             Expanded(child: _buildBody(context, state, vm)),
-            // Weiss Labs: the same footer the terminal shows (usage, model, ctx %).
-            if (vm.activeRoom?.footer != null && vm.activeRoom!.footer!.isNotEmpty)
-              Container(
-                width: double.infinity,
-                color: context.colors.surface,
-                padding: const EdgeInsets.fromLTRB(12, 6, 12, 6),
-                child: Text(
-                  vm.activeRoom!.footer!,
-                  style: TextStyle(color: context.colors.muted, fontSize: 11, fontFamily: kMonoFamily, height: 1.3),
-                ),
-              ),
             _buildInput(context, state, vm),
           ],
         ),
@@ -247,6 +236,14 @@ class ChatPage extends StatelessWidget {
                     ),
                   ],
                 ),
+                // Weiss Labs: the terminal footer (usage, model, context %).
+                if (room?.footer != null && room!.footer!.isNotEmpty) ...[
+                  const SizedBox(height: 3),
+                  Text(
+                    room!.footer!,
+                    style: TextStyle(fontFamily: kMonoFamily, fontSize: 10, color: colors.muted, height: 1.25),
+                  ),
+                ],
               ],
             ),
           ),
