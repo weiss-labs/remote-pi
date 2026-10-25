@@ -108,6 +108,10 @@ import {
 } from "./session/local_config.js";
 import { runSetupWizard, type WizardUI } from "./session/setup_wizard.js";
 import { updateFooter, type FooterState } from "./ui/footer.js";
+import { VoiceBridge, type VoiceClientMessage } from "./voice/bridge.js";
+
+// Weiss Labs, plan 71: one Pi Voice phone session per pane.
+const _voiceBridge = new VoiceBridge();
 import { join, dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { chmodSync, mkdtempSync, mkdirSync, copyFileSync, existsSync, unlinkSync, readFileSync, writeFileSync, realpathSync } from "node:fs";
@@ -4431,6 +4435,12 @@ export function _routeClientMessageFrom(
   }
   if (msg.type === "extension_ui_response") {
     _extensionUiBridge?.respond(msg);
+    return;
+  }
+  // Weiss Labs, plan 71: Pi Voice on the phone. Paired owners only (this
+  // router is only reached through an attached owner channel).
+  if (VoiceBridge.handles(msg.type)) {
+    void _voiceBridge.handle(msg as VoiceClientMessage, (m) => sender.send(m));
     return;
   }
   if (!_pi) return;

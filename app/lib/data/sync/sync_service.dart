@@ -658,6 +658,10 @@ class SyncService extends Service {
       case ActionOk():
       case ActionError():
       case ModelsList():
+      // Plan 71: Pi Voice replies belong to VoiceLiveController's transport.
+      case VoiceOpened():
+      case VoiceError():
+      case VoiceRpcResult():
         break;
     }
   }

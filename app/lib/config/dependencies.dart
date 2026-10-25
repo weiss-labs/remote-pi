@@ -1,6 +1,9 @@
 import 'dart:async';
 
 import 'package:app/config/utils/injector.dart';
+import 'package:app/data/voice_live/voice_live_controller.dart';
+import 'package:app/data/voice_live/voice_live_transport.dart';
+import 'package:app/data/voice_live/voice_media.dart';
 import 'package:app/data/actions/actions_repository.dart';
 import 'package:app/data/mesh/mesh_client.dart';
 import 'package:app/data/mesh/mesh_sync_service.dart';
@@ -102,6 +105,17 @@ Future<void> setupDependencies() async {
   // injector disposes it at app teardown. VoiceInputViewModel never
   // disposes it (it only stops/cancels sessions).
   _injector.addService<SpeechService>(() => SpeechToTextService());
+
+  // Plan 71 — Pi Voice on the phone: each Voice screen gets a fresh call
+  // (relay RPC to the pane's Pi Voice + WebRTC audio with GPT-Live).
+  _injector.addOther<VoiceLiveFactory>(
+    () => VoiceLiveFactory(
+      () => VoiceLiveController(
+        RelayVoiceTransport(_injector.get<ConnectionManager>()),
+        WebRtcVoiceMedia.new,
+      ),
+    ),
+  );
 
   // Plan 30 — image picker + on-device JPEG compression. Stateless, no
   // dispose hook needed.

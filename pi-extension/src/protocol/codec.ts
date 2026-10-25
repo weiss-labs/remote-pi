@@ -17,6 +17,10 @@ const SERVER_TYPES = new Set<ServerMessage["type"]>([
   "session_history",
   // Plan/57 — interactive extension prompt (ask_user via pi-ask).
   "extension_ui_request",
+  // Weiss Labs, plan 71 — Pi Voice on the phone.
+  "voice_opened",
+  "voice_error",
+  "voice_rpc_result",
 ]);
 
 export class DecodeError extends Error {

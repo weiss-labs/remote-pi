@@ -772,6 +772,34 @@ class ListModels extends ClientMessage {
   Map<String, dynamic> toJson() => {'type': 'list_models', 'id': id};
 }
 
+// Weiss Labs, plan 71 — Pi Voice on the phone. The pane's extension forwards
+// these to Pi Voice's local API on the Mac; the phone never sees its token.
+class VoiceOpen extends ClientMessage {
+  final String id;
+  VoiceOpen({required this.id});
+
+  @override
+  Map<String, dynamic> toJson() => {'type': 'voice_open', 'id': id};
+}
+
+class VoiceRpc extends ClientMessage {
+  final String id;
+  final String path;
+  final Map<String, dynamic> body;
+  VoiceRpc({required this.id, required this.path, this.body = const {}});
+
+  @override
+  Map<String, dynamic> toJson() => {'type': 'voice_rpc', 'id': id, 'path': path, 'body': body};
+}
+
+class VoiceClose extends ClientMessage {
+  final String id;
+  VoiceClose({required this.id});
+
+  @override
+  Map<String, dynamic> toJson() => {'type': 'voice_close', 'id': id};
+}
+
 // --- ServerMessage (extension → app) ---
 // 1 pairing = 1 session: no session_id on any message.
 // Sealed: all subtypes in this file — switch exhaustiveness enforced by compiler.
@@ -808,6 +836,21 @@ sealed class ServerMessage {
       'action_ok' => ActionOk.fromJson(json),
       'action_error' => ActionError.fromJson(json),
       'models_list' => ModelsList.fromJson(json),
+      'voice_opened' => VoiceOpened(
+        inReplyTo: json['in_reply_to'] as String,
+        label: json['label'] as String? ?? '',
+        ratePerMinute: (json['rate_per_minute'] as num?)?.toDouble() ?? 0.05,
+      ),
+      'voice_error' => VoiceError(
+        inReplyTo: json['in_reply_to'] as String,
+        code: json['code'] as String? ?? 'unavailable',
+        message: json['message'] as String? ?? '',
+      ),
+      'voice_rpc_result' => VoiceRpcResult(
+        inReplyTo: json['in_reply_to'] as String,
+        status: (json['status'] as num?)?.toInt() ?? 500,
+        body: json['body'],
+      ),
       // Plan/57 — interactive extension prompt (ask_user via pi-ask). Mirrors
       // the SDK's extension_ui_request RPC contract; optional `ask` envelope
       // carries pi-ask's full question so the app renders multi/preview/notes.
@@ -1671,4 +1714,26 @@ class ExtensionUiResponse extends ClientMessage {
     if (ask != null) m['ask'] = ask!.toJson();
     return m;
   }
+}
+
+// Weiss Labs, plan 71 — replies from the pane's Pi Voice bridge.
+class VoiceOpened extends ServerMessage {
+  final String inReplyTo;
+  final String label;
+  final double ratePerMinute;
+  VoiceOpened({required this.inReplyTo, required this.label, required this.ratePerMinute});
+}
+
+class VoiceError extends ServerMessage {
+  final String inReplyTo;
+  final String code;
+  final String message;
+  VoiceError({required this.inReplyTo, required this.code, required this.message});
+}
+
+class VoiceRpcResult extends ServerMessage {
+  final String inReplyTo;
+  final int status;
+  final Object? body;
+  VoiceRpcResult({required this.inReplyTo, required this.status, required this.body});
 }

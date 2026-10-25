@@ -1,3 +1,4 @@
+import type { VoiceClientMessage, VoiceServerMessage } from "../voice/bridge.js";
 export type PairErrorCode =
   | "token_expired"
   | "token_consumed"
@@ -201,7 +202,9 @@ export type ClientMessage =
   // Plan/57 — interactive extension prompt response (ask_user via pi-ask).
   // Mirrors RpcExtensionUIResponse; the optional `ask` envelope carries
   // pi-ask's structured answer so multi/preview/notes survive the round-trip.
-  | ExtensionUiResponseWire;
+  | ExtensionUiResponseWire
+  // Weiss Labs, plan 71 — Pi Voice on the phone (forwarded to Pi Voice's local API).
+  | VoiceClientMessage;
 
 /**
  * Plan/30 — one inline image attachment on a `user_message`. Mirrors the
@@ -261,6 +264,7 @@ export type SessionHistoryEvent =
   | { ts: number; type: "compaction"; summary: string; tokens_before: number };
 
 export type ServerMessage =
+  | VoiceServerMessage
   | {
       type: "pair_ok";
       in_reply_to: string;

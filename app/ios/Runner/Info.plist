@@ -10,8 +10,12 @@
 	<!-- Plan 29 — voice input. The mic feeds on-device speech recognition
 	     (requiresOnDeviceRecognition); audio is transcribed locally and is
 	     never written to a file nor sent to any server. -->
+	<key>UIBackgroundModes</key>
+	<array>
+		<string>audio</string>
+	</array>
 	<key>NSMicrophoneUsageDescription</key>
-	<string>Remote Pi uses the microphone to dictate messages by voice. Audio is processed on your device and is never sent to any server.</string>
+	<string>Remote Pi uses the microphone to dictate messages on your device, and during Pi Voice calls, which stream your voice to OpenAI's live voice model through your Mac.</string>
 	<key>NSSpeechRecognitionUsageDescription</key>
 	<string>Speech recognition turns your dictated voice into text on your device. Audio is processed on-device and is never sent to any server.</string>
 	<!-- Public relays must use TLS (https/wss). NSAllowsLocalNetworking permits
