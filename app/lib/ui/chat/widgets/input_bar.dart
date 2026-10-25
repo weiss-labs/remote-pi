@@ -42,6 +42,9 @@ class InputBar extends StatefulWidget {
   final VoidCallback? onOpenQuickActions;
   final VoidCallback? onStartAudio;
 
+  /// Opens the Mac-backed Pi Voice session, separate from dictation.
+  final VoidCallback? onStartVoiceLive;
+
   /// Pi-side queued follow-ups. Empty means no queued messages.
   final List<QueuedMsg> queuedMessages;
   final void Function(String text)? onSetQueued;
@@ -69,6 +72,7 @@ class InputBar extends StatefulWidget {
     this.onCancel,
     this.onOpenQuickActions,
     this.onStartAudio,
+    this.onStartVoiceLive,
     this.queuedMessages = const [],
     this.onSetQueued,
     this.onClearQueued,
@@ -482,6 +486,22 @@ class _InputBarState extends State<InputBar> {
                     onVoiceLongPressEnd: _onVoiceEnd,
                     onVoiceTap: _onVoiceTap,
                   ),
+                  if (!hasContent &&
+                      !widget.streaming &&
+                      !showStrip &&
+                      widget.onStartVoiceLive != null) ...[
+                    const SizedBox(width: 8),
+                    IconButton.filled(
+                      tooltip: 'Start Pi Voice',
+                      onPressed: canInteract ? widget.onStartVoiceLive : null,
+                      style: IconButton.styleFrom(
+                        minimumSize: const Size(44, 44),
+                        backgroundColor: colors.text,
+                        foregroundColor: colors.bg,
+                      ),
+                      icon: const Icon(LucideIcons.audioLines, size: 22),
+                    ),
+                  ],
                   if (showInlineStop) ...[
                     const SizedBox(width: 8),
                     _InlineStopButton(onTap: widget.onCancel!),
