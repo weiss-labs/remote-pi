@@ -14,6 +14,7 @@ class FakeTransport implements VoiceRpcTransport {
     'transport': {'type': 'webrtc', 'sdp': 'v=0 answer'},
   });
   int closes = 0;
+  VoiceRpcReply approveReply = const VoiceRpcReply(200, {'ok': true});
 
   @override
   Future<VoiceOpenResult> open() async {
@@ -34,6 +35,7 @@ class FakeTransport implements VoiceRpcTransport {
       '/session' => session,
       '/heartbeat' => _beat(),
       '/text' => const VoiceRpcReply(200, {'id': 't1'}),
+      '/approve' => approveReply,
       _ => const VoiceRpcReply(200, {'ok': true}),
     };
   }
@@ -249,13 +251,18 @@ void main() {
       );
       await c.start();
       await settle();
-      await c.confirmDraft();
+      await expectLater(c.confirmDraft(), throwsA(isA<VoiceFailure>()));
       expect(t.paths, isNot(contains('/text')));
       await c.draftSeen('d1', 'h1');
       expect(t.calls.where((x) => x.$1 == '/draft-seen').single.$2, {
         'id': 'd1',
         'hash': 'h1',
       });
+      // Applied locally right away; a heartbeat already in flight with
+      // seen:false must not undo it.
+      expect(c.draft!.seen, isTrue);
+      await settle();
+      expect(c.draft!.seen, isTrue);
       t.heartbeats.add(
         const VoiceRpcReply(200, {
           'phase': 'live',
@@ -308,6 +315,41 @@ void main() {
     expect(m.closed, isTrue);
   });
 
+  test('Stop while the Mac is opening: no mic, no /session, Mac session closed', () async {
+    final gate = Completer<void>();
+    final slow = _SlowOpen(gate);
+    final mediaMade = <FakeMedia>[];
+    final c2 = VoiceLiveController(slow, () => mediaMade.single, heartbeat: const Duration(milliseconds: 20));
+    mediaMade.add(FakeMedia());
+    final starting = c2.start();
+    await c2.stop();
+    gate.complete();
+    await starting;
+    expect(slow.paths, isEmpty);
+    expect(slow.closes, 1);
+    expect(c2.phase, VoiceLivePhase.ended);
+    c2.dispose();
+  });
+
+  test('mute tapped while connecting is applied to the new mic', () async {
+    final gate = Completer<void>();
+    final slow = _SlowOpen(gate);
+    final c2 = VoiceLiveController(slow, () => m, heartbeat: const Duration(milliseconds: 20));
+    final starting = c2.start();
+    c2.setMuted(true);
+    gate.complete();
+    await starting;
+    expect(m.micEnabled, isFalse);
+    await c2.stop();
+    c2.dispose();
+  });
+
+  test('refused approval surfaces as an error (card keeps retry)', () async {
+    t.approveReply = const VoiceRpcReply(409, {'error': 'stale approval'});
+    await c.start();
+    await expectLater(c.approve('a1', true), throwsA(isA<VoiceFailure>()));
+  });
+
   test('speaking follows the GPT-Live output level', () async {
     await c.start();
     m.events.add({'type': 'session.started'});
@@ -315,4 +357,14 @@ void main() {
     await settle();
     expect(c.phase, VoiceLivePhase.speaking);
   });
+}
+
+class _SlowOpen extends FakeTransport {
+  _SlowOpen(this.gate);
+  final Completer<void> gate;
+  @override
+  Future<VoiceOpenResult> open() async {
+    await gate.future;
+    return super.open();
+  }
 }

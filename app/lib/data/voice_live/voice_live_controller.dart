@@ -32,6 +32,10 @@ class VoiceLiveController extends ChangeNotifier implements VoiceLiveSession {
   Timer? _beat, _levelTimer, _readyTimer;
   final List<StreamSubscription<Object?>> _subs = [];
   bool _opened = false, _ready = false, _finishing = false, _beating = false;
+  // Bumped by every start and finish; a startup step that resumes after a
+  // Stop sees a different run and backs out instead of opening the mic or
+  // a paid session.
+  int _run = 0;
   int _cursor = 0, _beatFailures = 0;
   final Set<String> _seenTranscript = {};
   final Map<String, int> _typedIndex = {};
@@ -94,9 +98,15 @@ class VoiceLiveController extends ChangeNotifier implements VoiceLiveSession {
       return;
     }
     _reset();
+    final run = ++_run;
     _set(VoiceLivePhase.connecting);
     try {
       final opened = await _transport.open();
+      if (run != _run) {
+        // Stopped while the Mac was opening: end that Mac session too.
+        await _transport.close();
+        return;
+      }
       _opened = true;
       _label = opened.label;
       _rate = opened.ratePerMinute;
@@ -104,9 +114,10 @@ class VoiceLiveController extends ChangeNotifier implements VoiceLiveSession {
       _subs.add(media.providerEvents.listen(_onProviderEvent));
       _subs.add(media.failures.listen((r) => _finish(r, error: true)));
       final offer = await media.createOffer();
-      if (_finishing) return;
+      if (run != _run) return; // _finish already closed media + session
+      media.setMicEnabled(!_muted); // a mute tapped while connecting holds
       final reply = await _transport.rpc('/session', {'sdp': offer});
-      if (_finishing) return;
+      if (run != _run) return;
       if (!reply.ok) {
         await _finish(reply.error, error: true);
         return;
@@ -117,6 +128,7 @@ class VoiceLiveController extends ChangeNotifier implements VoiceLiveSession {
         return;
       }
       await media.setAnswer(answer);
+      if (run != _run) return;
       _readyTimer = Timer(_readyTimeout, () {
         if (!_ready) _finish('Voice did not become ready', error: true);
       });
@@ -124,8 +136,9 @@ class VoiceLiveController extends ChangeNotifier implements VoiceLiveSession {
       _levelTimer = Timer.periodic(_levelsEvery, (_) => _sampleLevels());
       unawaited(_heartbeat());
     } on VoiceFailure catch (e) {
-      await _finish(_openMessage(e), error: true);
+      if (run == _run) await _finish(_openMessage(e), error: true);
     } catch (e) {
+      if (run != _run) return;
       await _finish(
         _opened
             ? 'Connection failed. $e'
@@ -145,6 +158,7 @@ class VoiceLiveController extends ChangeNotifier implements VoiceLiveSession {
       return;
     }
     _finishing = true;
+    _run++; // any startup step still in flight backs out
     _beat?.cancel();
     _levelTimer?.cancel();
     _readyTimer?.cancel();
@@ -179,7 +193,6 @@ class VoiceLiveController extends ChangeNotifier implements VoiceLiveSession {
     _cost = 0;
     _costFinal = false;
     _elapsed = Duration.zero;
-    _muted = false;
   }
 
   static String _openMessage(VoiceFailure e) => switch (e.code) {
@@ -270,7 +283,12 @@ class VoiceLiveController extends ChangeNotifier implements VoiceLiveSession {
     );
     _backendBusy = (s['backendRequests'] as List?)?.isNotEmpty ?? false;
     _approval = _toolApproval(s['pendingApprovals']);
-    _draft = _toDraft(s['draft']);
+    final prevDraft = _draft, nextDraft = _toDraft(s['draft']);
+    // Keep a confirmed review across a heartbeat that left before it landed.
+    _draft = nextDraft != null && prevDraft != null && prevDraft.seen && !nextDraft.seen &&
+            prevDraft.id == nextDraft.id && prevDraft.hash == nextDraft.hash
+        ? prevDraft
+        : nextDraft;
     for (final e in (s['events'] as List? ?? const [])) {
       if (e is Map<String, dynamic>) _event(e);
     }
@@ -461,15 +479,11 @@ class VoiceLiveController extends ChangeNotifier implements VoiceLiveSession {
     notifyListeners();
   }
 
+  /// Throws on refusal so the UI keeps its card and lets Zach retry.
   Future<void> _action(String path, Map<String, dynamic> body) async {
-    if (!_live) return;
-    try {
-      final r = await _transport.rpc(path, body);
-      if (!r.ok) _notice(r.error);
-    } catch (e) {
-      _notice('$e');
-    }
-    notifyListeners();
+    if (!_live) throw const VoiceFailure('ended', 'The call has ended.');
+    final r = await _transport.rpc(path, body);
+    if (!r.ok) throw VoiceFailure('rejected', r.error);
   }
 
   @override
@@ -479,19 +493,50 @@ class VoiceLiveController extends ChangeNotifier implements VoiceLiveSession {
   @override
   Future<void> draftSeen(String id, String hash) async {
     final d = _draft;
-    if (d == null || d.id != id || d.hash != hash || d.seen) return;
+    if (d == null || d.id != id || d.hash != hash) {
+      throw const VoiceFailure('stale', 'This draft changed. Review the new one.');
+    }
+    if (d.seen) return;
     await _action('/draft-seen', {'id': id, 'hash': hash});
+    final now = _draft;
+    if (now != null && now.id == id && now.hash == hash) {
+      _draft = VoiceDraft(
+        id: now.id,
+        hash: now.hash,
+        title: now.title,
+        raw: now.raw,
+        eligible: now.eligible,
+        seen: true,
+        error: now.error,
+        attachments: now.attachments,
+      );
+      notifyListeners();
+    }
   }
 
   @override
   Future<void> confirmDraft() async {
     final d = _draft;
-    if (d == null || !d.eligible || !d.seen) return;
-    await sendText(d.isApproval ? 'approve it' : 'send it');
+    if (d == null || !d.eligible || !d.seen) {
+      throw const VoiceFailure('not_ready', 'Review the complete draft first.');
+    }
+    final r = await _transport.rpc('/text', {'text': d.isApproval ? 'approve it' : 'send it'});
+    if (!r.ok) throw VoiceFailure('rejected', r.error);
+    final id = r.map['id']?.toString();
+    _items.add(VoiceLiveItem(id: id ?? 'typed-${_items.length}', kind: VoiceLiveItemKind.typed, text: d.isApproval ? 'approve it' : 'send it'));
+    if (id != null) _typedIndex[id] = _items.length - 1;
+    notifyListeners();
   }
 
   @override
-  Future<void> cancelWork() => _action('/cancel-work', {});
+  Future<void> cancelWork() async {
+    try {
+      await _action('/cancel-work', {});
+    } catch (e) {
+      _notice('$e');
+      notifyListeners();
+    }
+  }
 
   @override
   Future<({Uint8List bytes, String mime})> attachment(

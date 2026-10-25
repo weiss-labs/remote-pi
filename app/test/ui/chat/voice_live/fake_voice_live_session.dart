@@ -1,3 +1,5 @@
+import 'dart:convert';
+
 import 'package:flutter/foundation.dart';
 import 'package:app/ui/chat/voice_live/voice_live_session.dart';
 
@@ -82,5 +84,9 @@ class FakeVoiceLiveSession extends ChangeNotifier implements VoiceLiveSession {
 
   @override
   Future<({Uint8List bytes, String mime})> attachment(String draftId, String attachmentId) async =>
-      (bytes: Uint8List(0), mime: 'application/pdf');
+      (bytes: base64Decode(_pixel), mime: 'image/png');
+
+  // 1x1 transparent PNG.
+  static const _pixel =
+      'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII=';
 }

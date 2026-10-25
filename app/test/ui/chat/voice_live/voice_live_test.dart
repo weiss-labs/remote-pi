@@ -1,3 +1,4 @@
+import 'dart:typed_data';
 import 'dart:async';
 import 'package:app/ui/chat/voice_live/voice_approval_card.dart';
 import 'package:app/ui/chat/voice_live/voice_live_page.dart';
@@ -17,7 +18,7 @@ VoiceDraft draft({String hash = 'v1', String? body}) => VoiceDraft(
   eligible: true,
   seen: false,
   attachments: const [
-    VoiceDraftAttachment(id: 'a1', name: 'proposal.pdf', size: 42000, mime: 'application/pdf'),
+    VoiceDraftAttachment(id: 'a1', name: 'mockup.png', size: 42000, mime: 'image/png'),
   ],
 );
 
@@ -36,6 +37,9 @@ void main() {
     FakeVoiceLiveSession s,
     Object a,
   ) async {
+    t.view.physicalSize = const Size(440, 956); // iPhone 17 Pro Max points
+    t.view.devicePixelRatio = 1;
+    addTearDown(t.view.reset);
     await t.pumpWidget(
       MaterialApp(
         theme: buildDarkTheme(),
@@ -43,7 +47,7 @@ void main() {
           body: Center(
             child: SizedBox(
               width: 390,
-              height: 550,
+              height: 720, // phone-height card; image previews take up to 220
               child: a is VoiceDraft
                   ? VoiceApprovalCard(draft: a, session: s)
                   : VoiceApprovalCard(tool: a as VoiceToolApproval, session: s),
@@ -52,6 +56,15 @@ void main() {
         ),
       ),
     );
+    // Image attachments decode (real async work) before review can count:
+    // wait until every preview rendered or failed (max ~2s).
+    final images = a is VoiceDraft ? a.attachments.where((x) => x.mime.startsWith('image/')).length : 0;
+    for (var i = 0; i < 40; i++) {
+      await t.runAsync(() => Future<void>.delayed(const Duration(milliseconds: 50)));
+      await t.pump();
+      final done = find.byType(RawImage).evaluate().length + find.text('Preview unavailable').evaluate().length;
+      if (done >= images) break;
+    }
     await t.pump();
   }
 
@@ -124,6 +137,38 @@ void main() {
       expect(s.seen.length, 1);
     },
   );
+
+  testWidgets('a corrupt image holds approval', (t) async {
+    final s = _CorruptImage();
+    await card(t, s, draft(body: 'Short.'));
+    expect(s.seen, isEmpty);
+    expect(find.textContaining("can't be previewed here"), findsOneWidget);
+  });
+
+  testWidgets('a PDF attachment holds approval (no in-app preview)', (t) async {
+    final s = FakeVoiceLiveSession();
+    await card(
+      t,
+      s,
+      const VoiceDraft(
+        id: 'd9',
+        hash: 'h9',
+        title: 'EMAIL DRAFT',
+        raw: 'To: a@example.com\nSubject: x\n\nShort.',
+        eligible: true,
+        seen: false,
+        attachments: [VoiceDraftAttachment(id: 'p', name: 'quote.pdf', size: 9000, mime: 'application/pdf')],
+      ),
+    );
+    await t.pump();
+    await t.pump();
+    expect(s.seen, isEmpty);
+    expect(find.textContaining("can't be previewed here"), findsOneWidget);
+    expect(
+      t.widget<FilledButton>(find.widgetWithText(FilledButton, 'Send this exact draft')).onPressed,
+      isNull,
+    );
+  });
 
   testWidgets('tool approval shows exact args and forwards allow once', (
     t,
@@ -300,4 +345,10 @@ void main() {
       await t.pumpWidget(const SizedBox());
     },
   );
+}
+
+class _CorruptImage extends FakeVoiceLiveSession {
+  @override
+  Future<({Uint8List bytes, String mime})> attachment(String draftId, String attachmentId) async =>
+      (bytes: Uint8List.fromList([1, 2, 3, 4]), mime: 'image/png');
 }

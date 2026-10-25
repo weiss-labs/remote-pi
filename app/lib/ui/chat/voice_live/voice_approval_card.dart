@@ -1,4 +1,6 @@
-import 'package:flutter/foundation.dart';
+import 'dart:async';
+import 'dart:ui' as ui;
+
 import 'package:flutter/material.dart';
 import 'package:app/ui/core/themes/themes.dart';
 
@@ -39,6 +41,29 @@ class _VoiceApprovalCardState extends State<VoiceApprovalCard> {
   bool _pending = false;
   bool _resolved = false;
   String? _error;
+  // Draft attachments must be on screen before review counts: images load
+  // first; anything that can't be previewed here holds approval (Pi Voice
+  // rule: missing attachment previews never authorize a send).
+  final Set<String> _loaded = {};
+  bool _attachmentBlocked = false;
+
+  bool get _attachmentsReady {
+    final d = widget.draft;
+    if (d == null) return true;
+    return d.attachments.every((a) => _loaded.contains(a.id));
+  }
+
+  void _onAttachment(String id, bool ok) {
+    if (!mounted) return;
+    setState(() {
+      if (ok) {
+        _loaded.add(id);
+      } else {
+        _attachmentBlocked = true;
+      }
+    });
+    _scheduleVisibility();
+  }
 
   @override
   void initState() {
@@ -57,6 +82,8 @@ class _VoiceApprovalCardState extends State<VoiceApprovalCard> {
       _pending = false;
       _resolved = false;
       _error = null;
+      _loaded.clear();
+      _attachmentBlocked = false;
       if (_scroll.hasClients) _scroll.jumpTo(0);
       _scheduleVisibility();
     }
@@ -74,6 +101,8 @@ class _VoiceApprovalCardState extends State<VoiceApprovalCard> {
         _markingSeen ||
         !_scroll.hasClients ||
         widget.tool != null ||
+        _attachmentBlocked ||
+        !_attachmentsReady ||
         ModalRoute.of(context)?.isCurrent == false) {
       return;
     }
@@ -147,7 +176,7 @@ class _VoiceApprovalCardState extends State<VoiceApprovalCard> {
     final tool = widget.tool;
     final draft = widget.draft;
     final c = context.colors;
-    final blocked = draft != null && (!draft.eligible || draft.error != null);
+    final blocked = draft != null && (!draft.eligible || draft.error != null || _attachmentBlocked);
     return Container(
       decoration: BoxDecoration(
         color: c.surface,
@@ -202,12 +231,20 @@ class _VoiceApprovalCardState extends State<VoiceApprovalCard> {
                       ),
                       for (final att in draft.attachments) ...[
                         const SizedBox(height: 14),
-                        _AttachmentPreview(session: widget.session, draft: draft, attachment: att),
+                        _AttachmentPreview(
+                          session: widget.session,
+                          draft: draft,
+                          attachment: att,
+                          onResult: (ok) => _onAttachment(att.id, ok),
+                        ),
                       ],
                       if (blocked) ...[
                         const SizedBox(height: 14),
                         Text(
-                          draft.error ?? 'Voice cannot approve this draft. Approve it in the original Pi chat.',
+                          draft.error ??
+                              (_attachmentBlocked
+                                  ? 'An attachment can\'t be previewed here, so approval is held. Review it in the original Pi chat.'
+                                  : 'Voice cannot approve this draft. Approve it in the original Pi chat.'),
                           style: context.typo.monoSmall.copyWith(color: c.error),
                         ),
                       ],
@@ -218,9 +255,9 @@ class _VoiceApprovalCardState extends State<VoiceApprovalCard> {
             ),
           ),
           const SizedBox(height: 12),
-          if (draft != null && !_seen)
+          if (draft != null && !_seen && !blocked)
             Text(
-              'Read to the end to enable sending.',
+              _attachmentsReady ? 'Read to the end to enable sending.' : 'Loading attachments…',
               style: context.typo.monoSmall,
             ),
           if (_error != null)
@@ -279,24 +316,59 @@ class _VoiceApprovalCardState extends State<VoiceApprovalCard> {
 
 /// Draft attachment: image previews inline, other files by name and size.
 class _AttachmentPreview extends StatefulWidget {
-  const _AttachmentPreview({required this.session, required this.draft, required this.attachment});
+  const _AttachmentPreview({
+    required this.session,
+    required this.draft,
+    required this.attachment,
+    required this.onResult,
+  });
   final VoiceLiveSession session;
   final VoiceDraft draft;
   final VoiceDraftAttachment attachment;
+
+  /// true once the preview is rendered; false if it can't be shown here.
+  final ValueChanged<bool> onResult;
 
   @override
   State<_AttachmentPreview> createState() => _AttachmentPreviewState();
 }
 
 class _AttachmentPreviewState extends State<_AttachmentPreview> {
-  Future<({Uint8List bytes, String mime})>? _load;
+  // Decoded before it counts: a corrupt or unsupported image holds approval,
+  // and the picture is laid out at full size before review can start.
+  ui.Image? _image;
+  bool _failed = false;
 
   @override
   void initState() {
     super.initState();
-    if (widget.attachment.mime.startsWith('image/')) {
-      _load = widget.session.attachment(widget.draft.id, widget.attachment.id);
+    if (!widget.attachment.mime.startsWith('image/')) {
+      // PDFs and other files have no in-app preview yet.
+      WidgetsBinding.instance.addPostFrameCallback((_) => widget.onResult(false));
+      return;
     }
+    unawaited(_decode());
+  }
+
+  Future<void> _decode() async {
+    try {
+      final data = await widget.session.attachment(widget.draft.id, widget.attachment.id);
+      final codec = await ui.instantiateImageCodec(data.bytes);
+      final frame = await codec.getNextFrame();
+      if (!mounted) return;
+      setState(() => _image = frame.image);
+      WidgetsBinding.instance.addPostFrameCallback((_) => widget.onResult(true));
+    } catch (_) {
+      if (!mounted) return;
+      setState(() => _failed = true);
+      widget.onResult(false);
+    }
+  }
+
+  @override
+  void dispose() {
+    _image?.dispose();
+    super.dispose();
   }
 
   @override
@@ -306,22 +378,29 @@ class _AttachmentPreviewState extends State<_AttachmentPreview> {
       '${a.name} · ${(a.size / 1024).ceil()} KB',
       style: context.typo.monoSmall,
     );
-    final load = _load;
-    if (load == null) return caption;
+    if (!a.mime.startsWith('image/')) return caption;
+    final img = _image;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        FutureBuilder(
-          future: load,
-          builder: (context, snap) => snap.hasData
-              ? ClipRRect(
-                  borderRadius: BorderRadius.circular(8),
-                  child: Image.memory(snap.data!.bytes, fit: BoxFit.contain),
-                )
-              : snap.hasError
-              ? Text('Preview unavailable', style: context.typo.monoSmall)
-              : const SizedBox(height: 120, child: Center(child: CircularProgressIndicator(strokeWidth: 2))),
-        ),
+        if (img != null)
+          ClipRRect(
+            borderRadius: BorderRadius.circular(8),
+            child: ConstrainedBox(
+              constraints: const BoxConstraints(maxHeight: 220),
+              child: AspectRatio(
+                aspectRatio: img.width / img.height,
+                child: RawImage(image: img, fit: BoxFit.contain),
+              ),
+            ),
+          )
+        else if (_failed)
+          Text('Preview unavailable', style: context.typo.monoSmall)
+        else
+          const SizedBox(
+            height: 120,
+            child: Center(child: CircularProgressIndicator(strokeWidth: 2)),
+          ),
         const SizedBox(height: 6),
         caption,
       ],

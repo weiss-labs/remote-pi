@@ -57,7 +57,7 @@ class WebRtcVoiceMedia implements VoiceMedia {
         appleAudioMode: AppleAudioMode.voiceChat,
       ),
     );
-    _mic = await navigator.mediaDevices.getUserMedia({
+    final mic = await navigator.mediaDevices.getUserMedia({
       'audio': {
         'echoCancellation': true,
         'noiseSuppression': true,
@@ -65,7 +65,20 @@ class WebRtcVoiceMedia implements VoiceMedia {
       },
       'video': false,
     });
+    if (_closed) {
+      // Stopped while iOS was granting the mic: release it, don't connect.
+      for (final t in mic.getTracks()) {
+        await t.stop();
+      }
+      await mic.dispose();
+      throw StateError('Voice stopped');
+    }
+    _mic = mic;
     final peer = _peer = await createPeerConnection({});
+    if (_closed) {
+      await _release();
+      throw StateError('Voice stopped');
+    }
     for (final track in _mic!.getAudioTracks()) {
       await peer.addTrack(track, _mic!);
     }
@@ -110,6 +123,7 @@ class WebRtcVoiceMedia implements VoiceMedia {
         onTimeout: () => throw TimeoutException('Audio connection timed out.'),
       );
     }
+    if (_closed) throw StateError('Voice stopped');
     final local = await peer.getLocalDescription();
     if (local?.sdp == null) throw StateError('No audio offer');
     return local!.sdp!;
@@ -149,6 +163,12 @@ class WebRtcVoiceMedia implements VoiceMedia {
   Future<void> close() async {
     if (_closed) return;
     _closed = true;
+    await _release();
+    await _events.close();
+    await _failures.close();
+  }
+
+  Future<void> _release() async {
     try {
       await _channel?.close();
     } catch (_) {}
@@ -157,7 +177,8 @@ class WebRtcVoiceMedia implements VoiceMedia {
     }
     await _mic?.dispose();
     await _peer?.close();
-    await _events.close();
-    await _failures.close();
+    _mic = null;
+    _peer = null;
+    _channel = null;
   }
 }
