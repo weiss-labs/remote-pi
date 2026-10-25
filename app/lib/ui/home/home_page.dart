@@ -332,36 +332,56 @@ class HomePage extends StatelessWidget {
         final c = a.peer.remoteEpk.compareTo(b.peer.remoteEpk);
         return c != 0 ? c : panePath(a).join('/').compareTo(panePath(b).join('/'));
       });
-    final children = <Widget>[];
+    final pinnedRows = <Widget>[];
     final pinned = sorted.where(vm.isPinned).toList();
     if (pinned.isNotEmpty) {
-      children.add(const _TreeHeader(label: 'PINNED', depth: 0));
+      pinnedRows.add(const _TreeHeader(label: 'PINNED', depth: 0));
       for (final it in pinned) {
-        children.add(_buildItemRowAt(context, vm, state, it, title: panePath(it).join(' › ')));
+        pinnedRows.add(_buildItemRowAt(context, vm, state, it, title: panePath(it).join(' › ')));
       }
     }
-    String? lastEpk;
-    var lastBranch = const <String>[];
+    // One group per Herdr workspace, in the user's dragged order. Rows sit
+    // flush left; tab names are small sub-headings (Herdr's default numeric
+    // tab names add nothing, so they're skipped).
+    final byWorkspace = <String, List<HomeItem>>{};
     for (final it in sorted) {
       if (vm.isPinned(it)) continue;
-      if (it.peer.remoteEpk != lastEpk) {
-        // One Mac, one tree: no per-Mac header, the Herdr workspaces are the top level.
-        lastEpk = it.peer.remoteEpk;
-        lastBranch = const [];
-      }
       final path = panePath(it);
-      final branch = path.sublist(0, path.length - 1);
-      for (var d = 0; d < branch.length; d++) {
-        final same = d < lastBranch.length && lastBranch[d] == branch[d] &&
-            lastBranch.sublist(0, d).join('/') == branch.sublist(0, d).join('/');
-        if (!same) children.add(_TreeHeader(label: branch[d], depth: d));
-      }
-      lastBranch = branch;
-      children.add(Padding(
-        padding: EdgeInsets.only(left: 16.0 * branch.length),
-        child: _buildItemRowAt(context, vm, state, it, title: path.last),
-      ));
+      (byWorkspace[path.length > 1 ? path.first : 'Other'] ??= []).add(it);
     }
+    final workspaces = vm.orderWorkspaces(byWorkspace.keys);
+    Widget group(int index) {
+      final ws = workspaces[index];
+      final rows = <Widget>[
+        _TreeHeader(
+          label: ws,
+          depth: 0,
+          trailing: ReorderableDragStartListener(
+            index: index,
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+              child: Icon(LucideIcons.gripHorizontal, size: 18, color: colors.muted2),
+            ),
+          ),
+        ),
+      ];
+      String? lastTab;
+      for (final it in byWorkspace[ws]!) {
+        final path = panePath(it);
+        final tab = path.length > 2 ? path.sublist(1, path.length - 1).join(' › ') : null;
+        if (tab != null && tab != lastTab && int.tryParse(tab) == null) {
+          rows.add(_TreeHeader(label: tab, depth: 1));
+        }
+        lastTab = tab;
+        rows.add(_buildItemRowAt(context, vm, state, it, title: path.last));
+      }
+      return Material(
+        key: ValueKey('ws-$ws'),
+        color: colors.bg,
+        child: Column(mainAxisSize: MainAxisSize.min, children: rows),
+      );
+    }
+
     final search = SliverToBoxAdapter(
       child: Padding(
         padding: const EdgeInsets.fromLTRB(20, 4, 20, 4),
@@ -388,12 +408,17 @@ class HomePage extends StatelessWidget {
       slivers: [
         tabs,
         search,
+        SliverList(delegate: SliverChildListDelegate(pinnedRows)),
         SliverPadding(
           padding: const EdgeInsets.fromLTRB(0, 0, 0, 24),
-          sliver: SliverList(
-            delegate: SliverChildBuilderDelegate(
-              (ctx, i) => children[i],
-              childCount: children.length,
+          sliver: SliverReorderableList(
+            itemCount: workspaces.length,
+            itemBuilder: (ctx, i) => group(i),
+            onReorderItem: (from, to) => vm.moveWorkspace(workspaces, from, to),
+            proxyDecorator: (child, _, _) => Material(
+              color: colors.surface,
+              elevation: 6,
+              child: child,
             ),
           ),
         ),
@@ -768,25 +793,35 @@ class _EmptyState extends StatelessWidget {
   }
 }
 
-/// Weiss Labs: one Herdr workspace or tab heading inside a peer group.
+/// Weiss Labs: one Herdr workspace or tab heading. Workspaces are gold and
+/// carry the drag handle; tabs are small muted sub-headings. No indentation.
 class _TreeHeader extends StatelessWidget {
   final String label;
   final int depth;
-  const _TreeHeader({required this.label, required this.depth});
+  final Widget? trailing;
+  const _TreeHeader({required this.label, required this.depth, this.trailing});
 
   @override
   Widget build(BuildContext context) {
     final colors = context.colors;
+    final top = depth == 0;
     return Padding(
-      padding: EdgeInsets.fromLTRB(20 + 16.0 * depth, depth == 0 ? 14 : 8, 20, 4),
-      child: Text(
-        label,
-        style: TextStyle(
-          fontFamily: kMonoFamily,
-          fontSize: depth == 0 ? 13 : 12,
-          fontWeight: depth == 0 ? FontWeight.w700 : FontWeight.w600,
-          color: depth == 0 ? colors.text : colors.muted,
-        ),
+      padding: EdgeInsets.fromLTRB(20, top ? 14 : 6, trailing == null ? 20 : 10, top ? 2 : 2),
+      child: Row(
+        children: [
+          Expanded(
+            child: Text(
+              label,
+              style: TextStyle(
+                fontFamily: kMonoFamily,
+                fontSize: top ? 14 : 11,
+                fontWeight: top ? FontWeight.w700 : FontWeight.w500,
+                color: top ? colors.heading : colors.muted,
+              ),
+            ),
+          ),
+          ?trailing,
+        ],
       ),
     );
   }

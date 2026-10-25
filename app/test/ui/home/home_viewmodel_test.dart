@@ -406,6 +406,65 @@ void main() {
       },
     );
 
+    test('Weiss Labs: a rooms snapshot without a footer keeps the last one '
+        '(the Home/chat flash bug)', () async {
+      final ch = _ControllableChannel();
+      final storage = _FakeStorage([_peerA]);
+      final conn = ConnectionManager(
+        factory: (_, _) async => ch,
+        storage: storage,
+        emitDebounce: Duration.zero,
+      );
+      await conn.connectTo(_peerA);
+      await Future<void>.delayed(const Duration(milliseconds: 10));
+      ch.pushControl(const RoomAnnounced(peer: 'epk_A', roomId: 'r1', startedAt: 1));
+      ch.pushControl(const RoomMetaUpdated(
+        peer: 'epk_A',
+        roomId: 'r1',
+        hasModel: false,
+        hasThinking: false,
+        footer: '{"v":1}',
+        hasFooter: true,
+      ));
+      await Future<void>.delayed(const Duration(milliseconds: 10));
+      ch.pushControl(const RoomsSnapshot(
+        peer: 'epk_A',
+        rooms: [RoomInfo(roomId: 'r1', startedAt: 1)],
+      ));
+      await Future<void>.delayed(const Duration(milliseconds: 10));
+      final room = conn.roomsSnapshot.values.expand((r) => r).single;
+      expect(room.footer, '{"v":1}');
+      await conn.disconnect();
+      conn.dispose();
+    });
+
+    test('Weiss Labs: pull-to-refresh reconnects but keeps the chosen tab', () async {
+      final storage = _FakeStorage([_peerA]);
+      final prefs = Preferences(_FakeSecureStorage());
+      final conn = _conn(storage: storage);
+      final vm = HomeViewModel(storage, prefs, conn);
+      await Future<void>.delayed(Duration.zero);
+      vm.setFilter(HomeFilter.all);
+      await vm.refresh();
+      expect((vm.state as HomeList).filter, HomeFilter.all);
+      vm.dispose();
+      conn.dispose();
+    });
+
+    test('Weiss Labs: workspaces follow the dragged order, new ones after', () {
+      final storage = _FakeStorage([_peerA]);
+      final prefs = Preferences(_FakeSecureStorage());
+      final vm = HomeViewModel(storage, prefs, _conn(storage: storage));
+      final names = vm.orderWorkspaces(['Zeta', 'alpha', 'Mid']);
+      expect(names, ['alpha', 'Mid', 'Zeta']);
+      vm.moveWorkspace(names, 2, 0); // drag Zeta to the top
+      expect(vm.orderWorkspaces(['Mid', 'Zeta', 'alpha', 'New']), ['Zeta', 'alpha', 'Mid', 'New']);
+      // Search hides 'alpha': dragging Mid above Zeta must not move alpha.
+      vm.moveWorkspace(['Zeta', 'Mid'], 1, 0);
+      expect(vm.orderWorkspaces(['Mid', 'Zeta', 'alpha']), ['Mid', 'alpha', 'Zeta']);
+      vm.dispose();
+    });
+
     test('counts / visibleItems are empty-safe outside a HomeList', () {
       final storage = _FakeStorage([_peerA]);
       final prefs = Preferences(_FakeSecureStorage());

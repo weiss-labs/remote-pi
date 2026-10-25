@@ -34,6 +34,12 @@ class AppColors extends ThemeExtension<AppColors> {
     required this.modelBadgeBorder,
     required this.denyBorder,
     required this.inputFill,
+    required this.heading,
+    required this.toolPendingBg,
+    required this.toolSuccessBg,
+    required this.toolErrorBg,
+    required this.codeAccent,
+    required this.link,
   });
 
   /// App background (scaffold). Was `kBg`.
@@ -96,6 +102,24 @@ class AppColors extends ThemeExtension<AppColors> {
   /// Text-field fill. Was the hardcoded `Color(0xFF0E0E0E)`.
   final Color inputFill;
 
+  /// Weiss Labs: Herdr workspace headings and markdown headings (ayu gold).
+  final Color heading;
+
+  /// Weiss Labs: Tool block while running. Pi dark theme toolPendingBg.
+  final Color toolPendingBg;
+
+  /// Weiss Labs: Tool block that succeeded. Pi dark theme toolSuccessBg.
+  final Color toolSuccessBg;
+
+  /// Weiss Labs: Tool block that failed. Pi dark theme toolErrorBg.
+  final Color toolErrorBg;
+
+  /// Weiss Labs: Inline code and list bullets. Pi dark theme mdCode (violet).
+  final Color codeAccent;
+
+  /// Weiss Labs: Markdown links. Pi dark theme mdLink.
+  final Color link;
+
   /// Dark palette (default). Mirrors the original `app_theme.dart` constants.
   /// Dark palette. Weiss Labs: matches Zach's terminal, Ghostty ayu-dark
   /// background with Herdr's "vesper" chrome (peach accent, mint green,
@@ -115,11 +139,17 @@ class AppColors extends ThemeExtension<AppColors> {
     warning: Color(0xFFFFC799),
     working: Color(0xFF66DDCC),
     codeBg: Color(0xFF101010),
-    userBubble: Color(0xFF232323),
+    userBubble: Color(0xFF213B49), // Pi dark theme userMessageBg
     modelBadgeBg: Color(0xFF1A1A1A),
     modelBadgeBorder: Color(0xFF282828),
     denyBorder: Color(0xFF5C5C5C),
     inputFill: Color(0xFF161616),
+    heading: Color(0xFFE6B450),
+    toolPendingBg: Color(0xFF34383A),
+    toolSuccessBg: Color(0xFF254131),
+    toolErrorBg: Color(0xFF5B282A),
+    codeAccent: Color(0xFFA798D7),
+    link: Color(0xFF69ADD0),
   );
 
   /// Light palette — derived from [dark]. Foreground tints are tuned for
@@ -147,6 +177,12 @@ class AppColors extends ThemeExtension<AppColors> {
     modelBadgeBorder: Color(0xFFD7D7DA),
     denyBorder: Color(0xFFC9C9CD),
     inputFill: Color(0xFFF0F0F2),
+    heading: Color(0xFF9A6300),
+    toolPendingBg: Color(0xFFEDEDEF),
+    toolSuccessBg: Color(0xFFE3F3EA),
+    toolErrorBg: Color(0xFFF8E1E1),
+    codeAccent: Color(0xFF6A4FB5),
+    link: Color(0xFF0077A3),
   );
 
   @override
@@ -170,6 +206,12 @@ class AppColors extends ThemeExtension<AppColors> {
     Color? modelBadgeBorder,
     Color? denyBorder,
     Color? inputFill,
+    Color? heading,
+    Color? toolPendingBg,
+    Color? toolSuccessBg,
+    Color? toolErrorBg,
+    Color? codeAccent,
+    Color? link,
   }) {
     return AppColors(
       bg: bg ?? this.bg,
@@ -191,6 +233,12 @@ class AppColors extends ThemeExtension<AppColors> {
       modelBadgeBorder: modelBadgeBorder ?? this.modelBadgeBorder,
       denyBorder: denyBorder ?? this.denyBorder,
       inputFill: inputFill ?? this.inputFill,
+      heading: heading ?? this.heading,
+      toolPendingBg: toolPendingBg ?? this.toolPendingBg,
+      toolSuccessBg: toolSuccessBg ?? this.toolSuccessBg,
+      toolErrorBg: toolErrorBg ?? this.toolErrorBg,
+      codeAccent: codeAccent ?? this.codeAccent,
+      link: link ?? this.link,
     );
   }
 
@@ -217,6 +265,12 @@ class AppColors extends ThemeExtension<AppColors> {
       modelBadgeBorder: Color.lerp(modelBadgeBorder, other.modelBadgeBorder, t)!,
       denyBorder: Color.lerp(denyBorder, other.denyBorder, t)!,
       inputFill: Color.lerp(inputFill, other.inputFill, t)!,
+      heading: Color.lerp(heading, other.heading, t)!,
+      toolPendingBg: Color.lerp(toolPendingBg, other.toolPendingBg, t)!,
+      toolSuccessBg: Color.lerp(toolSuccessBg, other.toolSuccessBg, t)!,
+      toolErrorBg: Color.lerp(toolErrorBg, other.toolErrorBg, t)!,
+      codeAccent: Color.lerp(codeAccent, other.codeAccent, t)!,
+      link: Color.lerp(link, other.link, t)!,
     );
   }
 }

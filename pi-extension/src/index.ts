@@ -242,6 +242,8 @@ function _setFooter(text: string): void {
   }
 }
 (globalThis as typeof globalThis & { __remotePiFooter?: (t: string) => void }).__remotePiFooter = _setFooter;
+// Weiss Labs: lets ~/.pi/agent/extensions/remote.ts follow Herdr pane renames live.
+(globalThis as typeof globalThis & { __remotePiRename?: (n: string) => Promise<void> }).__remotePiRename = (n) => _renameAgent(n);
 let _currentModel: string | undefined = undefined;  // last-known model name
 let _currentThinking: ThinkingLevel | undefined = undefined;  // last-known thinking level
 

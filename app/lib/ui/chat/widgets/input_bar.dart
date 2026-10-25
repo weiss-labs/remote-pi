@@ -100,6 +100,10 @@ class _InputBarState extends State<InputBar> {
   // whether the user is still holding once `startRecording` resolves — if not
   // (the permission prompt ended the hold), the recording is discarded.
   bool _holding = false;
+  // Weiss Labs: a plain tap starts ChatGPT-style dictation (no finger held);
+  // the strip then shows cancel / insert / send buttons.
+  bool _tapMode = false;
+  bool _sendAfterTranscript = false;
   StreamSubscription<String>? _transcriptSub;
 
   @override
@@ -123,11 +127,17 @@ class _InputBarState extends State<InputBar> {
   }
 
   void _onTranscript(String text) {
+    final send = _sendAfterTranscript;
+    _sendAfterTranscript = false;
+    if (_tapMode && mounted) setState(() => _tapMode = false);
     if (!mounted || text.isEmpty) return; // empty → no-op (#12)
     // The field is empty by construction (mic only shows when empty), so we
     // replace rather than concatenate (#non-objetivo: no merge).
     _controller.text = text;
     _controller.selection = TextSelection.collapsed(offset: text.length);
+    // Offline: keep the words in the composer instead of a send that would
+    // be dropped.
+    if (send && !widget.disabled) _submit();
   }
 
   void _onTextChange() {
@@ -222,6 +232,7 @@ class _InputBarState extends State<InputBar> {
 
   void _onVoiceStart() {
     _holding = true;
+    _tapMode = false;
     if (_cancelArmed) setState(() => _cancelArmed = false);
     unawaited(_beginVoice());
   }
@@ -237,9 +248,14 @@ class _InputBarState extends State<InputBar> {
     // `startRecording` then resolves and starts, the composer was left stuck
     // "recording" with no finger down. If the gesture is already over by the
     // time we get here, discard that phantom recording.
-    if (!_holding && voice.state is VoiceRecording) {
+    if (!_holding && !_tapMode && voice.state is VoiceRecording) {
       await voice.cancel();
       if (!mounted) return;
+    }
+    if (voice.state is VoiceRecording) {
+      HapticFeedback.mediumImpact();
+    } else if (_tapMode) {
+      setState(() => _tapMode = false);
     }
     final s = voice.state;
     if (s is VoiceUnavailable &&
@@ -265,11 +281,27 @@ class _InputBarState extends State<InputBar> {
     } else {
       // Transcript arrives via voice.transcripts → _onTranscript, the same
       // path the 60s cap uses — release never populates the field directly.
+      HapticFeedback.lightImpact();
       unawaited(voice.stopAndTranscribe());
     }
   }
 
-  void _onVoiceTap() => widget.onVoiceHint?.call(VoiceHint.holdToTalk);
+  void _onVoiceTap() {
+    setState(() => _tapMode = true);
+    unawaited(_beginVoice());
+  }
+
+  void _dictationCancel() {
+    HapticFeedback.lightImpact();
+    setState(() => _tapMode = false);
+    unawaited(widget.voice?.cancel());
+  }
+
+  void _dictationFinish({required bool send}) {
+    HapticFeedback.lightImpact();
+    _sendAfterTranscript = send;
+    unawaited(widget.voice?.stopAndTranscribe());
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -459,7 +491,47 @@ class _InputBarState extends State<InputBar> {
           // GestureDetector stays mounted underneath so the same long-press
           // keeps feeding move/end events across the swap. IgnorePointer so
           // the overlay never steals the in-flight gesture.
-          if (showStrip)
+          if (showStrip && recording && _tapMode)
+            // Tap-to-dictate: no gesture in flight, so the strip is live.
+            Positioned.fill(
+              child: ColoredBox(
+                color: colors.bg,
+                child: Row(
+                  children: [
+                    _StripButton(
+                      icon: LucideIcons.x,
+                      tooltip: 'Cancel',
+                      onTap: _dictationCancel,
+                    ),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: RecordingStrip(
+                        level: voiceState.level,
+                        elapsed: voiceState.elapsed,
+                        maxDuration:
+                            widget.voice?.maxDuration ??
+                            const Duration(seconds: 60),
+                        showSlideHint: false,
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    _StripButton(
+                      icon: LucideIcons.check,
+                      tooltip: 'Insert text',
+                      onTap: () => _dictationFinish(send: false),
+                    ),
+                    const SizedBox(width: 8),
+                    _StripButton(
+                      icon: LucideIcons.arrowUp,
+                      tooltip: 'Send',
+                      filled: true,
+                      onTap: () => _dictationFinish(send: true),
+                    ),
+                  ],
+                ),
+              ),
+            )
+          else if (showStrip)
             Positioned.fill(
               child: IgnorePointer(
                 child: ColoredBox(
@@ -695,6 +767,44 @@ class _AttachmentPreview extends StatelessWidget {
               ),
             ),
           ],
+        ),
+      ),
+    );
+  }
+}
+
+/// Weiss Labs: round control in the tap-to-dictate strip (ChatGPT layout:
+/// cancel on the left, insert + send on the right).
+class _StripButton extends StatelessWidget {
+  const _StripButton({
+    required this.icon,
+    required this.tooltip,
+    required this.onTap,
+    this.filled = false,
+  });
+
+  final IconData icon;
+  final String tooltip;
+  final VoidCallback onTap;
+  final bool filled;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.colors;
+    return Semantics(
+      button: true,
+      label: tooltip,
+      child: GestureDetector(
+        onTap: onTap,
+        child: Container(
+          width: 36,
+          height: 36,
+          decoration: BoxDecoration(
+            shape: BoxShape.circle,
+            color: filled ? colors.accent : colors.surface,
+            border: filled ? null : Border.all(color: colors.border),
+          ),
+          child: Icon(icon, size: 18, color: filled ? colors.onAccent : colors.text),
         ),
       ),
     );

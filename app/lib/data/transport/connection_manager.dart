@@ -600,6 +600,7 @@ class ConnectionManager extends Service {
         :final model,
         :final thinking,
         :final working,
+        :final footer,
       ):
         final key = toStandardB64(peer);
         final list = _roomsByPeer[key] ?? <RoomInfo>[];
@@ -617,8 +618,10 @@ class ConnectionManager extends Service {
         // relay that omits it (null) keeps the cached value instead of
         // forcing the room back to idle.
         var preservedWorking = false;
+        String? preservedFooter;
         final existingIdx = list.indexWhere((r) => r.roomId == roomId);
         if (existingIdx >= 0) {
+          preservedFooter = list[existingIdx].footer;
           preservedName = list[existingIdx].name;
           preservedThinking = list[existingIdx].thinking;
           preservedWorking = list[existingIdx].working;
@@ -631,6 +634,7 @@ class ConnectionManager extends Service {
           model: model,
           thinking: thinking ?? preservedThinking,
           working: working ?? preservedWorking,
+          footer: footer ?? preservedFooter,
         );
         final liveAlready = _liveRoomIds[key]?.contains(roomId) ?? false;
         final identicalEntry = existingIdx >= 0 && list[existingIdx] == next;
@@ -710,6 +714,8 @@ class ConnectionManager extends Service {
         // ignore: unawaited_futures
         _persistRoomsForPeer(key);
       case RoomsSnapshot(:final peer, :final rooms):
+        final arrived = _roomsArrived;
+        if (arrived != null && !arrived.isCompleted) arrived.complete();
         final key = toStandardB64(peer);
         // Merge snapshot into cache: add unknown rooms, refresh
         // metadata (preserving local rename + previous model when
@@ -733,6 +739,9 @@ class ConnectionManager extends Service {
             // `rooms_of` reads the current registry meta, so its
             // `working` reflects the latest turn_start/turn_end.
             working: r.working,
+            // Weiss Labs: keep the footer across snapshots (the relay may omit
+            // it); dropping it made the chat header blink on every re-push.
+            footer: r.footer ?? byId[r.roomId]?.footer,
           );
         }
         final newList = byId.values.toList();
@@ -1036,15 +1045,34 @@ class ConnectionManager extends Service {
   /// Weiss Labs: pull-to-refresh. Re-asks the relay for presence + rooms, or
   /// reopens the socket when it is down.
   Future<void> resync({String? preferredEpk}) async {
-    if (_controlLink == null) {
-      // Offline or mid-backoff: drop the retry timer and the stale peer so
-      // boot() actually reopens the socket instead of returning early.
-      await _teardownActive(emitNoPeer: true);
-      await boot(preferredEpk: preferredEpk);
-      return;
+    // Weiss Labs: pull-to-refresh is a real check-in. Always rebuild the
+    // socket (iOS can leave one half-dead after sleep, and the relay dedups
+    // identical replies so a probe can't tell) and take a fresh snapshot of
+    // which panes are live right now.
+    // Subscribe before boot: a healthy connect emits StatusOnline before
+    // boot() returns. ignore() marks errors handled up front (stream closed).
+    final online = statusStream.firstWhere((s) => s is StatusOnline);
+    online.ignore();
+    final rooms = (_roomsArrived = Completer<void>()).future;
+    await _teardownActive(emitNoPeer: true);
+    await boot(preferredEpk: preferredEpk);
+    try {
+      if (_status is! StatusOnline) {
+        await online.timeout(const Duration(seconds: 6));
+      }
+      // A fresh socket always gets a rooms reply (the relay's dedup cache is
+      // per connection), so wait for it before calling the list current.
+      await rooms.timeout(const Duration(seconds: 3));
+    } on TimeoutException {
+      // Offline or slow relay; Home shows whatever state we have.
+    } on StateError {
+      // Stream closed (disposed).
     }
-    _replaySubscriptions();
+    _roomsArrived = null;
   }
+
+  /// Weiss Labs: completed by the next `rooms` snapshot during a resync.
+  Completer<void>? _roomsArrived;
 
   void _replaySubscriptions() {
     if (_subscribedEpks.isEmpty) return;

@@ -29,6 +29,7 @@ class Preferences extends ChangeNotifier {
   static const _kThemeModeKey = 'prefs.theme_mode';
   static const _kFontScaleKey = 'prefs.font_scale';
   static const _kPinnedKey = 'prefs.pinned';
+  static const _kWorkspaceOrderKey = 'prefs.workspaceOrder';
 
   /// True → chat hides `ToolEvent` rows (only user/assistant text remain).
   bool get hideToolCalls => _hideToolCalls;
@@ -95,6 +96,16 @@ class Preferences extends ChangeNotifier {
     notifyListeners();
   }
 
+  // Weiss Labs: Herdr workspace order on Home, set by dragging the ≡ handle.
+  // Names not in the list (new workspaces) sort after it, alphabetically.
+  List<String> _workspaceOrder = [];
+  List<String> get workspaceOrder => List.unmodifiable(_workspaceOrder);
+  Future<void> setWorkspaceOrder(List<String> order) async {
+    _workspaceOrder = [...order];
+    await _store.write(key: _kWorkspaceOrderKey, value: order.join('\n'));
+    notifyListeners();
+  }
+
   /// Hydrate from secure storage. Safe to call multiple times.
   Future<void> load() async {
     var changed = false;
@@ -137,6 +148,13 @@ class Preferences extends ChangeNotifier {
     final scale = AppFontScale.fromName(await _store.read(key: _kFontScaleKey));
     if (scale != _fontScale) {
       _fontScale = scale;
+      changed = true;
+    }
+
+    final orderRaw = await _store.read(key: _kWorkspaceOrderKey);
+    final order = (orderRaw ?? '').split('\n').where((s) => s.isNotEmpty).toList();
+    if (order.join('\n') != _workspaceOrder.join('\n')) {
+      _workspaceOrder = order;
       changed = true;
     }
 

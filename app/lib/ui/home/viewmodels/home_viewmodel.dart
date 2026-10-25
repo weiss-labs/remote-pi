@@ -81,28 +81,36 @@ class HomeViewModel extends ViewModel<HomeState> {
     // subscribe also covers rooms (plan 17 — replay block in
     // ConnectionManager sends both presence and rooms subscribes).
     _conn.subscribeToPeers(peers.map((p) => p.remoteEpk).toList());
+    final prev = state;
     emit(
       HomeList(
         peers: peers,
         statusByEpk: _conn.presenceSnapshot,
         roomsByPeer: _conn.roomsSnapshot,
+        // Keep the user's tab across reloads (pull-to-refresh, storage edits).
+        filter: prev is HomeList ? prev.filter : HomeFilter.online,
       ),
     );
   }
 
   void _onPresence(Map<String, PresenceState> snapshot) {
+    if (_refreshing) return; // applied in one go when refresh() finishes
     final s = state;
     if (s is! HomeList) return;
     emit(s.copyWith(statusByEpk: snapshot));
   }
 
   void _onRooms(Map<String, List<RoomInfo>> snapshot) {
+    if (_refreshing) return; // applied in one go when refresh() finishes
     final s = state;
     if (s is! HomeList) return;
     emit(s.copyWith(roomsByPeer: snapshot));
   }
 
   void _onStatus(ConnectionStatus status) {
+    // Pull-to-refresh tears the socket down on purpose; keep the list steady
+    // until it's back instead of flashing every pane offline.
+    if (_refreshing) return;
     final next = status is StatusOnline;
     if (next == _relayConnected) return;
     _relayConnected = next;
@@ -161,16 +169,61 @@ class HomeViewModel extends ViewModel<HomeState> {
   }
 
   // Weiss Labs: pull-to-refresh.
+  bool _refreshing = false;
   Future<void> refresh() async {
-    await _load();
-    await _conn.resync(preferredEpk: _prefs.selectedPeerEpk);
-    await Future<void>.delayed(const Duration(milliseconds: 600));
+    _refreshing = true;
+    try {
+      await _load();
+      // Returns once the fresh rooms snapshot landed (or timed out).
+      await _conn.resync(preferredEpk: _prefs.selectedPeerEpk);
+    } finally {
+      _refreshing = false;
+      // One rebuild with the fresh relay view (presence, rooms, status).
+      _relayConnected = _conn.status is StatusOnline;
+      final s = state;
+      if (s is HomeList && !_disposed) {
+        emit(HomeList(
+          peers: s.peers,
+          statusByEpk: _conn.presenceSnapshot,
+          roomsByPeer: _conn.roomsSnapshot,
+          filter: s.filter,
+        ));
+      }
+    }
   }
 
   // Weiss Labs: pins.
   bool isPinned(HomeItem it) => _prefs.isPinned(it.peer.remoteEpk, it.room.roomId);
   Future<void> togglePin(HomeItem it) async {
     await _prefs.togglePinned(it.peer.remoteEpk, it.room.roomId);
+    notifyListeners();
+  }
+
+  // Weiss Labs: drag-to-reorder Herdr workspaces. Known names keep their saved
+  // slot; new ones go after, alphabetically.
+  List<String> orderWorkspaces(Iterable<String> names) {
+    final saved = _prefs.workspaceOrder;
+    int rank(String n) {
+      final i = saved.indexOf(n);
+      return i < 0 ? saved.length : i;
+    }
+    return names.toSet().toList()
+      ..sort((a, b) {
+        final c = rank(a).compareTo(rank(b));
+        return c != 0 ? c : a.toLowerCase().compareTo(b.toLowerCase());
+      });
+  }
+
+  /// [to] is the final index (onReorderItem already adjusted for the removal).
+  void moveWorkspace(List<String> names, int from, int to) {
+    final next = [...names];
+    next.insert(to, next.removeAt(from));
+    // Workspaces hidden by the filter/search keep their slots; the visible
+    // ones are re-dealt into the slots they occupied.
+    final full = orderWorkspaces({..._prefs.workspaceOrder, ...names});
+    var i = 0;
+    final merged = [for (final n in full) names.contains(n) ? next[i++] : n];
+    unawaited(_prefs.setWorkspaceOrder(merged));
     notifyListeners();
   }
 

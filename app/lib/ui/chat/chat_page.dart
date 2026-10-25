@@ -12,6 +12,7 @@ import 'package:app/ui/chat/voice/viewmodels/voice_input_viewmodel.dart';
 import 'package:app/ui/chat/widgets/attach_sheet.dart';
 import 'package:app/ui/chat/widgets/input_bar.dart';
 import 'package:app/ui/chat/widgets/message_bubble.dart';
+import 'package:app/ui/chat/widgets/pane_status.dart';
 import 'package:app/ui/chat/widgets/streaming_bubble.dart';
 import 'package:app/ui/chat/widgets/tool_request_card.dart';
 import 'package:app/ui/chat/widgets/extension_ui_sheet.dart';
@@ -142,127 +143,123 @@ class ChatPage extends StatelessWidget {
     // device from frame 1 and doesn't flip when the PeerRecord loads.
     final peerLabel = _peerDisplayName(peer, initialDevice);
 
+    // Weiss Labs: the header is the pane's Herdr name plus one status line
+    // (online · model · thinking · context) and the subscription gas gauges.
+    final leaf = roomName.split('›').last.replaceAll('_', ' ').trim();
+    final footer = PaneFooter.parse(room?.footer);
+    final model = footer?.model ?? room?.model;
+    final meta = TextStyle(fontFamily: kMonoFamily, fontSize: 10, color: colors.muted);
+    final statusColor = isWorking
+        ? colors.working
+        : isReconnecting
+        ? colors.warning
+        : isOnline
+        ? colors.success
+        : colors.muted;
+    final statusLabel = isWorking
+        ? 'working'
+        : isReconnecting
+        ? 'reconnecting…'
+        : isOnline
+        ? 'online'
+        : 'offline';
+    final ctxPct = footer?.ctxPct;
+    final usage = footer?.usage;
+
     return Container(
-      height: 56,
-      padding: const EdgeInsets.symmetric(horizontal: 4),
+      constraints: const BoxConstraints(minHeight: 56),
+      padding: const EdgeInsets.fromLTRB(4, 4, 4, 6),
       decoration: BoxDecoration(
         color: colors.bg,
         border: Border(bottom: BorderSide(color: colors.border)),
       ),
-      child: Row(
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
         children: [
-          if (showBack)
-            IconButton(
-              icon: Icon(LucideIcons.chevronLeft, size: 18, color: colors.text),
-              tooltip: 'Back',
-              onPressed: () =>
-                  context.canPop() ? context.pop() : context.go('/home'),
-            )
-          else
-            const SizedBox(width: 16),
-          Expanded(
-            child: Column(
-              mainAxisAlignment: MainAxisAlignment.center,
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  _truncate(roomName, 28),
-                  style: TextStyle(
-                    fontFamily: kMonoFamily,
-                    fontSize: 13,
-                    color: colors.text,
-                    letterSpacing: -0.2,
-                    fontWeight: FontWeight.w500,
-                  ),
-                  overflow: TextOverflow.ellipsis,
-                ),
-                const SizedBox(height: 2),
-                Row(
+          Row(
+            children: [
+              if (showBack)
+                IconButton(
+                  icon: Icon(LucideIcons.chevronLeft, size: 18, color: colors.text),
+                  tooltip: 'Back',
+                  onPressed: () =>
+                      context.canPop() ? context.pop() : context.go('/home'),
+                )
+              else
+                const SizedBox(width: 16),
+              Expanded(
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Flexible(
-                      child: Text(
-                        _truncate(peerLabel, 24),
-                        overflow: TextOverflow.ellipsis,
-                        style: TextStyle(
-                          fontFamily: kMonoFamily,
-                          fontSize: 10,
-                          color: colors.muted,
-                        ),
+                    Text(
+                      leaf.isEmpty ? roomName : leaf,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        fontFamily: kMonoFamily,
+                        fontSize: 14,
+                        color: colors.text,
+                        letterSpacing: -0.2,
+                        fontWeight: FontWeight.w600,
                       ),
                     ),
-                    const SizedBox(width: 6),
-                    Builder(
-                      builder: (_) {
-                        // Plan-18 follow-up — 4-state pill:
-                        // working / reconnecting / online / offline.
-                        // Priority: working > reconnecting > online > offline.
-                        final color = isWorking
-                            ? colors.working
-                            : isReconnecting
-                            ? colors.warning
-                            : isOnline
-                            ? colors.success
-                            : colors.muted;
-                        final label = isWorking
-                            ? 'working…'
-                            : isReconnecting
-                            ? 'reconnecting…'
-                            : isOnline
-                            ? 'online'
-                            : 'offline';
-                        return Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            Container(
-                              width: 7,
-                              height: 7,
-                              decoration: BoxDecoration(
-                                shape: BoxShape.circle,
-                                color: color,
-                              ),
-                            ),
-                            const SizedBox(width: 4),
-                            Text(
-                              label,
-                              style: TextStyle(
-                                fontFamily: kMonoFamily,
-                                fontSize: 10,
-                                color: color,
-                              ),
-                            ),
-                          ],
-                        );
-                      },
+                    const SizedBox(height: 3),
+                    Row(
+                      children: [
+                        Text(_truncate(peerLabel, 16), style: meta),
+                        const SizedBox(width: 6),
+                        if (isWorking)
+                          SizedBox(
+                            width: 8,
+                            height: 8,
+                            child: CircularProgressIndicator(strokeWidth: 1.4, color: statusColor),
+                          )
+                        else
+                          Container(
+                            width: 7,
+                            height: 7,
+                            decoration: BoxDecoration(shape: BoxShape.circle, color: statusColor),
+                          ),
+                        const SizedBox(width: 5),
+                        Text(statusLabel, style: meta.copyWith(color: statusColor)),
+                        Flexible(
+                          child: Text(
+                            [
+                              if (model != null && model.isNotEmpty) model,
+                              if (footer?.thinking != null) footer!.thinking!,
+                              if (ctxPct != null) 'ctx ${ctxPct.toStringAsFixed(ctxPct < 10 ? 1 : 0)}%',
+                            ].map((p) => '  ·  $p').join(),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: meta,
+                          ),
+                        ),
+                      ],
                     ),
                   ],
                 ),
-                // Weiss Labs: the terminal footer (usage, model, context %).
-                if (room?.footer != null && room!.footer!.isNotEmpty) ...[
-                  const SizedBox(height: 3),
-                  Text(
-                    room!.footer!,
-                    style: TextStyle(fontFamily: kMonoFamily, fontSize: 10, color: colors.muted, height: 1.25),
-                  ),
-                ],
-              ],
+              ),
+              // Plan/32g follow-up: ALWAYS render the info button (gating it on
+              // the async PeerRecord caused an AppBar layout shift). The dialog
+              // reads the PeerRecord at tap time.
+              IconButton(
+                icon: Icon(LucideIcons.info, size: 18, color: colors.muted2),
+                tooltip: 'Session info',
+                onPressed: () {
+                  final p = vm.activePeer;
+                  if (p != null) {
+                    _showSessionInfo(context, p, vm.activeRoom, roomName);
+                  }
+                },
+              ),
+            ],
+          ),
+          if (usage != null && usage.windows.isNotEmpty)
+            Padding(
+              padding: const EdgeInsets.fromLTRB(14, 0, 14, 0),
+              child: UsageGauges(usage),
             ),
-          ),
-          // Plan/32g follow-up: ALWAYS render the info button. Gating it on the
-          // async PeerRecord made it pop in on load → an AppBar layout shift
-          // (the flicker the user saw). Title + device already render from the
-          // nav hints, so the bar is stable from frame 1. The dialog needs the
-          // loaded PeerRecord; we read it at tap time (loaded within ms of
-          // mount for the connection) and no-op in the unlikely pre-load tap.
-          IconButton(
-            icon: Icon(LucideIcons.info, size: 18, color: colors.muted2),
-            tooltip: 'Session info',
-            onPressed: () {
-              final p = vm.activePeer;
-              if (p != null) {
-                _showSessionInfo(context, p, vm.activeRoom, roomName);
-              }
-            },
-          ),
         ],
       ),
     );

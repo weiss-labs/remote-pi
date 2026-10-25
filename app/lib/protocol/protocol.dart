@@ -48,6 +48,7 @@ sealed class ControlInbound {
               ? ThinkingLevel.fromWire(rawThinking)
               : null,
           working: rawWorking,
+          footer: (j['footer'] as String?) ?? (metaJson?['footer'] as String?),
         );
       }(),
       'room_ended' => RoomEnded(
@@ -294,6 +295,10 @@ class RoomAnnounced extends ControlInbound {
   /// frame omitted it (legacy relay); the ConnectionManager then keeps
   /// any previously-known value instead of forcing `false`.
   final bool? working;
+
+  /// Weiss Labs: the Pi footer when the announce carries it; null keeps the
+  /// cached one.
+  final String? footer;
   const RoomAnnounced({
     required this.peer,
     required this.roomId,
@@ -303,6 +308,7 @@ class RoomAnnounced extends ControlInbound {
     this.model,
     this.thinking,
     this.working,
+    this.footer,
   });
 }
 

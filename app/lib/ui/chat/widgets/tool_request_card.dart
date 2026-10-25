@@ -43,20 +43,20 @@ class ToolRequestCard extends StatelessWidget {
         tool.status == ToolEventStatus.denied ||
         tool.status == ToolEventStatus.expired;
 
+    // Weiss Labs: filled like Pi's tool blocks in Herdr (grey running, green
+    // done, red failed) instead of an outlined card.
+    final colors = context.colors;
+    final fill = switch (tool.status) {
+      ToolEventStatus.completed => colors.toolSuccessBg,
+      ToolEventStatus.failed => colors.toolErrorBg,
+      _ => colors.toolPendingBg,
+    };
     return Opacity(
       opacity: dimmed ? 0.65 : 1.0,
       child: Container(
         decoration: BoxDecoration(
-          color: context.colors.surface,
-          border: Border.all(color: color, width: 1),
-          borderRadius: BorderRadius.circular(12),
-          boxShadow: [
-            BoxShadow(
-              color: color.withValues(alpha: 0.13),
-              blurRadius: 20,
-              spreadRadius: 1,
-            ),
-          ],
+          color: fill,
+          borderRadius: BorderRadius.circular(8),
         ),
         padding: const EdgeInsets.all(14),
         child: Column(
@@ -119,9 +119,8 @@ class ToolRequestCard extends StatelessWidget {
     final content = _buildToolSummary(context);
     return Container(
       decoration: BoxDecoration(
-        color: colors.codeBg,
-        border: Border.all(color: colors.border),
-        borderRadius: BorderRadius.circular(8),
+        color: colors.bg.withValues(alpha: 0.35),
+        borderRadius: BorderRadius.circular(6),
       ),
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
       child: Row(

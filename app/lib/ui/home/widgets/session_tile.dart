@@ -107,9 +107,15 @@ class _PresenceDot extends StatelessWidget {
     //   live (relay up + announced) → green
     //   else (cached / offline)     → grey
     final colors = context.colors;
-    final Color color = isWorking
-        ? colors.working
-        : isReconnecting
+    // Weiss Labs: a spinning wheel while the pane is mid-task, like Herdr.
+    if (isWorking) {
+      return SizedBox(
+        width: 12,
+        height: 12,
+        child: CircularProgressIndicator(strokeWidth: 1.8, color: colors.working),
+      );
+    }
+    final Color color = isReconnecting
             ? colors.warning
             : isLive
                 ? colors.success
@@ -168,13 +174,6 @@ class _TitleBlock extends StatelessWidget {
             fontWeight: FontWeight.w500,
           ),
         ),
-        if (room?.footer != null && room!.footer!.isNotEmpty) ...[
-          const SizedBox(height: 3),
-          Text(
-            room!.footer!,
-            style: TextStyle(color: colors.muted, fontSize: 11, fontFamily: kMonoFamily, height: 1.3),
-          ),
-        ],
         const SizedBox(height: 3),
         // Subtitle = the Pi-extension's model (when surfaced via
         // `room_announced` / `room_meta_updated`), else the legacy
@@ -204,11 +203,6 @@ String _truncateModel(String name) =>
     name.length <= 24 ? name : '${name.substring(0, 21)}…';
 
 
-String _initial(String name) {
-  final trimmed = name.trim();
-  if (trimmed.isEmpty) return '?';
-  return trimmed.characters.first.toUpperCase();
-}
 
 String _relativeTime(String isoUtc) {
   final parsed = DateTime.tryParse(isoUtc);

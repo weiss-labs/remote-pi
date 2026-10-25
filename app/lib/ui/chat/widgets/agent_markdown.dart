@@ -31,16 +31,34 @@ class AgentMarkdown extends StatelessWidget {
       // Inline `code` — subtle highlight, keeps the baseline.
       highlightBuilder: (context, text, style) => Text(
         text,
-        style: typo.mono.copyWith(
-          color: colors.highlight,
-          backgroundColor: colors.codeBg,
-        ),
+        style: typo.mono.copyWith(color: colors.codeAccent),
       ),
       // Fenced ``` blocks — dark card + copy button.
       codeBuilder: (context, name, code, closed) =>
           _CodeBlock(language: name, code: code),
     );
-    return selectable ? SelectionArea(child: markdown) : markdown;
+    // Weiss Labs: Pi's desktop markdown palette (gold headings, blue links).
+    TextStyle h(double size) => typo.mono.copyWith(
+      fontSize: size,
+      fontWeight: FontWeight.w700,
+      color: colors.heading,
+    );
+    final themed = GptMarkdownTheme(
+      gptThemeData: GptMarkdownThemeData(
+        brightness: Theme.of(context).brightness,
+        h1: h(18),
+        h2: h(16),
+        h3: h(15),
+        h4: h(14),
+        h5: h(14),
+        h6: h(14),
+        linkColor: colors.link,
+        linkHoverColor: colors.link,
+        hrLineColor: colors.border,
+      ),
+      child: markdown,
+    );
+    return selectable ? SelectionArea(child: themed) : themed;
   }
 
   static Future<void> _openLink(BuildContext context, String url) async {

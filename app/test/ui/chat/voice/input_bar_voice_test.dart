@@ -125,11 +125,89 @@ void main() {
     expect(find.byIcon(LucideIcons.mic600), findsOneWidget);
   });
 
-  testWidgets('a plain tap nudges with the hold-to-talk hint', (tester) async {
-    await pumpBar(tester);
+  // Weiss Labs: a plain tap starts ChatGPT-style dictation with explicit
+  // cancel / insert / send buttons (no finger held).
+  Future<void> startTap(WidgetTester tester) async {
     await tester.tap(find.byIcon(LucideIcons.mic600));
     await tester.pump();
-    expect(hints, [VoiceHint.holdToTalk]);
+    await tester.pump();
+  }
+
+  testWidgets('tap dictation: check inserts the transcript', (tester) async {
+    final sent = <String>[];
+    await tester.pumpWidget(MaterialApp(
+      home: Scaffold(
+        body: Align(
+          alignment: Alignment.bottomCenter,
+          child: InputBar(onSend: sent.add, voice: vm, onVoiceHint: hints.add),
+        ),
+      ),
+    ));
+    await startTap(tester);
+    expect(find.byKey(const Key('recording-strip')), findsOneWidget);
+    expect(find.text('slide to cancel'), findsNothing);
+
+    await tester.tap(find.byIcon(LucideIcons.check));
+    await tester.pump();
+    await tester.pump();
+    await tester.pump();
+
+    expect(find.text('hello from voice'), findsOneWidget);
+    expect(sent, isEmpty);
+    expect(hints, isEmpty);
+  });
+
+  testWidgets('tap dictation: arrow sends the transcript', (tester) async {
+    final sent = <String>[];
+    await tester.pumpWidget(MaterialApp(
+      home: Scaffold(
+        body: Align(
+          alignment: Alignment.bottomCenter,
+          child: InputBar(onSend: sent.add, voice: vm),
+        ),
+      ),
+    ));
+    await startTap(tester);
+    await tester.tap(find.byIcon(LucideIcons.arrowUp));
+    await tester.pump();
+    await tester.pump();
+    await tester.pump();
+
+    expect(sent, ['hello from voice']);
+    expect(find.byIcon(LucideIcons.mic600), findsOneWidget);
+  });
+
+  testWidgets('tap dictation: send while offline keeps the words', (tester) async {
+    final sent = <String>[];
+    Widget bar(bool disabled) => MaterialApp(
+      home: Scaffold(
+        body: Align(
+          alignment: Alignment.bottomCenter,
+          child: InputBar(onSend: sent.add, voice: vm, disabled: disabled),
+        ),
+      ),
+    );
+    await tester.pumpWidget(bar(false));
+    await startTap(tester);
+    await tester.pumpWidget(bar(true)); // relay drops mid-dictation
+    await tester.tap(find.byIcon(LucideIcons.arrowUp));
+    await tester.pump();
+    await tester.pump();
+    await tester.pump();
+    expect(sent, isEmpty);
+    expect(find.text('hello from voice'), findsOneWidget);
+  });
+
+  testWidgets('tap dictation: X discards', (tester) async {
+    await pumpBar(tester);
+    await startTap(tester);
+    await tester.tap(find.byIcon(LucideIcons.x));
+    await tester.pump();
+    await tester.pump();
+
+    expect(find.byKey(const Key('recording-strip')), findsNothing);
+    expect(find.text('hello from voice'), findsNothing);
+    expect(find.byIcon(LucideIcons.mic600), findsOneWidget);
   });
 
   testWidgets('unsupported hides the mic', (tester) async {

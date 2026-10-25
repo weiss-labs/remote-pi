@@ -19,7 +19,11 @@ class RecordingStrip extends StatefulWidget {
     required this.elapsed,
     required this.maxDuration,
     this.cancelArmed = false,
+    this.showSlideHint = true,
   });
+
+  /// Weiss Labs: tap-to-dictate mode has explicit buttons, so no slide hint.
+  final bool showSlideHint;
 
   /// `0..1` amplitude envelope (volume, not a spectrum).
   final double level;
@@ -134,8 +138,10 @@ class _RecordingStripState extends State<RecordingStrip>
                   mainAxisAlignment: MainAxisAlignment.center,
                   children: [
                     Expanded(child: _Waveform(samples: _samples.toList())),
-                    const SizedBox(width: 10),
-                    const _SlideToCancelHint(),
+                    if (widget.showSlideHint) ...[
+                      const SizedBox(width: 10),
+                      const _SlideToCancelHint(),
+                    ],
                   ],
                 ),
         ),
