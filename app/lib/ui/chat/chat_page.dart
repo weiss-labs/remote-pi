@@ -49,12 +49,16 @@ class ChatPage extends StatelessWidget {
   /// arrow; defaults to `true` for the phone full-screen route.
   final bool showBack;
 
+  /// Host integration opens the Mac-backed live session after this user tap.
+  final VoidCallback? onStartVoiceLive;
+
   const ChatPage({
     super.key,
     this.initialTitle,
     this.initialDevice,
     this.initialOnline = false,
     this.showBack = true,
+    this.onStartVoiceLive,
   });
 
   @override
@@ -148,7 +152,11 @@ class ChatPage extends StatelessWidget {
     final leaf = roomName.split('›').last.replaceAll('_', ' ').trim();
     final footer = PaneFooter.parse(room?.footer);
     final model = footer?.model ?? room?.model;
-    final meta = TextStyle(fontFamily: kMonoFamily, fontSize: 10, color: colors.muted);
+    final meta = TextStyle(
+      fontFamily: kMonoFamily,
+      fontSize: 10,
+      color: colors.muted,
+    );
     final statusColor = isWorking
         ? colors.working
         : isReconnecting
@@ -180,7 +188,11 @@ class ChatPage extends StatelessWidget {
             children: [
               if (showBack)
                 IconButton(
-                  icon: Icon(LucideIcons.chevronLeft, size: 18, color: colors.text),
+                  icon: Icon(
+                    LucideIcons.chevronLeft,
+                    size: 18,
+                    color: colors.text,
+                  ),
                   tooltip: 'Back',
                   onPressed: () =>
                       context.canPop() ? context.pop() : context.go('/home'),
@@ -213,22 +225,32 @@ class ChatPage extends StatelessWidget {
                           SizedBox(
                             width: 8,
                             height: 8,
-                            child: CircularProgressIndicator(strokeWidth: 1.4, color: statusColor),
+                            child: CircularProgressIndicator(
+                              strokeWidth: 1.4,
+                              color: statusColor,
+                            ),
                           )
                         else
                           Container(
                             width: 7,
                             height: 7,
-                            decoration: BoxDecoration(shape: BoxShape.circle, color: statusColor),
+                            decoration: BoxDecoration(
+                              shape: BoxShape.circle,
+                              color: statusColor,
+                            ),
                           ),
                         const SizedBox(width: 5),
-                        Text(statusLabel, style: meta.copyWith(color: statusColor)),
+                        Text(
+                          statusLabel,
+                          style: meta.copyWith(color: statusColor),
+                        ),
                         Flexible(
                           child: Text(
                             [
                               if (model != null && model.isNotEmpty) model,
                               if (footer?.thinking != null) footer!.thinking!,
-                              if (ctxPct != null) 'ctx ${ctxPct.toStringAsFixed(ctxPct < 10 ? 1 : 0)}%',
+                              if (ctxPct != null)
+                                'ctx ${ctxPct.toStringAsFixed(ctxPct < 10 ? 1 : 0)}%',
                             ].map((p) => '  ·  $p').join(),
                             maxLines: 1,
                             overflow: TextOverflow.ellipsis,
@@ -438,6 +460,7 @@ class ChatPage extends StatelessWidget {
         !isPresenceOffline;
 
     return InputBar(
+      onStartVoiceLive: onStartVoiceLive,
       disabled:
           !isReady ||
           isOffline ||
