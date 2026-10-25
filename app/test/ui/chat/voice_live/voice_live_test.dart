@@ -8,23 +8,17 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'fake_voice_live_session.dart';
 
-VoiceApproval draft({String hash = 'v1', String? body}) => VoiceApproval(
+VoiceDraft draft({String hash = 'v1', String? body}) => VoiceDraft(
   id: 'approval-1',
-  toolName: 'send_email',
-  args: const {'account': 'demo@example.com'},
-  draft: VoiceDraft(
-    hash: hash,
-    to: const ['recipient@example.com'],
-    cc: const ['copy@example.com'],
-    subject: 'Synthetic review draft',
-    body:
-        body ??
-        List.generate(
-          60,
-          (i) => 'Line $i: the exact message must be reviewed.',
-        ).join('\n'),
-    attachments: const ['proposal.pdf'],
-  ),
+  hash: hash,
+  title: 'EMAIL DRAFT',
+  raw:
+      'To: recipient@example.com\nCc: copy@example.com\nSubject: Synthetic review draft\n\n${body ?? List.generate(60, (i) => 'Line $i: the exact message must be reviewed.').join('\n')}',
+  eligible: true,
+  seen: false,
+  attachments: const [
+    VoiceDraftAttachment(id: 'a1', name: 'proposal.pdf', size: 42000, mime: 'application/pdf'),
+  ],
 );
 
 class _DelayedSession extends FakeVoiceLiveSession {
@@ -40,7 +34,7 @@ void main() {
   Future<void> card(
     WidgetTester t,
     FakeVoiceLiveSession s,
-    VoiceApproval a,
+    Object a,
   ) async {
     await t.pumpWidget(
       MaterialApp(
@@ -50,7 +44,9 @@ void main() {
             child: SizedBox(
               width: 390,
               height: 550,
-              child: VoiceApprovalCard(approval: a, session: s),
+              child: a is VoiceDraft
+                  ? VoiceApprovalCard(draft: a, session: s)
+                  : VoiceApprovalCard(tool: a as VoiceToolApproval, session: s),
             ),
           ),
         ),
@@ -97,7 +93,8 @@ void main() {
       expect(s.seen, [('approval-1', 'v1')]);
       await t.tap(find.text('Send this exact draft'));
       await t.pump();
-      expect(s.decisions, [('approval-1', true)]);
+      expect(s.confirms, 1);
+      expect(s.decisions, isEmpty);
       await card(t, s, draft(hash: 'v2'));
       expect(s.seen.length, 1);
       expect(
@@ -119,9 +116,10 @@ void main() {
       await t.pump();
       expect(s.seen, [('approval-1', 'v1')]);
       expect(s.decisions, isEmpty);
-      await t.tap(find.text('Deny'));
+      await t.tap(find.text('Not now'));
       await t.pump();
-      expect(s.decisions, [('approval-1', false)]);
+      expect(s.decisions, isEmpty);
+      expect(s.confirms, 0);
       await t.pump();
       expect(s.seen.length, 1);
     },
@@ -134,10 +132,11 @@ void main() {
     await card(
       t,
       s,
-      const VoiceApproval(
+      const VoiceToolApproval(
         id: 'tool-7',
-        toolName: 'bash',
-        args: {'command': 'pwd'},
+        tool: 'bash',
+        args: '{\n  "command": "pwd"\n}',
+        title: 'Allow bash once?',
       ),
     );
     expect(find.textContaining('"command": "pwd"'), findsOneWidget);

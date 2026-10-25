@@ -31,6 +31,7 @@ class _VoiceLivePageState extends State<VoiceLivePage> {
   final _chat = ScrollController();
   VoiceLivePhase? _previous;
   String? _actionError;
+  final Set<String> _dismissedDrafts = {};
   bool _pending = false;
   bool _leaving = false;
   double _backDrag = 0;
@@ -159,7 +160,9 @@ class _VoiceLivePageState extends State<VoiceLivePage> {
   Widget _buildVoice(BuildContext context) {
     final s = widget.session;
     final c = context.colors;
-    final a = s.pendingApproval;
+    final tool = s.pendingApproval;
+    final draft = s.draft;
+    final showDraft = draft != null && !_dismissedDrafts.contains('${draft.id}:${draft.hash}');
     final time =
         '${s.elapsed.inMinutes.toString().padLeft(2, '0')}:${(s.elapsed.inSeconds % 60).toString().padLeft(2, '0')}';
     final phase =
@@ -241,13 +244,17 @@ class _VoiceLivePageState extends State<VoiceLivePage> {
                     ),
                   ),
                   Expanded(
-                    child: a != null && _live
+                    // A tool approval wins; a draft shows until it is confirmed
+                    // or set aside (the transcript then shows the result).
+                    child: (tool != null || showDraft) && _live
                         ? Padding(
                             padding: const EdgeInsets.fromLTRB(18, 12, 18, 8),
                             child: VoiceApprovalCard(
-                              key: ValueKey('${a.id}:${a.draft?.hash}'),
-                              approval: a,
+                              key: ValueKey(tool != null ? 'tool:${tool.id}' : 'draft:${draft!.id}:${draft.hash}'),
+                              tool: tool,
+                              draft: tool == null ? draft : null,
                               session: s,
+                              onDismissDraft: () => setState(() => _dismissedDrafts.add('${draft!.id}:${draft.hash}')),
                             ),
                           )
                         : ListView.builder(
@@ -256,7 +263,7 @@ class _VoiceLivePageState extends State<VoiceLivePage> {
                             itemCount: s.items.length,
                             itemBuilder: (context, i) {
                               final item = s.items[i];
-                              final user = item.speaker == 'Zach';
+                              final user = item.kind == VoiceLiveItemKind.zach || item.kind == VoiceLiveItemKind.typed;
                               final status =
                                   item.kind == VoiceLiveItemKind.backend ||
                                   item.kind == VoiceLiveItemKind.notice;
@@ -299,13 +306,9 @@ class _VoiceLivePageState extends State<VoiceLivePage> {
                                                     decoration: BoxDecoration(
                                                       shape: BoxShape.circle,
                                                       color:
-                                                          item.text.contains(
-                                                            'failed',
-                                                          )
+                                                          item.status == 'failed' || item.status == 'cancelled'
                                                           ? c.error
-                                                          : item.text.contains(
-                                                              'done',
-                                                            )
+                                                          : item.status == 'done'
                                                           ? c.success
                                                           : c.accent,
                                                     ),
@@ -323,7 +326,7 @@ class _VoiceLivePageState extends State<VoiceLivePage> {
                                               ],
                                             )
                                           : Semantics(
-                                              label: item.speaker,
+                                              label: user ? 'Zach' : 'Voice',
                                               child: Text(
                                                 item.text,
                                                 style: context.typo.sansBody,

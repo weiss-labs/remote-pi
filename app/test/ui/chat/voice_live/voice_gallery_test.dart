@@ -109,21 +109,21 @@ void main() {
         s.items = [
           const VoiceLiveItem(
             id: '1',
-            speaker: 'Zach',
+            kind: VoiceLiveItemKind.zach,
             text: 'Check the preview and tell me what still needs work.',
           ),
           const VoiceLiveItem(
             id: '2',
-            speaker: 'Voice',
+            kind: VoiceLiveItemKind.voice,
             text:
                 'I’ll check the preview in your scratch pane. You can keep talking while I work.',
           ),
           if (phase == VoiceLivePhase.working)
             const VoiceLiveItem(
               id: '3',
-              speaker: 'Pi',
-              text: '◦ working on it…',
+              text: 'Working in Pi',
               kind: VoiceLiveItemKind.backend,
+              status: 'working',
             ),
         ];
       }
@@ -140,27 +140,28 @@ void main() {
     for (final isDraft in [false, true]) {
       final s = FakeVoiceLiveSession()
         ..phase = VoiceLivePhase.working
-        ..pendingApproval = VoiceApproval(
-          id: 'approval',
-          toolName: isDraft ? 'gmail.send_draft' : 'bash',
-          args: isDraft
-              ? const {'draftId': 'synthetic-draft-01'}
-              : const {
-                  'command': 'flutter test',
-                  'cwd': '/projects/remote-pi/app',
-                },
-          draft: isDraft
-              ? const VoiceDraft(
-                  hash: 'synthetic-hash',
-                  to: ['alex@example.com'],
-                  cc: ['review@example.com'],
-                  subject: 'Preview ready for your review',
-                  body:
-                      'Hi Alex,\n\nThe updated preview is ready. The voice screen now shows the live session cost and keeps the exact approval text visible.\n\nPlease review the attached notes before we schedule the next test. Nothing has been sent or deployed.\n\nZach',
-                  attachments: ['preview-notes.pdf (42 KB)'],
-                )
-              : null,
-        );
+        ..pendingApproval = isDraft
+            ? null
+            : const VoiceToolApproval(
+                id: 'approval',
+                tool: 'bash',
+                args: '{\n  "command": "flutter test",\n  "cwd": "/projects/remote-pi/app"\n}',
+                title: 'Allow bash once?',
+              )
+        ..draft = isDraft
+            ? const VoiceDraft(
+                id: 'draft-1',
+                hash: 'synthetic-hash',
+                title: 'EMAIL DRAFT',
+                raw:
+                    'To: alex@example.com\nCc: review@example.com\nSubject: Preview ready for your review\n\nHi Alex,\n\nThe updated preview is ready. The voice screen now shows the live session cost and keeps the exact approval text visible.\n\nPlease review the attached notes before we schedule the next test. Nothing has been sent or deployed.\n\nZach',
+                eligible: true,
+                seen: false,
+                attachments: [
+                  VoiceDraftAttachment(id: 'att-1', name: 'preview-notes.pdf', size: 43008, mime: 'application/pdf'),
+                ],
+              )
+            : null;
       await capture(
         isDraft ? 'draft' : 'approval',
         VoiceLivePage(

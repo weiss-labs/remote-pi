@@ -1,3 +1,6 @@
+import 'package:app/ui/chat/voice_live/voice_live_page.dart';
+import 'package:app/data/voice_live/voice_live_controller.dart';
+import 'dart:async';
 import 'package:app/config/dependencies.dart';
 import 'package:app/data/mesh/mesh_sync_service.dart';
 import 'package:app/data/preferences/preferences.dart';
@@ -364,6 +367,7 @@ GoRouter buildRouter(
               initialTitle: initialTitle,
               initialDevice: initialDevice,
               initialOnline: initialOnline,
+              onStartVoiceLive: () => _openVoiceLive(ctx, initialTitle),
             ),
           );
         },
@@ -405,6 +409,7 @@ class _DetailPane extends StatelessWidget {
         initialDevice: sel.current!.device.isEmpty ? null : sel.current!.device,
         initialOnline: sel.current!.online,
         showBack: false,
+        onStartVoiceLive: () => _openVoiceLive(context, sel.current!.title),
       ),
     );
   }
@@ -429,4 +434,26 @@ class _BootSplash extends StatelessWidget {
       ),
     );
   }
+}
+
+/// Plan 71 — Pi Voice on the phone. Only from an explicit tap on the voice
+/// button: one fresh call for the open pane, started once, and ended (the
+/// paid session stopped on the Mac) when the screen closes.
+Future<void> _openVoiceLive(BuildContext context, String? title) async {
+  final pane = (title ?? '').split('›').last.replaceAll('_', ' ').trim();
+  final session = injector.get<VoiceLiveFactory>().create();
+  final nav = Navigator.of(context, rootNavigator: true);
+  unawaited(session.start());
+  await nav.push(
+    MaterialPageRoute<void>(
+      fullscreenDialog: true,
+      builder: (_) => VoiceLivePage(
+        session: session,
+        paneName: pane.isEmpty ? 'Pi' : pane,
+        // ponytail: no wakelock plugin yet; background audio keeps the call alive when the screen locks.
+        keepAwake: (_) async {},
+      ),
+    ),
+  );
+  if (session is ChangeNotifier) (session as ChangeNotifier).dispose();
 }

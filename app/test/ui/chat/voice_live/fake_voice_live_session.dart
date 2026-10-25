@@ -9,7 +9,14 @@ class FakeVoiceLiveSession extends ChangeNotifier implements VoiceLiveSession {
   @override
   List<VoiceLiveItem> items = [];
   @override
-  VoiceApproval? pendingApproval;
+  VoiceToolApproval? pendingApproval;
+  @override
+  VoiceDraft? draft;
+  @override
+  String label = 'Remote Pi / Scratch pane';
+  @override
+  double ratePerMinute = 0.05;
+  int confirms = 0;
   @override
   double micLevel = .35;
   @override
@@ -67,4 +74,13 @@ class FakeVoiceLiveSession extends ChangeNotifier implements VoiceLiveSession {
   Future<void> cancelWork() async {
     cancels++;
   }
+
+  @override
+  Future<void> confirmDraft() async {
+    confirms++;
+  }
+
+  @override
+  Future<({Uint8List bytes, String mime})> attachment(String draftId, String attachmentId) async =>
+      (bytes: Uint8List(0), mime: 'application/pdf');
 }
