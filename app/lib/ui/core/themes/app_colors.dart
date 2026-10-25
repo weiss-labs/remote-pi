@@ -40,6 +40,8 @@ class AppColors extends ThemeExtension<AppColors> {
     required this.toolErrorBg,
     required this.codeAccent,
     required this.link,
+    required this.gaugeOk,
+    required this.gaugeWarn,
   });
 
   /// App background (scaffold). Was `kBg`.
@@ -120,6 +122,12 @@ class AppColors extends ThemeExtension<AppColors> {
   /// Weiss Labs: Markdown links. Pi dark theme mdLink.
   final Color link;
 
+  /// Weiss Labs: Usage gauge with room left. Pi dark theme success.
+  final Color gaugeOk;
+
+  /// Weiss Labs: Usage gauge running low. Pi dark theme warning.
+  final Color gaugeWarn;
+
   /// Dark palette (default). Mirrors the original `app_theme.dart` constants.
   /// Dark palette. Weiss Labs: matches Zach's terminal, Ghostty ayu-dark
   /// background with Herdr's "vesper" chrome (peach accent, mint green,
@@ -150,6 +158,8 @@ class AppColors extends ThemeExtension<AppColors> {
     toolErrorBg: Color(0xFF5B282A),
     codeAccent: Color(0xFFA798D7),
     link: Color(0xFF69ADD0),
+    gaugeOk: Color(0xFF68B78D),
+    gaugeWarn: Color(0xFFCD9A22),
   );
 
   /// Light palette — derived from [dark]. Foreground tints are tuned for
@@ -183,6 +193,8 @@ class AppColors extends ThemeExtension<AppColors> {
     toolErrorBg: Color(0xFFF8E1E1),
     codeAccent: Color(0xFF6A4FB5),
     link: Color(0xFF0077A3),
+    gaugeOk: Color(0xFF1E7A41),
+    gaugeWarn: Color(0xFF9A6300),
   );
 
   @override
@@ -212,6 +224,8 @@ class AppColors extends ThemeExtension<AppColors> {
     Color? toolErrorBg,
     Color? codeAccent,
     Color? link,
+    Color? gaugeOk,
+    Color? gaugeWarn,
   }) {
     return AppColors(
       bg: bg ?? this.bg,
@@ -239,6 +253,8 @@ class AppColors extends ThemeExtension<AppColors> {
       toolErrorBg: toolErrorBg ?? this.toolErrorBg,
       codeAccent: codeAccent ?? this.codeAccent,
       link: link ?? this.link,
+      gaugeOk: gaugeOk ?? this.gaugeOk,
+      gaugeWarn: gaugeWarn ?? this.gaugeWarn,
     );
   }
 
@@ -271,6 +287,8 @@ class AppColors extends ThemeExtension<AppColors> {
       toolErrorBg: Color.lerp(toolErrorBg, other.toolErrorBg, t)!,
       codeAccent: Color.lerp(codeAccent, other.codeAccent, t)!,
       link: Color.lerp(link, other.link, t)!,
+      gaugeOk: Color.lerp(gaugeOk, other.gaugeOk, t)!,
+      gaugeWarn: Color.lerp(gaugeWarn, other.gaugeWarn, t)!,
     );
   }
 }

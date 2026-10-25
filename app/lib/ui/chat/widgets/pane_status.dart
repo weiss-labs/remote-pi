@@ -33,9 +33,18 @@ class PaneFooter {
 }
 
 class PaneUsage {
-  const PaneUsage({required this.provider, required this.windows});
+  const PaneUsage({
+    required this.provider,
+    required this.windows,
+    this.email,
+    this.extra,
+  });
 
   final String provider;
+  final String? email;
+
+  /// Codex reserve credits ("+62,500 credits"), shown in the header line.
+  final String? extra;
   final List<UsageWindow> windows;
 
   factory PaneUsage.fromJson(Map<String, dynamic> j) {
@@ -46,7 +55,12 @@ class PaneUsage {
     // Same order as the desktop widget: session, weekly, then model caps.
     int rank(UsageWindow w) => w.label == '5h' ? 0 : w.label == 'weekly' ? 1 : 2;
     windows.sort((a, b) => rank(a).compareTo(rank(b)));
-    return PaneUsage(provider: j['provider'] as String? ?? '', windows: windows);
+    return PaneUsage(
+      provider: j['provider'] as String? ?? '',
+      email: j['email'] as String?,
+      extra: j['extra'] as String?,
+      windows: windows,
+    );
   }
 }
 
@@ -73,8 +87,10 @@ class UsageWindow {
       : label;
 }
 
-/// The desktop "gas gauges": one line per usage window, bar drains as the
-/// window is used. Green above 50% left, amber to 20%, red below.
+/// The desktop "gas gauges", laid out like Pi's subscription widget in Herdr:
+/// a dark band with "Provider · email", then one row per window:
+/// `Session  84% left · resets 3:30 PM  [█████░░]`. Green above 50% left,
+/// amber to 20%, red below.
 class UsageGauges extends StatelessWidget {
   const UsageGauges(this.usage, {super.key});
 
@@ -83,64 +99,94 @@ class UsageGauges extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final colors = context.colors;
-    final label = TextStyle(fontFamily: kMonoFamily, fontSize: 10, color: colors.muted);
-    return Column(
-      mainAxisSize: MainAxisSize.min,
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        for (final w in usage.windows)
-          Padding(
-            padding: const EdgeInsets.only(top: 3),
-            child: Row(
+    final base = TextStyle(fontFamily: kMonoFamily, fontSize: 10.5, height: 1.35, color: colors.muted);
+    final header = [
+      usage.provider,
+      if (usage.email != null && usage.email!.isNotEmpty) usage.email!,
+      if (usage.extra != null && usage.extra!.isNotEmpty) usage.extra!,
+    ].join(' · ');
+    return Container(
+      color: colors.surface,
+      padding: const EdgeInsets.fromLTRB(8, 4, 8, 5),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Text(header, maxLines: 1, overflow: TextOverflow.ellipsis, style: base),
+          for (final w in usage.windows)
+            Row(
               children: [
                 SizedBox(
-                  width: 76,
-                  child: Text(
-                    '${usage.provider} ${w.name}',
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: label,
-                  ),
+                  width: 58,
+                  child: Text(w.name, maxLines: 1, overflow: TextOverflow.ellipsis, style: base),
                 ),
                 Expanded(
-                  child: ClipRRect(
-                    borderRadius: BorderRadius.circular(3),
-                    child: LinearProgressIndicator(
-                      value: (w.leftPercent ?? 0) / 100,
-                      minHeight: 6,
-                      backgroundColor: colors.border,
-                      color: _color(colors, w.leftPercent),
+                  child: FittedBox(
+                    fit: BoxFit.scaleDown,
+                    alignment: Alignment.centerLeft,
+                    child: Text(
+                      [
+                        w.leftPercent == null ? '--% left' : '${w.leftPercent!.round()}% left',
+                        if (w.resetsAt != null) 'resets ${_reset(w.resetsAt!)}',
+                      ].join(' · '),
+                      style: base.copyWith(color: _color(colors, w.leftPercent)),
                     ),
                   ),
                 ),
-                const SizedBox(width: 8),
-                Text(
-                  [
-                    w.leftPercent == null ? '--%' : '${w.leftPercent!.round()}%',
-                    if (w.resetsAt != null) _reset(w.resetsAt!),
-                  ].join(' · '),
-                  style: label.copyWith(color: _color(colors, w.leftPercent)),
-                ),
+                const SizedBox(width: 6),
+                _BlockBar(left: w.leftPercent, color: _color(colors, w.leftPercent), style: base),
               ],
             ),
-          ),
-      ],
+        ],
+      ),
     );
   }
 
   static Color _color(AppColors colors, double? left) => left == null || left <= 20
       ? colors.error
       : left <= 50
-      ? colors.warning
-      : colors.success;
+      ? colors.gaugeWarn
+      : colors.gaugeOk;
 
+  /// "3:30 PM" today, else "Mon, Oct 26, 7:00 PM" (the desktop's format).
   static String _reset(DateTime at) {
     final now = DateTime.now();
     final h = at.hour % 12 == 0 ? 12 : at.hour % 12;
-    final time = '$h:${at.minute.toString().padLeft(2, '0')}${at.hour < 12 ? 'a' : 'p'}';
-    final sameDay = at.year == now.year && at.month == now.month && at.day == now.day;
-    if (sameDay) return time;
+    final time = '$h:${at.minute.toString().padLeft(2, '0')} ${at.hour < 12 ? 'AM' : 'PM'}';
+    if (at.year == now.year && at.month == now.month && at.day == now.day) return time;
     const days = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
-    return '${days[at.weekday - 1]} $time';
+    const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+    return '${days[at.weekday - 1]}, ${months[at.month - 1]} ${at.day}, $time';
+  }
+}
+
+/// `[█████░░]` — a square-cornered battery that drains right to left.
+class _BlockBar extends StatelessWidget {
+  const _BlockBar({required this.left, required this.color, required this.style});
+
+  final double? left;
+  final Color color;
+  final TextStyle style;
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Text('[', style: style),
+        Container(
+          width: 64,
+          height: 11,
+          color: context.colors.toolPendingBg,
+          alignment: Alignment.centerLeft,
+          child: FractionallySizedBox(
+            widthFactor: ((left ?? 0) / 100).clamp(0.0, 1.0),
+            heightFactor: 1,
+            child: ColoredBox(color: color),
+          ),
+        ),
+        Text(']', style: style),
+      ],
+    );
   }
 }

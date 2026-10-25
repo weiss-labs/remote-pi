@@ -13,6 +13,10 @@ void main() {
     expect(f.thinking, 'high');
     expect(f.usage!.windows.map((w) => w.name), ['Session', 'Weekly']);
     expect(f.usage!.windows.first.resetsAt, isNull);
+    final codex = PaneFooter.parse(
+      '{"v":1,"usage":{"provider":"Codex","email":"a@b.c","extra":"+62,500 credits","windows":[]}}',
+    )!.usage!;
+    expect([codex.email, codex.extra], ['a@b.c', '+62,500 credits']);
     expect(PaneFooter.parse('↑7.9M ↓1.0M CH99.9% 33.6%/1.0M\ngpt-6-astra'), isNull);
     expect(PaneFooter.parse(null), isNull);
   });

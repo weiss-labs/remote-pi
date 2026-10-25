@@ -257,7 +257,7 @@ class ChatPage extends StatelessWidget {
           ),
           if (usage != null && usage.windows.isNotEmpty)
             Padding(
-              padding: const EdgeInsets.fromLTRB(14, 0, 14, 0),
+              padding: const EdgeInsets.fromLTRB(10, 2, 10, 0),
               child: UsageGauges(usage),
             ),
         ],
