@@ -7,6 +7,7 @@ export PATH="$PATH:/opt/homebrew/bin"
 cd "$(dirname "$0")"
 KID=FGFLZS5W6P ISS=b6926eb3-70a0-4d92-8d12-7f8b07d2c861
 NUM=${1:-$(node --input-type=module -e "import {api} from '$HOME/.appstoreconnect/tools/asc.mjs';const b=(await api('GET','/v1/builds?filter[app]=6826925709&sort=-uploadedDate&limit=1')).data[0];console.log(Number(b?.attributes.version??8)+1)")}
+node ../scripts/testflight-release.mjs --check  # nobody but Zach can receive it
 OUT=/tmp/rp-tf-$NUM; rm -rf "$OUT"; mkdir -p "$OUT"
 flutter build ios --release --no-codesign --build-number "$NUM"
 xcodebuild -workspace ios/Runner.xcworkspace -scheme Runner -configuration Release -destination 'generic/platform=iOS' -archivePath "$OUT/a.xcarchive" archive -quiet
