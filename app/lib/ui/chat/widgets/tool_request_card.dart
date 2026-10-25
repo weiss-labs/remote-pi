@@ -28,7 +28,7 @@ class ToolRequestCard extends StatelessWidget {
     final colors = context.colors;
     return switch (tool.status) {
       ToolEventStatus.pending || ToolEventStatus.allowed => colors.accent,
-      ToolEventStatus.completed => colors.success,
+      ToolEventStatus.completed => colors.gaugeOk,
       ToolEventStatus.failed => colors.error,
       ToolEventStatus.denied || ToolEventStatus.expired => colors.muted,
     };
@@ -54,11 +54,8 @@ class ToolRequestCard extends StatelessWidget {
     return Opacity(
       opacity: dimmed ? 0.65 : 1.0,
       child: Container(
-        decoration: BoxDecoration(
-          color: fill,
-          borderRadius: BorderRadius.circular(8),
-        ),
-        padding: const EdgeInsets.all(14),
+        decoration: BoxDecoration(color: fill, borderRadius: BorderRadius.zero),
+        padding: const EdgeInsets.all(12),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           mainAxisSize: MainAxisSize.min,
@@ -117,12 +114,8 @@ class ToolRequestCard extends StatelessWidget {
     final colors = context.colors;
     final typo = context.typo;
     final content = _buildToolSummary(context);
-    return Container(
-      decoration: BoxDecoration(
-        color: colors.bg.withValues(alpha: 0.35),
-        borderRadius: BorderRadius.circular(6),
-      ),
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 2),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [

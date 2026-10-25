@@ -76,7 +76,7 @@ class AppTypography extends ThemeExtension<AppTypography> {
     return AppTypography(
       mono: TextStyle(
         fontFamily: kMonoFamily,
-        fontSize: 12.5,
+        fontSize: 13,
         color: monoColor,
         height: 1.5,
         letterSpacing: 0,
@@ -91,19 +91,23 @@ class AppTypography extends ThemeExtension<AppTypography> {
         fontFamily: kSansFamily,
         fontSize: 14.0,
         color: c.text,
-        height: 1.35,
-        letterSpacing: -0.1,
+        height: 1.5,
+        letterSpacing: 0,
       ),
     );
   }
 
   /// Dark typography — mono text matches the original `0xFFE6E6E6`.
-  static final AppTypography dark =
-      AppTypography.fromColors(AppColors.dark, monoColor: const Color(0xFFE6E6E6));
+  static final AppTypography dark = AppTypography.fromColors(
+    AppColors.dark,
+    monoColor: AppColors.dark.text,
+  );
 
   /// Light typography — mono text is a near-black for contrast on white.
-  static final AppTypography light =
-      AppTypography.fromColors(AppColors.light, monoColor: const Color(0xFF1A1A1A));
+  static final AppTypography light = AppTypography.fromColors(
+    AppColors.light,
+    monoColor: const Color(0xFF1A1A1A),
+  );
 
   @override
   AppTypography copyWith({

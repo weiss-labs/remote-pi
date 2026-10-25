@@ -42,6 +42,7 @@ class AppColors extends ThemeExtension<AppColors> {
     required this.link,
     required this.gaugeOk,
     required this.gaugeWarn,
+    required this.editorBorder,
   });
 
   /// App background (scaffold). Was `kBg`.
@@ -128,17 +129,20 @@ class AppColors extends ThemeExtension<AppColors> {
   /// Weiss Labs: Usage gauge running low. Pi dark theme warning.
   final Color gaugeWarn;
 
+  /// Pi editor rules, separate from quiet structural dividers.
+  final Color editorBorder;
+
   /// Dark palette (default). Mirrors the original `app_theme.dart` constants.
   /// Dark palette. Weiss Labs: matches Zach's terminal, Ghostty ayu-dark
   /// background with Herdr's "vesper" chrome (peach accent, mint green,
   /// soft red, teal) so the phone looks like the desk.
   static const AppColors dark = AppColors(
     bg: Color(0xFF0B0E14),
-    surface: Color(0xFF1A1A1A),
-    border: Color(0xFF282828),
-    text: Color(0xFFFFFFFF),
-    muted: Color(0xFFA0A0A0),
-    muted2: Color(0xFF7E7E7E),
+    surface: Color(0xFF1E232B),
+    border: Color(0xFF29313A),
+    text: Color(0xFFDEE0E1),
+    muted: Color(0xFF9DA5A9),
+    muted2: Color(0xFF7E888E),
     accent: Color(0xFFFFC799),
     onAccent: Color(0xFF000000),
     highlight: Color(0xFFFFD1A8),
@@ -146,13 +150,13 @@ class AppColors extends ThemeExtension<AppColors> {
     error: Color(0xFFFF8080),
     warning: Color(0xFFFFC799),
     working: Color(0xFF66DDCC),
-    codeBg: Color(0xFF101010),
+    codeBg: Color(0xFF10151D),
     userBubble: Color(0xFF213B49), // Pi dark theme userMessageBg
     modelBadgeBg: Color(0xFF1A1A1A),
     modelBadgeBorder: Color(0xFF282828),
     denyBorder: Color(0xFF5C5C5C),
-    inputFill: Color(0xFF161616),
-    heading: Color(0xFFE6B450),
+    inputFill: Color(0xFF10151D),
+    heading: Color(0xFFCD9A22),
     toolPendingBg: Color(0xFF34383A),
     toolSuccessBg: Color(0xFF254131),
     toolErrorBg: Color(0xFF5B282A),
@@ -160,6 +164,7 @@ class AppColors extends ThemeExtension<AppColors> {
     link: Color(0xFF69ADD0),
     gaugeOk: Color(0xFF68B78D),
     gaugeWarn: Color(0xFFCD9A22),
+    editorBorder: Color(0xFF5FA8CC),
   );
 
   /// Light palette — derived from [dark]. Foreground tints are tuned for
@@ -195,6 +200,7 @@ class AppColors extends ThemeExtension<AppColors> {
     link: Color(0xFF0077A3),
     gaugeOk: Color(0xFF1E7A41),
     gaugeWarn: Color(0xFF9A6300),
+    editorBorder: Color(0xFF28789F),
   );
 
   @override
@@ -226,6 +232,7 @@ class AppColors extends ThemeExtension<AppColors> {
     Color? link,
     Color? gaugeOk,
     Color? gaugeWarn,
+    Color? editorBorder,
   }) {
     return AppColors(
       bg: bg ?? this.bg,
@@ -255,6 +262,7 @@ class AppColors extends ThemeExtension<AppColors> {
       link: link ?? this.link,
       gaugeOk: gaugeOk ?? this.gaugeOk,
       gaugeWarn: gaugeWarn ?? this.gaugeWarn,
+      editorBorder: editorBorder ?? this.editorBorder,
     );
   }
 
@@ -278,7 +286,11 @@ class AppColors extends ThemeExtension<AppColors> {
       codeBg: Color.lerp(codeBg, other.codeBg, t)!,
       userBubble: Color.lerp(userBubble, other.userBubble, t)!,
       modelBadgeBg: Color.lerp(modelBadgeBg, other.modelBadgeBg, t)!,
-      modelBadgeBorder: Color.lerp(modelBadgeBorder, other.modelBadgeBorder, t)!,
+      modelBadgeBorder: Color.lerp(
+        modelBadgeBorder,
+        other.modelBadgeBorder,
+        t,
+      )!,
       denyBorder: Color.lerp(denyBorder, other.denyBorder, t)!,
       inputFill: Color.lerp(inputFill, other.inputFill, t)!,
       heading: Color.lerp(heading, other.heading, t)!,
@@ -289,6 +301,7 @@ class AppColors extends ThemeExtension<AppColors> {
       link: Color.lerp(link, other.link, t)!,
       gaugeOk: Color.lerp(gaugeOk, other.gaugeOk, t)!,
       gaugeWarn: Color.lerp(gaugeWarn, other.gaugeWarn, t)!,
+      editorBorder: Color.lerp(editorBorder, other.editorBorder, t)!,
     );
   }
 }

@@ -361,10 +361,13 @@ class _InputBarState extends State<InputBar> {
         widget.onCancel != null;
 
     return Container(
-      padding: const EdgeInsets.fromLTRB(14, 10, 14, 22),
+      padding: const EdgeInsets.fromLTRB(16, 8, 16, 12),
       decoration: BoxDecoration(
         color: colors.bg,
-        border: Border(top: BorderSide(color: colors.border)),
+        border: Border(
+          top: BorderSide(color: colors.editorBorder, width: 0.5),
+          bottom: BorderSide(color: colors.editorBorder, width: 0.5),
+        ),
       ),
       child: Stack(
         children: [
@@ -441,21 +444,21 @@ class _InputBarState extends State<InputBar> {
                         filled: true,
                         fillColor: colors.inputFill,
                         border: OutlineInputBorder(
-                          borderRadius: BorderRadius.circular(19),
+                          borderRadius: BorderRadius.circular(4),
                           borderSide: BorderSide(color: colors.border),
                         ),
                         enabledBorder: OutlineInputBorder(
-                          borderRadius: BorderRadius.circular(19),
+                          borderRadius: BorderRadius.circular(4),
                           borderSide: BorderSide(color: colors.border),
                         ),
                         disabledBorder: OutlineInputBorder(
-                          borderRadius: BorderRadius.circular(19),
+                          borderRadius: BorderRadius.circular(4),
                           borderSide: BorderSide(
                             color: colors.border.withValues(alpha: 0.5),
                           ),
                         ),
                         focusedBorder: OutlineInputBorder(
-                          borderRadius: BorderRadius.circular(19),
+                          borderRadius: BorderRadius.circular(4),
                           borderSide: BorderSide(
                             color: colors.accent,
                             width: 1.2,
@@ -671,11 +674,11 @@ class _InlineStopButton extends StatelessWidget {
       key: const Key('input-bar-inline-stop'),
       onTap: onTap,
       child: Container(
-        width: 38,
-        height: 38,
+        width: 44,
+        height: 44,
         decoration: BoxDecoration(
           color: colors.error.withValues(alpha: 0.14),
-          borderRadius: BorderRadius.circular(19),
+          borderRadius: BorderRadius.circular(4),
           border: Border.all(color: colors.error.withValues(alpha: 0.55)),
         ),
         child: Icon(LucideIcons.square600, color: colors.error, size: 18),
@@ -696,8 +699,8 @@ class _AttachButton extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return SizedBox(
-      width: 32,
-      height: 32,
+      width: 44,
+      height: 44,
       child: IconButton(
         key: const Key('input-bar-attach'),
         padding: EdgeInsets.zero,
@@ -797,14 +800,18 @@ class _StripButton extends StatelessWidget {
       child: GestureDetector(
         onTap: onTap,
         child: Container(
-          width: 36,
-          height: 36,
+          width: 44,
+          height: 44,
           decoration: BoxDecoration(
             shape: BoxShape.circle,
             color: filled ? colors.accent : colors.surface,
             border: filled ? null : Border.all(color: colors.border),
           ),
-          child: Icon(icon, size: 18, color: filled ? colors.onAccent : colors.text),
+          child: Icon(
+            icon,
+            size: 18,
+            color: filled ? colors.onAccent : colors.text,
+          ),
         ),
       ),
     );
@@ -912,8 +919,8 @@ class _QuickActionsButtonState extends State<_QuickActionsButton>
           mainAxisSize: MainAxisSize.min,
           children: [
             SizedBox(
-              width: 32,
-              height: 32,
+              width: 44,
+              height: 44,
               child: IconButton(
                 key: const Key('input-bar-quick-actions'),
                 padding: EdgeInsets.zero,
@@ -1030,21 +1037,13 @@ class _ComposerActionButton extends StatelessWidget {
     final visualEnabled = !disabled;
     return AnimatedContainer(
       duration: const Duration(milliseconds: 200),
-      width: 38,
-      height: 38,
+      width: 44,
+      height: 44,
       decoration: BoxDecoration(
         color: visualEnabled
             ? colors.accent
             : colors.muted.withValues(alpha: 0.3),
-        borderRadius: BorderRadius.circular(19),
-        boxShadow: visualEnabled
-            ? [
-                BoxShadow(
-                  color: colors.accent.withValues(alpha: 0.33),
-                  blurRadius: 16,
-                ),
-              ]
-            : null,
+        borderRadius: BorderRadius.circular(4),
       ),
       child: AnimatedSwitcher(
         duration: const Duration(milliseconds: 180),

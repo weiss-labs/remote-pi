@@ -4,6 +4,7 @@ import 'package:app/ui/core/themes/themes.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:gpt_markdown/gpt_markdown.dart';
+import 'package:gpt_markdown/custom_widgets/unordered_ordered_list.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 import 'package:url_launcher/url_launcher.dart';
 
@@ -27,12 +28,18 @@ class AgentMarkdown extends StatelessWidget {
     final markdown = GptMarkdown(
       data,
       style: typo.mono,
+      unOrderedListBuilder: (context, child, config) => UnorderedListView(
+        bulletColor: colors.codeAccent,
+        padding: 7,
+        spacing: 10,
+        bulletSize: 0.3 * (config.style?.fontSize ?? 13),
+        textDirection: config.textDirection,
+        child: child,
+      ),
       onLinkTap: (url, _) => _openLink(context, url),
       // Inline `code` — subtle highlight, keeps the baseline.
-      highlightBuilder: (context, text, style) => Text(
-        text,
-        style: typo.mono.copyWith(color: colors.codeAccent),
-      ),
+      highlightBuilder: (context, text, style) =>
+          Text(text, style: typo.mono.copyWith(color: colors.codeAccent)),
       // Fenced ``` blocks — dark card + copy button.
       codeBuilder: (context, name, code, closed) =>
           _CodeBlock(language: name, code: code),
@@ -91,7 +98,7 @@ class _CodeBlock extends StatelessWidget {
       margin: const EdgeInsets.symmetric(vertical: 6),
       decoration: BoxDecoration(
         color: colors.codeBg,
-        borderRadius: BorderRadius.circular(8),
+        borderRadius: BorderRadius.zero,
         border: Border.all(color: colors.border),
       ),
       child: Column(
@@ -121,7 +128,7 @@ class _CodeBlock extends StatelessWidget {
             padding: const EdgeInsets.fromLTRB(12, 4, 12, 12),
             child: Text(
               code,
-              style: typo.mono.copyWith(color: colors.text, height: 1.45),
+              style: typo.mono.copyWith(color: colors.gaugeOk, height: 1.5),
             ),
           ),
         ],
@@ -165,7 +172,7 @@ class _CopyButtonState extends State<_CopyButton> {
     return IconButton(
       key: const Key('code-copy'),
       padding: EdgeInsets.zero,
-      visualDensity: VisualDensity.compact,
+      constraints: const BoxConstraints(minWidth: 44, minHeight: 44),
       iconSize: 15,
       splashRadius: 16,
       tooltip: 'Copy code',

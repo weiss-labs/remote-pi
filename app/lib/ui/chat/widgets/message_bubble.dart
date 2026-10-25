@@ -45,7 +45,7 @@ class UserBubble extends StatelessWidget {
                   : Container(
                       decoration: BoxDecoration(
                         color: colors.userBubble,
-                        borderRadius: BorderRadius.circular(12),
+                        borderRadius: BorderRadius.circular(4),
                         border: isFailed
                             ? Border.all(color: colors.error, width: 1)
                             : null,

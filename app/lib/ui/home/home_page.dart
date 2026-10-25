@@ -51,29 +51,29 @@ class HomePage extends StatelessWidget {
           onRefresh: vm.refresh,
           edgeOffset: 124,
           child: CustomScrollView(
-          physics: const AlwaysScrollableScrollPhysics(),
-          slivers: [
-            _buildLargeTitleBar(context, vm, state),
-            // Plan 44 — Android-only update notice. Sits at the top of the
-            // scroll content (below the title, above the list); shrinks to
-            // zero height when there's nothing to announce, so it's invisible
-            // on iOS and when no newer version exists.
-            const SliverToBoxAdapter(child: UpdateBanner()),
-            switch (state) {
-              HomeLoading() => SliverFillRemaining(
-                hasScrollBody: false,
-                child: Center(
-                  child: CircularProgressIndicator(color: colors.accent),
+            physics: const AlwaysScrollableScrollPhysics(),
+            slivers: [
+              _buildLargeTitleBar(context, vm, state),
+              // Plan 44 — Android-only update notice. Sits at the top of the
+              // scroll content (below the title, above the list); shrinks to
+              // zero height when there's nothing to announce, so it's invisible
+              // on iOS and when no newer version exists.
+              const SliverToBoxAdapter(child: UpdateBanner()),
+              switch (state) {
+                HomeLoading() => SliverFillRemaining(
+                  hasScrollBody: false,
+                  child: Center(
+                    child: CircularProgressIndicator(color: colors.accent),
+                  ),
                 ),
-              ),
-              HomeNoPeer() => const SliverFillRemaining(
-                hasScrollBody: false,
-                child: _EmptyState(),
-              ),
-              HomeList() => _buildListSlivers(context, vm, state),
-            },
-          ],
-        ),
+                HomeNoPeer() => const SliverFillRemaining(
+                  hasScrollBody: false,
+                  child: _EmptyState(),
+                ),
+                HomeList() => _buildListSlivers(context, vm, state),
+              },
+            ],
+          ),
         ),
       ),
     );
@@ -142,13 +142,16 @@ class HomePage extends StatelessWidget {
                       children: [
                         Row(
                           children: [
-                            Image.asset('assets/weiss-labs-logo.png',
-                                height: 36, width: 36),
+                            Image.asset(
+                              'assets/weiss-labs-logo.png',
+                              height: 28,
+                              width: 28,
+                            ),
                             const SizedBox(width: 10),
                             Text(
                               'Remote Pi',
                               style: brandTextStyle(
-                                fontSize: 32,
+                                fontSize: 24,
                                 fontWeight: FontWeight.w700,
                                 color: colors.text,
                                 letterSpacing: -0.5,
@@ -328,16 +331,27 @@ class HomePage extends StatelessWidget {
     // "Workspace›Tab›Pane" (underscores for spaces); we split that path and
     // emit a header whenever the workspace or tab changes. Items are sorted
     // by peer then path so siblings land together.
-    final sorted = [...visible]..sort((a, b) {
+    final sorted = [...visible]
+      ..sort((a, b) {
         final c = a.peer.remoteEpk.compareTo(b.peer.remoteEpk);
-        return c != 0 ? c : panePath(a).join('/').compareTo(panePath(b).join('/'));
+        return c != 0
+            ? c
+            : panePath(a).join('/').compareTo(panePath(b).join('/'));
       });
     final pinnedRows = <Widget>[];
     final pinned = sorted.where(vm.isPinned).toList();
     if (pinned.isNotEmpty) {
       pinnedRows.add(const _TreeHeader(label: 'PINNED', depth: 0));
       for (final it in pinned) {
-        pinnedRows.add(_buildItemRowAt(context, vm, state, it, title: panePath(it).join(' › ')));
+        pinnedRows.add(
+          _buildItemRowAt(
+            context,
+            vm,
+            state,
+            it,
+            title: panePath(it).join(' › '),
+          ),
+        );
       }
     }
     // One group per Herdr workspace, in the user's dragged order. Rows sit
@@ -359,8 +373,12 @@ class HomePage extends StatelessWidget {
           trailing: ReorderableDragStartListener(
             index: index,
             child: Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-              child: Icon(LucideIcons.gripHorizontal, size: 18, color: colors.muted2),
+              padding: const EdgeInsets.all(13),
+              child: Icon(
+                LucideIcons.gripHorizontal,
+                size: 18,
+                color: colors.muted2,
+              ),
             ),
           ),
         ),
@@ -368,7 +386,9 @@ class HomePage extends StatelessWidget {
       String? lastTab;
       for (final it in byWorkspace[ws]!) {
         final path = panePath(it);
-        final tab = path.length > 2 ? path.sublist(1, path.length - 1).join(' › ') : null;
+        final tab = path.length > 2
+            ? path.sublist(1, path.length - 1).join(' › ')
+            : null;
         if (tab != null && tab != lastTab && int.tryParse(tab) == null) {
           rows.add(_TreeHeader(label: tab, depth: 1));
         }
@@ -388,7 +408,7 @@ class HomePage extends StatelessWidget {
         child: TextFormField(
           initialValue: vm.query,
           onChanged: vm.setQuery,
-          style: TextStyle(color: colors.text, fontFamily: kMonoFamily),
+          style: context.typo.mono,
           decoration: InputDecoration(
             hintText: 'Search panes',
             hintStyle: TextStyle(color: colors.muted, fontFamily: kMonoFamily),
@@ -415,11 +435,8 @@ class HomePage extends StatelessWidget {
             itemCount: workspaces.length,
             itemBuilder: (ctx, i) => group(i),
             onReorderItem: (from, to) => vm.moveWorkspace(workspaces, from, to),
-            proxyDecorator: (child, _, _) => Material(
-              color: colors.surface,
-              elevation: 6,
-              child: child,
-            ),
+            proxyDecorator: (child, _, _) =>
+                Material(color: colors.surface, elevation: 0, child: child),
           ),
         ),
       ],
@@ -459,29 +476,40 @@ class HomePage extends StatelessWidget {
         color: colors.accent.withValues(alpha: 0.15),
         alignment: Alignment.centerLeft,
         padding: const EdgeInsets.only(left: 20),
-        child: Row(mainAxisSize: MainAxisSize.min, children: [
-          Icon(pinned ? LucideIcons.pinOff : LucideIcons.pin, color: colors.accent, size: 18),
-          const SizedBox(width: 8),
-          Text(pinned ? 'Unpin' : 'Pin', style: TextStyle(color: colors.accent, fontFamily: kMonoFamily)),
-        ]),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(
+              pinned ? LucideIcons.pinOff : LucideIcons.pin,
+              color: colors.accent,
+              size: 18,
+            ),
+            const SizedBox(width: 8),
+            Text(
+              pinned ? 'Unpin' : 'Pin',
+              style: TextStyle(color: colors.accent, fontFamily: kMonoFamily),
+            ),
+          ],
+        ),
       ),
       child: Column(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        SessionTile(
-          peer: it.peer,
-          isLive: isLive,
-          isReconnecting: isReconnecting,
-          isWorking: isWorking,
-          isSelected: isSelected,
-          room: it.room,
-          title: title,
-          onOpen: () => _open(context, vm, it.peer, it.room),
-          onLongPress: () => _showSessionMenu(context, vm, it, isLive: isLive),
-        ),
-        Divider(color: colors.border, height: 1),
-      ],
-    ),
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          SessionTile(
+            peer: it.peer,
+            isLive: isLive,
+            isReconnecting: isReconnecting,
+            isWorking: isWorking,
+            isSelected: isSelected,
+            room: it.room,
+            title: title,
+            onOpen: () => _open(context, vm, it.peer, it.room),
+            onLongPress: () =>
+                _showSessionMenu(context, vm, it, isLive: isLive),
+          ),
+          Divider(color: colors.border, height: 1),
+        ],
+      ),
     );
   }
 
@@ -505,8 +533,14 @@ class HomePage extends StatelessWidget {
             mainAxisSize: MainAxisSize.min,
             children: [
               ListTile(
-                leading: Icon(vm.isPinned(it) ? LucideIcons.pinOff : LucideIcons.pin, color: colors.accent),
-                title: Text(vm.isPinned(it) ? 'Unpin' : 'Pin to top', style: TextStyle(color: colors.text)),
+                leading: Icon(
+                  vm.isPinned(it) ? LucideIcons.pinOff : LucideIcons.pin,
+                  color: colors.accent,
+                ),
+                title: Text(
+                  vm.isPinned(it) ? 'Unpin' : 'Pin to top',
+                  style: TextStyle(color: colors.text),
+                ),
                 onTap: () {
                   Navigator.of(sheetCtx).pop();
                   vm.togglePin(it);
@@ -806,7 +840,12 @@ class _TreeHeader extends StatelessWidget {
     final colors = context.colors;
     final top = depth == 0;
     return Padding(
-      padding: EdgeInsets.fromLTRB(20, top ? 14 : 6, trailing == null ? 20 : 10, top ? 2 : 2),
+      padding: EdgeInsets.fromLTRB(
+        20,
+        top ? 14 : 6,
+        trailing == null ? 20 : 10,
+        top ? 2 : 2,
+      ),
       child: Row(
         children: [
           Expanded(
@@ -814,7 +853,7 @@ class _TreeHeader extends StatelessWidget {
               label,
               style: TextStyle(
                 fontFamily: kMonoFamily,
-                fontSize: top ? 14 : 11,
+                fontSize: top ? 13 : 11,
                 fontWeight: top ? FontWeight.w700 : FontWeight.w500,
                 color: top ? colors.heading : colors.muted,
               ),

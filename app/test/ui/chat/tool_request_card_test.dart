@@ -130,7 +130,7 @@ void main() {
         status: ToolEventStatus.completed,
       );
       await tester.pumpWidget(_wrap(const ToolRequestCard(tool: done)));
-      expect(outcomeColor(tester, '✓ Done'), AppColors.dark.success);
+      expect(outcomeColor(tester, '✓ Done'), AppColors.dark.gaugeOk);
     });
 
     testWidgets('failed → red "✗ {error}" + FAILED label', (tester) async {

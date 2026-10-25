@@ -17,6 +17,7 @@ ThemeData _buildTheme({
 }) {
   return ThemeData(
     brightness: brightness,
+    fontFamily: kMonoFamily,
     scaffoldBackgroundColor: colors.bg,
     colorScheme: ColorScheme(
       brightness: brightness,
@@ -36,6 +37,7 @@ ThemeData _buildTheme({
       backgroundColor: colors.bg,
       foregroundColor: colors.text,
       elevation: 0,
+      scrolledUnderElevation: 0,
       titleTextStyle: TextStyle(
         fontFamily: kSansFamily,
         fontSize: 17,
@@ -44,23 +46,20 @@ ThemeData _buildTheme({
         letterSpacing: -0.2,
       ),
     ),
-    textTheme: TextTheme(
-      bodyMedium: typo.sansBody,
-      bodySmall: typo.monoSmall,
-    ),
+    textTheme: TextTheme(bodyMedium: typo.sansBody, bodySmall: typo.monoSmall),
     inputDecorationTheme: InputDecorationTheme(
       filled: true,
       fillColor: colors.inputFill,
       border: OutlineInputBorder(
-        borderRadius: BorderRadius.circular(19),
+        borderRadius: BorderRadius.circular(4),
         borderSide: BorderSide(color: colors.border),
       ),
       enabledBorder: OutlineInputBorder(
-        borderRadius: BorderRadius.circular(19),
+        borderRadius: BorderRadius.circular(4),
         borderSide: BorderSide(color: colors.border),
       ),
       focusedBorder: OutlineInputBorder(
-        borderRadius: BorderRadius.circular(19),
+        borderRadius: BorderRadius.circular(4),
         borderSide: BorderSide(color: colors.accent, width: 1.2),
       ),
       hintStyle: TextStyle(
@@ -75,14 +74,14 @@ ThemeData _buildTheme({
 
 /// Dark theme — the app's original look.
 ThemeData buildDarkTheme() => _buildTheme(
-      brightness: Brightness.dark,
-      colors: AppColors.dark,
-      typo: AppTypography.dark,
-    );
+  brightness: Brightness.dark,
+  colors: AppColors.dark,
+  typo: AppTypography.dark,
+);
 
 /// Light theme — derived palette (tune hexes in `app_colors.dart`).
 ThemeData buildLightTheme() => _buildTheme(
-      brightness: Brightness.light,
-      colors: AppColors.light,
-      typo: AppTypography.light,
-    );
+  brightness: Brightness.light,
+  colors: AppColors.light,
+  typo: AppTypography.light,
+);

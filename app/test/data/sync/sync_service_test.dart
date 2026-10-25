@@ -813,7 +813,12 @@ void main() {
           hasThinking: false,
         ),
       );
-      await _settle();
+      // Control-frame delivery and the async projection can outlive the
+      // suite's 30ms sleep under load. Wait for completion, not wall time.
+      final deadline = DateTime.now().add(const Duration(seconds: 2));
+      while (s.sync.isWorking && DateTime.now().isBefore(deadline)) {
+        await Future<void>.delayed(const Duration(milliseconds: 10));
+      }
       expect(s.conn.isRoomWorking(s.epk, 'main'), isFalse);
       expect(s.sync.isWorking, isFalse);
       expect(s.sync.streaming, isNull);

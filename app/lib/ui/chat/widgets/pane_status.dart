@@ -53,7 +53,11 @@ class PaneUsage {
         if (w is Map<String, dynamic>) UsageWindow.fromJson(w),
     ];
     // Same order as the desktop widget: session, weekly, then model caps.
-    int rank(UsageWindow w) => w.label == '5h' ? 0 : w.label == 'weekly' ? 1 : 2;
+    int rank(UsageWindow w) => w.label == '5h'
+        ? 0
+        : w.label == 'weekly'
+        ? 1
+        : 2;
     windows.sort((a, b) => rank(a).compareTo(rank(b)));
     return PaneUsage(
       provider: j['provider'] as String? ?? '',
@@ -76,7 +80,9 @@ class UsageWindow {
     return UsageWindow(
       label: j['label'] as String? ?? '',
       leftPercent: (j['leftPercent'] as num?)?.toDouble(),
-      resetsAt: ms == null ? null : DateTime.fromMillisecondsSinceEpoch(ms.toInt()),
+      resetsAt: ms == null
+          ? null
+          : DateTime.fromMillisecondsSinceEpoch(ms.toInt()),
     );
   }
 
@@ -99,42 +105,58 @@ class UsageGauges extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final colors = context.colors;
-    final base = TextStyle(fontFamily: kMonoFamily, fontSize: 10.5, height: 1.35, color: colors.muted);
+    final base = context.typo.monoSmall.copyWith(
+      color: colors.muted,
+      height: 1.5,
+    );
     final header = [
       usage.provider,
       if (usage.email != null && usage.email!.isNotEmpty) usage.email!,
-      if (usage.extra != null && usage.extra!.isNotEmpty) usage.extra!,
     ].join(' · ');
     return Container(
       color: colors.surface,
-      padding: const EdgeInsets.fromLTRB(8, 4, 8, 5),
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
       child: Column(
         mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          Text(header, maxLines: 1, overflow: TextOverflow.ellipsis, style: base),
+          Text(header, style: base),
+          if (usage.extra != null && usage.extra!.isNotEmpty)
+            Text(usage.extra!, style: base.copyWith(color: colors.gaugeOk)),
           for (final w in usage.windows)
-            Row(
+            Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-                SizedBox(
-                  width: 58,
-                  child: Text(w.name, maxLines: 1, overflow: TextOverflow.ellipsis, style: base),
+                Row(
+                  children: [
+                    SizedBox(width: 58, child: Text(w.name, style: base)),
+                    Expanded(
+                      child: Text(
+                        w.leftPercent == null
+                            ? '--% left'
+                            : '${w.leftPercent!.round()}% left',
+                        style: base.copyWith(
+                          color: _color(colors, w.leftPercent),
+                        ),
+                      ),
+                    ),
+                    _BlockBar(
+                      left: w.leftPercent,
+                      color: _color(colors, w.leftPercent),
+                      style: base,
+                    ),
+                  ],
                 ),
-                Expanded(
-                  child: FittedBox(
-                    fit: BoxFit.scaleDown,
-                    alignment: Alignment.centerLeft,
+                if (w.resetsAt != null)
+                  Padding(
+                    padding: const EdgeInsets.only(left: 58),
                     child: Text(
-                      [
-                        w.leftPercent == null ? '--% left' : '${w.leftPercent!.round()}% left',
-                        if (w.resetsAt != null) 'resets ${_reset(w.resetsAt!)}',
-                      ].join(' · '),
-                      style: base.copyWith(color: _color(colors, w.leftPercent)),
+                      'resets ${_reset(w.resetsAt!)}',
+                      style: base.copyWith(
+                        color: _color(colors, w.leftPercent),
+                      ),
                     ),
                   ),
-                ),
-                const SizedBox(width: 6),
-                _BlockBar(left: w.leftPercent, color: _color(colors, w.leftPercent), style: base),
               ],
             ),
         ],
@@ -142,7 +164,8 @@ class UsageGauges extends StatelessWidget {
     );
   }
 
-  static Color _color(AppColors colors, double? left) => left == null || left <= 20
+  static Color _color(AppColors colors, double? left) =>
+      left == null || left <= 20
       ? colors.error
       : left <= 50
       ? colors.gaugeWarn
@@ -152,17 +175,37 @@ class UsageGauges extends StatelessWidget {
   static String _reset(DateTime at) {
     final now = DateTime.now();
     final h = at.hour % 12 == 0 ? 12 : at.hour % 12;
-    final time = '$h:${at.minute.toString().padLeft(2, '0')} ${at.hour < 12 ? 'AM' : 'PM'}';
-    if (at.year == now.year && at.month == now.month && at.day == now.day) return time;
+    final time =
+        '$h:${at.minute.toString().padLeft(2, '0')} ${at.hour < 12 ? 'AM' : 'PM'}';
+    if (at.year == now.year && at.month == now.month && at.day == now.day) {
+      return time;
+    }
     const days = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
-    const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+    const months = [
+      'Jan',
+      'Feb',
+      'Mar',
+      'Apr',
+      'May',
+      'Jun',
+      'Jul',
+      'Aug',
+      'Sep',
+      'Oct',
+      'Nov',
+      'Dec',
+    ];
     return '${days[at.weekday - 1]}, ${months[at.month - 1]} ${at.day}, $time';
   }
 }
 
 /// `[█████░░]` — a square-cornered battery that drains right to left.
 class _BlockBar extends StatelessWidget {
-  const _BlockBar({required this.left, required this.color, required this.style});
+  const _BlockBar({
+    required this.left,
+    required this.color,
+    required this.style,
+  });
 
   final double? left;
   final Color color;

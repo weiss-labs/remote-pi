@@ -31,7 +31,7 @@ class HomeFilterTabs extends StatelessWidget {
       child: Container(
         decoration: BoxDecoration(
           color: colors.surface,
-          borderRadius: BorderRadius.circular(10),
+          borderRadius: BorderRadius.circular(4),
           border: Border.all(color: colors.border),
         ),
         padding: const EdgeInsets.all(3),
@@ -61,10 +61,11 @@ class HomeFilterTabs extends StatelessWidget {
         child: AnimatedContainer(
           duration: const Duration(milliseconds: 150),
           curve: Curves.easeOut,
-          padding: const EdgeInsets.symmetric(vertical: 8),
+          constraints: const BoxConstraints(minHeight: 44),
+          padding: const EdgeInsets.symmetric(vertical: 12),
           decoration: BoxDecoration(
             color: selected ? colors.accent : Colors.transparent,
-            borderRadius: BorderRadius.circular(8),
+            borderRadius: BorderRadius.circular(2),
           ),
           child: Row(
             mainAxisAlignment: MainAxisAlignment.center,
@@ -76,7 +77,7 @@ class HomeFilterTabs extends StatelessWidget {
                   overflow: TextOverflow.ellipsis,
                   style: TextStyle(
                     fontFamily: kMonoFamily,
-                    fontSize: 12.5,
+                    fontSize: 13,
                     fontWeight: FontWeight.w600,
                     color: selected ? colors.onAccent : colors.muted,
                   ),
