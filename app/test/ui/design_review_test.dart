@@ -93,6 +93,10 @@ class _Home extends ChangeNotifier implements HomeViewModel {
   @override
   List<String> orderWorkspaces(Iterable<String> names) => names.toList();
   @override
+  List<HomeItem> byRecency(List<HomeItem> items) => items;
+  @override
+  int lastActive(HomeItem it) => 0;
+  @override
   Future<void> refresh() async {}
   @override
   dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);

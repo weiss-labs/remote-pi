@@ -100,7 +100,19 @@ class HomeViewModel extends ViewModel<HomeState> {
     emit(s.copyWith(statusByEpk: snapshot));
   }
 
+  // Rooms seen working on the last snapshot; a false→true flip counts as use.
+  final Set<String> _wasWorking = {};
+
   void _onRooms(Map<String, List<RoomInfo>> snapshot) {
+    for (final e in snapshot.entries) {
+      for (final r in e.value) {
+        final k = '${e.key}|${r.roomId}';
+        if (r.working && _wasWorking.add(k)) {
+          unawaited(_prefs.touch(e.key, r.roomId));
+        }
+        if (!r.working) _wasWorking.remove(k);
+      }
+    }
     if (_refreshing) return; // applied in one go when refresh() finishes
     final s = state;
     if (s is! HomeList) return;
@@ -165,7 +177,9 @@ class HomeViewModel extends ViewModel<HomeState> {
     };
     final q = _query.trim().toLowerCase();
     if (q.isEmpty) return byTab;
-    return byTab.where((i) => panePath(i).join(' ').toLowerCase().contains(q)).toList();
+    return byTab
+        .where((i) => panePath(i).join(' ').toLowerCase().contains(q))
+        .toList();
   }
 
   // Weiss Labs: pull-to-refresh.
@@ -182,18 +196,35 @@ class HomeViewModel extends ViewModel<HomeState> {
       _relayConnected = _conn.status is StatusOnline;
       final s = state;
       if (s is HomeList && !_disposed) {
-        emit(HomeList(
-          peers: s.peers,
-          statusByEpk: _conn.presenceSnapshot,
-          roomsByPeer: _conn.roomsSnapshot,
-          filter: s.filter,
-        ));
+        emit(
+          HomeList(
+            peers: s.peers,
+            statusByEpk: _conn.presenceSnapshot,
+            roomsByPeer: _conn.roomsSnapshot,
+            filter: s.filter,
+          ),
+        );
       }
     }
   }
 
+  /// Weiss Labs: most recently used first; untouched panes keep [order].
+  List<HomeItem> byRecency(List<HomeItem> items) {
+    final idx = {for (var i = 0; i < items.length; i++) items[i]: i};
+    return [...items]..sort((a, b) {
+      final c = lastActive(b).compareTo(lastActive(a));
+      return c != 0 ? c : idx[a]!.compareTo(idx[b]!);
+    });
+  }
+
+  int lastActive(HomeItem it) => _prefs.lastActive(
+    normalizeEpkForLookup(it.peer.remoteEpk),
+    it.room.roomId,
+  );
+
   // Weiss Labs: pins.
-  bool isPinned(HomeItem it) => _prefs.isPinned(it.peer.remoteEpk, it.room.roomId);
+  bool isPinned(HomeItem it) =>
+      _prefs.isPinned(it.peer.remoteEpk, it.room.roomId);
   Future<void> togglePin(HomeItem it) async {
     await _prefs.togglePinned(it.peer.remoteEpk, it.room.roomId);
     notifyListeners();
@@ -207,11 +238,11 @@ class HomeViewModel extends ViewModel<HomeState> {
       final i = saved.indexOf(n);
       return i < 0 ? saved.length : i;
     }
-    return names.toSet().toList()
-      ..sort((a, b) {
-        final c = rank(a).compareTo(rank(b));
-        return c != 0 ? c : a.toLowerCase().compareTo(b.toLowerCase());
-      });
+
+    return names.toSet().toList()..sort((a, b) {
+      final c = rank(a).compareTo(rank(b));
+      return c != 0 ? c : a.toLowerCase().compareTo(b.toLowerCase());
+    });
   }
 
   /// [to] is the final index (onReorderItem already adjusted for the removal).
@@ -268,6 +299,7 @@ class HomeViewModel extends ViewModel<HomeState> {
     final peer = match.first!;
     final effectiveRoom = (roomId == null || roomId.isEmpty) ? 'main' : roomId;
     await _prefs.setSelectedRoom(epk: epk, roomId: effectiveRoom);
+    unawaited(_prefs.touch(normalizeEpkForLookup(epk), effectiveRoom));
     if (peer.roomId != effectiveRoom) {
       // ignore: unawaited_futures
       _storage.savePeer(peer.copyWith(roomId: effectiveRoom));

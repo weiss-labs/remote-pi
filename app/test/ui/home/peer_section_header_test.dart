@@ -11,15 +11,14 @@ PeerRecord _peer({
   String? nickname,
   String sessionName = 'Pi',
   PiHarness? harness,
-}) =>
-    PeerRecord(
-      remoteEpk: 'pk1',
-      sessionName: sessionName,
-      relayUrl: 'ws://x',
-      pairedAt: '2026-01-01T00:00:00Z',
-      nickname: nickname,
-      harness: harness,
-    );
+}) => PeerRecord(
+  remoteEpk: 'pk1',
+  sessionName: sessionName,
+  relayUrl: 'ws://x',
+  pairedAt: '2026-01-01T00:00:00Z',
+  nickname: nickname,
+  harness: harness,
+);
 
 Future<void> _pump(WidgetTester tester, PeerRecord peer) async {
   await tester.pumpWidget(
@@ -31,8 +30,9 @@ Future<void> _pump(WidgetTester tester, PeerRecord peer) async {
 
 void main() {
   group('PeerSectionHeader', () {
-    testWidgets('shows nickname uppercase and NO harness subtitle',
-        (tester) async {
+    testWidgets('shows nickname uppercase and NO harness subtitle', (
+      tester,
+    ) async {
       await _pump(
         tester,
         _peer(
@@ -46,8 +46,9 @@ void main() {
       expect(find.textContaining('via '), findsNothing);
     });
 
-    testWidgets('falls back to sessionName when no nickname is set',
-        (tester) async {
+    testWidgets('falls back to sessionName when no nickname is set', (
+      tester,
+    ) async {
       await _pump(tester, _peer(sessionName: 'remote_pi · main'));
       expect(find.text('REMOTE_PI · MAIN'), findsOneWidget);
       expect(find.textContaining('via '), findsNothing);

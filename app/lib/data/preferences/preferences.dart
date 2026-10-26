@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart' show ThemeMode;
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
@@ -31,6 +32,7 @@ class Preferences extends ChangeNotifier {
   static const _kPinnedKey = 'prefs.pinned';
   static const _kWorkspaceOrderKey = 'prefs.workspaceOrder';
   static const _kHideUsageKey = 'prefs.hide_usage';
+  static const _kLastActiveKey = 'prefs.last_active';
 
   /// True → chat hides `ToolEvent` rows (only user/assistant text remain).
   bool get hideToolCalls => _hideToolCalls;
@@ -97,6 +99,23 @@ class Preferences extends ChangeNotifier {
     notifyListeners();
   }
 
+  // Weiss Labs: when each pane was last used (opened here or ran a turn), so
+  // Home can float the recent ones to the top of their workspace.
+  Map<String, int> _lastActive = {};
+  int lastActive(String epk, String roomId) => _lastActive['$epk|$roomId'] ?? 0;
+  Future<void> touch(String epk, String roomId) async {
+    _lastActive['$epk|$roomId'] = DateTime.now().millisecondsSinceEpoch;
+    if (_lastActive.length > 200) {
+      // ponytail: drop the oldest; fine for a few dozen panes.
+      final oldest = _lastActive.entries
+          .reduce((a, b) => a.value < b.value ? a : b)
+          .key;
+      _lastActive.remove(oldest);
+    }
+    notifyListeners();
+    await _store.write(key: _kLastActiveKey, value: jsonEncode(_lastActive));
+  }
+
   // Weiss Labs: usage gauges in the chat header, tucked away or shown.
   bool _hideUsage = false;
   bool get hideUsage => _hideUsage;
@@ -160,6 +179,16 @@ class Preferences extends ChangeNotifier {
     if (scale != _fontScale) {
       _fontScale = scale;
       changed = true;
+    }
+
+    final lastRaw = await _store.read(key: _kLastActiveKey);
+    if (lastRaw != null && lastRaw.isNotEmpty) {
+      try {
+        _lastActive = (jsonDecode(lastRaw) as Map<String, dynamic>).map(
+          (k, v) => MapEntry(k, (v as num).toInt()),
+        );
+        changed = true;
+      } catch (_) {}
     }
 
     final hideUsage = await _store.read(key: _kHideUsageKey) == 'true';

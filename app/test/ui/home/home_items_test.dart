@@ -6,23 +6,20 @@ import 'package:app/ui/home/states/home_state.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 PeerRecord _peer(String epk, {String name = 'Pi'}) => PeerRecord(
-      remoteEpk: epk,
-      sessionName: name,
-      relayUrl: 'ws://x',
-      pairedAt: '2026-01-01T00:00:00Z',
-    );
+  remoteEpk: epk,
+  sessionName: name,
+  relayUrl: 'ws://x',
+  pairedAt: '2026-01-01T00:00:00Z',
+);
 
 void main() {
   group('HomeList.items()', () {
-    test(
-      'peer without announced rooms produces ZERO items — Home only '
-      'shows what is currently live on the relay (no ghost "main" tile)',
-      () {
-        final list = HomeList(peers: [_peer('A')]);
-        final items = list.items();
-        expect(items, isEmpty);
-      },
-    );
+    test('peer without announced rooms produces ZERO items — Home only '
+        'shows what is currently live on the relay (no ghost "main" tile)', () {
+      final list = HomeList(peers: [_peer('A')]);
+      final items = list.items();
+      expect(items, isEmpty);
+    });
 
     test('peer with N rooms produces N items (one row per cwd)', () {
       final list = HomeList(
@@ -39,27 +36,22 @@ void main() {
       expect(items.map((i) => i.room.roomId).toList(), ['r1', 'r2']);
     });
 
-    test(
-      'multiple peers each contribute their own group of rows; the '
-      'flat list keeps peer-order from `peers`',
-      () {
-        final list = HomeList(
-          peers: [_peer('A'), _peer('B')],
-          roomsByPeer: {
-            'A': [const RoomInfo(roomId: 'a1', startedAt: 1)],
-            'B': [
-              const RoomInfo(roomId: 'b1', startedAt: 1),
-              const RoomInfo(roomId: 'b2', startedAt: 2),
-            ],
-          },
-        );
-        final items = list.items();
-        expect(items.map((i) => i.peer.remoteEpk).toList(),
-            ['A', 'B', 'B']);
-        expect(items.map((i) => i.room.roomId).toList(),
-            ['a1', 'b1', 'b2']);
-      },
-    );
+    test('multiple peers each contribute their own group of rows; the '
+        'flat list keeps peer-order from `peers`', () {
+      final list = HomeList(
+        peers: [_peer('A'), _peer('B')],
+        roomsByPeer: {
+          'A': [const RoomInfo(roomId: 'a1', startedAt: 1)],
+          'B': [
+            const RoomInfo(roomId: 'b1', startedAt: 1),
+            const RoomInfo(roomId: 'b2', startedAt: 2),
+          ],
+        },
+      );
+      final items = list.items();
+      expect(items.map((i) => i.peer.remoteEpk).toList(), ['A', 'B', 'B']);
+      expect(items.map((i) => i.room.roomId).toList(), ['a1', 'b1', 'b2']);
+    });
 
     test('HomeItem.displayName prefers room.name → cwd basename', () {
       final namedRoom = HomeItem(

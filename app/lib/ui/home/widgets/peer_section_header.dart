@@ -15,8 +15,8 @@ class PeerSectionHeader extends StatelessWidget {
     final label = (peer.nickname?.isNotEmpty ?? false)
         ? peer.nickname!
         : peer.sessionName.isNotEmpty
-            ? peer.sessionName
-            : peer.remoteEpk.substring(0, 8);
+        ? peer.sessionName
+        : peer.remoteEpk.substring(0, 8);
     return Padding(
       padding: const EdgeInsets.fromLTRB(20, 18, 20, 6),
       child: Text(

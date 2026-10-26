@@ -383,17 +383,35 @@ class HomePage extends StatelessWidget {
           ),
         ),
       ];
-      String? lastTab;
+      // Tabs ordered by their most recently used pane, panes likewise.
+      final byTab = <String?, List<HomeItem>>{};
       for (final it in byWorkspace[ws]!) {
         final path = panePath(it);
         final tab = path.length > 2
             ? path.sublist(1, path.length - 1).join(' › ')
             : null;
-        if (tab != null && tab != lastTab && int.tryParse(tab) == null) {
+        (byTab[tab] ??= []).add(it);
+      }
+      final tabs = byTab.keys.toList();
+      for (final t in tabs) {
+        byTab[t] = vm.byRecency(byTab[t]!);
+      }
+      final tabIdx = {for (var i = 0; i < tabs.length; i++) tabs[i]: i};
+      tabs.sort((a, b) {
+        final c = vm
+            .lastActive(byTab[b]!.first)
+            .compareTo(vm.lastActive(byTab[a]!.first));
+        return c != 0 ? c : tabIdx[a]!.compareTo(tabIdx[b]!);
+      });
+      for (final tab in tabs) {
+        if (tab != null && int.tryParse(tab) == null) {
           rows.add(_TreeHeader(label: tab, depth: 1));
         }
-        lastTab = tab;
-        rows.add(_buildItemRowAt(context, vm, state, it, title: path.last));
+        for (final it in byTab[tab]!) {
+          rows.add(
+            _buildItemRowAt(context, vm, state, it, title: panePath(it).last),
+          );
+        }
       }
       return Material(
         key: ValueKey('ws-$ws'),
