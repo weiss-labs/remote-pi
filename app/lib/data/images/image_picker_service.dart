@@ -18,6 +18,10 @@ abstract class IImagePickerService {
   /// Pick from the gallery (system PHPicker / Photo Picker — no permission).
   /// Returns null if the user cancelled.
   Future<PickedImage?> pickFromGallery();
+
+  /// Weiss Labs: an image pasted into the composer (keyboard content
+  /// insertion). Compressed like a picked photo; null if undecodable.
+  Future<PickedImage?> fromBytes(Uint8List bytes, String mime);
 }
 
 /// A picked + compressed image ready for preview and sending. Bytes are raw
@@ -64,6 +68,13 @@ class ImagePickerService implements IImagePickerService {
   Future<PickedImage?> pickFromGallery() =>
       _pickAndCompress(ImageSourceKind.gallery);
 
+  @override
+  Future<PickedImage?> fromBytes(Uint8List bytes, String mime) async {
+    if (bytes.isEmpty) return null;
+    final out = await _backend.compressBytes(bytes, maxSide: _maxSide, quality: _quality);
+    return out.isEmpty ? null : PickedImage(bytes: out, mime: 'image/jpeg');
+  }
+
   Future<PickedImage?> _pickAndCompress(ImageSourceKind source) async {
     final path = await _backend.pick(source);
     if (path == null) return null; // user cancelled
@@ -101,6 +112,13 @@ abstract class ImagePickerBackend {
   /// Compress [path] to JPEG bounded by [maxSide]px at [quality].
   Future<Uint8List> compress(
     String path, {
+    required int maxSide,
+    required int quality,
+  });
+
+  /// Same, from in-memory bytes (pasted image).
+  Future<Uint8List> compressBytes(
+    Uint8List bytes, {
     required int maxSide,
     required int quality,
   });
@@ -147,5 +165,24 @@ class PlatformImagePickerBackend implements ImagePickerBackend {
     // Fallback: if the platform compressor returns null (unsupported source
     // format), surface an empty result so the caller can no-op gracefully.
     return out ?? Uint8List(0);
+  }
+
+  @override
+  Future<Uint8List> compressBytes(
+    Uint8List bytes, {
+    required int maxSide,
+    required int quality,
+  }) async {
+    try {
+      return await FlutterImageCompress.compressWithList(
+        bytes,
+        minWidth: maxSide,
+        minHeight: maxSide,
+        quality: quality,
+        format: CompressFormat.jpeg,
+      );
+    } catch (_) {
+      return Uint8List(0);
+    }
   }
 }

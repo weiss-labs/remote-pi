@@ -28,6 +28,8 @@ class _FakePicker implements IImagePickerService {
   }
 
   @override
+  Future<PickedImage?> fromBytes(Uint8List bytes, String mime) async => next;
+  @override
   Future<PickedImage?> pickFromGallery() async {
     if (fail) throw Exception('boom');
     return next;
@@ -83,6 +85,22 @@ void main() {
     vm.removeImage();
     expect(vm.state, isA<AttachmentEmpty>());
     expect(vm.hasImage, isFalse);
+    vm.dispose();
+  });
+
+  test('Weiss Labs: a photo that would overflow the relay frame is refused', () async {
+    final picker = _FakePicker();
+    final vm = AttachmentViewModel(picker, _FakeActions());
+    final hints = <AttachHint>[];
+    final sub = vm.hints.listen(hints.add);
+    picker.next = PickedImage(bytes: Uint8List(AttachmentViewModel.maxTotalBytes), mime: 'image/jpeg');
+    await vm.pickFromGallery();
+    picker.next = PickedImage(bytes: Uint8List(10), mime: 'image/jpeg');
+    await vm.pickFromGallery();
+    await Future<void>.delayed(Duration.zero);
+    expect((vm.state as AttachmentAttached).images, hasLength(1));
+    expect(hints, [AttachHint.tooLarge]);
+    await sub.cancel();
     vm.dispose();
   });
 

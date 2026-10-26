@@ -1,3 +1,4 @@
+import 'dart:typed_data';
 // Plan/30 — InputBar image wiring: attach button gating by vision, preview +
 // remove, send-with-image. Drives a real AttachmentViewModel + fakes.
 
@@ -23,6 +24,8 @@ class _FakePicker implements IImagePickerService {
   PickedImage next = PickedImage(bytes: _pngBytes, mime: 'image/jpeg');
   @override
   Future<PickedImage?> pickFromCamera() async => next;
+  @override
+  Future<PickedImage?> fromBytes(Uint8List bytes, String mime) async => next;
   @override
   Future<PickedImage?> pickFromGallery() async => next;
 }
@@ -65,7 +68,11 @@ void main() {
 
   tearDown(() => vm.dispose());
 
-  Future<void> pumpBar(WidgetTester tester, {bool channelOpen = true}) {
+  Future<void> pumpBar(
+    WidgetTester tester, {
+    bool channelOpen = true,
+    bool streaming = false,
+  }) {
     return tester.pumpWidget(
       MaterialApp(
         home: Scaffold(
@@ -73,6 +80,8 @@ void main() {
             alignment: Alignment.bottomCenter,
             child: InputBar(
               onSend: (text) {},
+              streaming: streaming,
+              onCancel: () {},
               attachment: vm,
               onOpenAttach: channelOpen ? () {} : null,
             ),
@@ -130,17 +139,40 @@ void main() {
 
     expect(find.byKey(const Key('attach-preview')), findsOneWidget);
     expect(find.byIcon(LucideIcons.send600), findsOneWidget); // send-mode (#6)
-    // Attach button greys out while an image is attached (one max, #4).
+    // Weiss Labs: more images can be added on top.
     expect(
       tester
           .widget<IconButton>(find.byKey(const Key('input-bar-attach')))
           .onPressed,
-      isNull,
+      isNotNull,
     );
 
     await tester.tap(find.byKey(const Key('attach-remove')));
     await tester.pump();
     expect(find.byKey(const Key('attach-preview')), findsNothing);
+  });
+
+  testWidgets('Weiss Labs: attach works while the pane is working', (tester) async {
+    await pumpBar(tester, streaming: true);
+    await tester.pump();
+    expect(
+      tester.widget<IconButton>(find.byKey(const Key('input-bar-attach'))).onPressed,
+      isNotNull,
+    );
+  });
+
+  testWidgets('Weiss Labs: several images, each removable, all sent', (tester) async {
+    await pumpBar(tester);
+    await vm.pickFromGallery();
+    await vm.pickFromGallery();
+    await tester.pump();
+    expect(find.byKey(const Key('attach-preview')), findsNWidgets(2));
+    await tester.tap(find.byKey(const Key('attach-remove')).first);
+    await tester.pump();
+    expect(find.byKey(const Key('attach-preview')), findsOneWidget);
+    await vm.pickFromGallery();
+    expect(vm.takeImagesForSend(), hasLength(2));
+    expect(vm.hasImage, isFalse);
   });
 
   testWidgets(

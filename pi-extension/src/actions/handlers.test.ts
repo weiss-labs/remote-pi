@@ -46,7 +46,7 @@ function fakePi(overrides: Partial<ActionPi> = {}): ActionPi {
 const sampleModel: SdkModelLike = {
   id: "claude-opus-4-7",
   name: "Claude Opus 4.7",
-  provider: "anthropic",
+  provider: "claude-bridge",
   reasoning: true,
   contextWindow: 200_000,
 };
@@ -201,7 +201,7 @@ describe("handleModelSet", () => {
     });
     const sender = makeSender();
     await handleModelSet(pi, null, reg, sender, {
-      type: "model_set", id: "r4", provider: "anthropic", model_id: "claude-opus-4-7",
+      type: "model_set", id: "r4", provider: "claude-bridge", model_id: "claude-opus-4-7",
     });
     expect(setModelArgs).toHaveLength(1);
     expect(setModelArgs[0].id).toBe("claude-opus-4-7");
@@ -214,7 +214,7 @@ describe("handleModelSet", () => {
     const reg = fakeRegistry([sampleModel]);
     const sender = makeSender();
     await handleModelSet(fakePi(), null, reg, sender, {
-      type: "model_set", id: "r4", provider: "anthropic", model_id: "nope-3",
+      type: "model_set", id: "r4", provider: "claude-bridge", model_id: "nope-3",
     });
     expect(sender.sent[0]).toMatchObject({
       type: "action_error",
@@ -227,7 +227,7 @@ describe("handleModelSet", () => {
     const pi = fakePi({ setModel: async () => false });
     const sender = makeSender();
     await handleModelSet(pi, null, reg, sender, {
-      type: "model_set", id: "r4", provider: "anthropic", model_id: "claude-opus-4-7",
+      type: "model_set", id: "r4", provider: "claude-bridge", model_id: "claude-opus-4-7",
     });
     expect(sender.sent[0]).toMatchObject({
       type: "action_error",
@@ -242,11 +242,11 @@ describe("handleModelSet", () => {
     const persisted: Array<{ provider: string; modelId: string }> = [];
     await handleModelSet(
       pi, null, reg, sender,
-      { type: "model_set", id: "r4", provider: "anthropic", model_id: "claude-opus-4-7" },
+      { type: "model_set", id: "r4", provider: "claude-bridge", model_id: "claude-opus-4-7" },
       (provider, modelId) => persisted.push({ provider, modelId }),
     );
     // onPersist receives the resolved model's provider/id so it survives restart.
-    expect(persisted).toEqual([{ provider: "anthropic", modelId: "claude-opus-4-7" }]);
+    expect(persisted).toEqual([{ provider: "claude-bridge", modelId: "claude-opus-4-7" }]);
   });
 
   test("does NOT persist when the live set fails (no auth)", async () => {
@@ -256,7 +256,7 @@ describe("handleModelSet", () => {
     let persistCalls = 0;
     await handleModelSet(
       pi, null, reg, sender,
-      { type: "model_set", id: "r4", provider: "anthropic", model_id: "claude-opus-4-7" },
+      { type: "model_set", id: "r4", provider: "claude-bridge", model_id: "claude-opus-4-7" },
       () => { persistCalls += 1; },
     );
     expect(persistCalls).toBe(0);
@@ -269,7 +269,7 @@ describe("handleModelSet", () => {
     let persistCalls = 0;
     await handleModelSet(
       fakePi(), null, reg, sender,
-      { type: "model_set", id: "r4", provider: "anthropic", model_id: "nope-3" },
+      { type: "model_set", id: "r4", provider: "claude-bridge", model_id: "nope-3" },
       () => { persistCalls += 1; },
     );
     expect(persistCalls).toBe(0);
@@ -277,6 +277,29 @@ describe("handleModelSet", () => {
 });
 
 // ── list_models ────────────────────────────────────────────────────────────
+
+describe("Weiss Labs: providers hidden from the phone", () => {
+  const nativeTwin: SdkModelLike = { ...sampleModel, provider: "anthropic" };
+  const cancelled: SdkModelLike = { ...sampleModel, id: "gpt-6-astra", name: "GPT-6 Astra", provider: "openai-codex-2" };
+
+  test("list_models omits native anthropic and openai-codex-2", () => {
+    const reg = fakeRegistry([sampleModel, nativeTwin, cancelled]);
+    const sender = makeSender();
+    handleListModels(null, reg, sender, { type: "list_models", id: "r9" });
+    const reply = sender.sent[0];
+    if (reply.type !== "models_list") throw new Error("type guard");
+    expect(reply.models.map((m) => m.provider)).toEqual(["claude-bridge"]);
+  });
+
+  test("model_set refuses the native anthropic twin", async () => {
+    const reg = fakeRegistry([sampleModel, nativeTwin]);
+    const sender = makeSender();
+    await handleModelSet(fakePi(), null, reg, sender, {
+      type: "model_set", id: "r9", provider: "anthropic", model_id: "claude-opus-4-7",
+    });
+    expect(sender.sent[0]).toMatchObject({ type: "action_error", error: expect.stringContaining("isn't usable from the phone") });
+  });
+});
 
 describe("handleListModels", () => {
   test("returns wire-shaped catalog with current echo when ctx.getModel is set", () => {
@@ -292,7 +315,7 @@ describe("handleListModels", () => {
       {
         id: "claude-opus-4-7",
         name: "Claude Opus 4.7",
-        provider: "anthropic",
+        provider: "claude-bridge",
         reasoning: true,
         context_window: 200_000,
         vision: false,
@@ -363,7 +386,7 @@ describe("wireFromModel", () => {
     expect(wireFromModel(sampleModel)).toEqual({
       id: "claude-opus-4-7",
       name: "Claude Opus 4.7",
-      provider: "anthropic",
+      provider: "claude-bridge",
       reasoning: true,
       context_window: 200_000,
       vision: false,  // sampleModel has no `input` → text-only

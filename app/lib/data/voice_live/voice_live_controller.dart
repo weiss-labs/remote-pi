@@ -285,8 +285,13 @@ class VoiceLiveController extends ChangeNotifier implements VoiceLiveSession {
     _approval = _toolApproval(s['pendingApprovals']);
     final prevDraft = _draft, nextDraft = _toDraft(s['draft']);
     // Keep a confirmed review across a heartbeat that left before it landed.
-    _draft = nextDraft != null && prevDraft != null && prevDraft.seen && !nextDraft.seen &&
-            prevDraft.id == nextDraft.id && prevDraft.hash == nextDraft.hash
+    _draft =
+        nextDraft != null &&
+            prevDraft != null &&
+            prevDraft.seen &&
+            !nextDraft.seen &&
+            prevDraft.id == nextDraft.id &&
+            prevDraft.hash == nextDraft.hash
         ? prevDraft
         : nextDraft;
     for (final e in (s['events'] as List? ?? const [])) {
@@ -494,7 +499,10 @@ class VoiceLiveController extends ChangeNotifier implements VoiceLiveSession {
   Future<void> draftSeen(String id, String hash) async {
     final d = _draft;
     if (d == null || d.id != id || d.hash != hash) {
-      throw const VoiceFailure('stale', 'This draft changed. Review the new one.');
+      throw const VoiceFailure(
+        'stale',
+        'This draft changed. Review the new one.',
+      );
     }
     if (d.seen) return;
     await _action('/draft-seen', {'id': id, 'hash': hash});
@@ -520,10 +528,18 @@ class VoiceLiveController extends ChangeNotifier implements VoiceLiveSession {
     if (d == null || !d.eligible || !d.seen) {
       throw const VoiceFailure('not_ready', 'Review the complete draft first.');
     }
-    final r = await _transport.rpc('/text', {'text': d.isApproval ? 'approve it' : 'send it'});
+    final r = await _transport.rpc('/text', {
+      'text': d.isApproval ? 'approve it' : 'send it',
+    });
     if (!r.ok) throw VoiceFailure('rejected', r.error);
     final id = r.map['id']?.toString();
-    _items.add(VoiceLiveItem(id: id ?? 'typed-${_items.length}', kind: VoiceLiveItemKind.typed, text: d.isApproval ? 'approve it' : 'send it'));
+    _items.add(
+      VoiceLiveItem(
+        id: id ?? 'typed-${_items.length}',
+        kind: VoiceLiveItemKind.typed,
+        text: d.isApproval ? 'approve it' : 'send it',
+      ),
+    );
     if (id != null) _typedIndex[id] = _items.length - 1;
     notifyListeners();
   }

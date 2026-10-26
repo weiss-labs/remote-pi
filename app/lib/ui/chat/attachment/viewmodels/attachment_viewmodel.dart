@@ -1,3 +1,4 @@
+import 'dart:typed_data';
 import 'dart:async';
 import 'dart:convert';
 
@@ -42,39 +43,80 @@ class AttachmentViewModel extends ViewModel<AttachmentState> {
   Future<void> pickFromCamera() => _pick(_picker.pickFromCamera);
   Future<void> pickFromGallery() => _pick(_picker.pickFromGallery);
 
+  /// Weiss Labs: an image pasted straight into the composer.
+  Future<void> attachBytes(Uint8List bytes, String mime) =>
+      _pick(() => _picker.fromBytes(bytes, mime));
+
+  // Weiss Labs: several images per message; a new pick adds to the list.
+  List<PickedImage> get _attached => switch (state) {
+    AttachmentAttached(:final images) => images,
+    _ => _held,
+  };
+  // Images kept while a further pick is in flight.
+  List<PickedImage> _held = const [];
+
+  void _emitImages(List<PickedImage> images, bool? vision) {
+    _held = const [];
+    emit(images.isEmpty
+        ? AttachmentEmpty(visionSupported: vision)
+        : AttachmentAttached(images: List.unmodifiable(images), visionSupported: vision));
+  }
+
+  /// The relay drops frames over 4 MiB; base64 adds a third, so keep all
+  /// images under ~2.6 MB raw together.
+  static const maxTotalBytes = 2_600_000;
+
   Future<void> _pick(Future<PickedImage?> Function() pick) async {
     if (state is AttachmentPicking) return;
     final vision = state.visionSupported;
+    final before = _attached;
+    _held = before;
     emit(AttachmentPicking(visionSupported: vision));
     try {
       final img = await pick();
-      if (img == null) {
-        emit(AttachmentEmpty(visionSupported: vision)); // cancelled
+      if (img != null &&
+          before.fold(0, (n, i) => n + i.bytes.length) + img.bytes.length > maxTotalBytes) {
+        _emitImages(before, vision);
+        if (!_hints.isClosed) _hints.add(AttachHint.tooLarge);
         return;
       }
-      emit(AttachmentAttached(image: img, visionSupported: vision));
+      _emitImages(img == null ? before : [...before, img], vision);
     } on ImagePermissionDeniedException {
-      emit(AttachmentEmpty(visionSupported: vision));
+      _emitImages(before, vision);
       if (!_hints.isClosed) _hints.add(AttachHint.cameraPermissionDenied);
     } catch (_) {
-      emit(AttachmentEmpty(visionSupported: vision));
+      _emitImages(before, vision);
       if (!_hints.isClosed) _hints.add(AttachHint.pickFailed);
     }
   }
 
-  /// Discard the attached image (the "X" on the preview, #4).
-  void removeImage() {
-    if (state is! AttachmentAttached) return;
-    emit(AttachmentEmpty(visionSupported: state.visionSupported));
+  /// Discard one attached image (the "X" on its preview), or all of them.
+  void removeImage([int? index]) {
+    final s = state;
+    if (s is! AttachmentAttached) return;
+    final next = [...s.images];
+    if (index == null) {
+      next.clear();
+    } else if (index >= 0 && index < next.length) {
+      next.removeAt(index);
+    }
+    _emitImages(next, s.visionSupported);
   }
 
-  /// Hand the attached image to the send path as a base64 [MessageImage] and
-  /// reset to empty. Returns null when nothing is attached.
-  MessageImage? takeImageForSend() {
+  /// Hand every attached image to the send path as base64 and reset to empty.
+  List<MessageImage> takeImagesForSend() {
     final s = state;
-    if (s is! AttachmentAttached) return null;
-    emit(AttachmentEmpty(visionSupported: s.visionSupported));
-    return MessageImage(data: base64Encode(s.image.bytes), mime: s.image.mime);
+    if (s is! AttachmentAttached) return const [];
+    _emitImages(const [], s.visionSupported);
+    return [
+      for (final i in s.images) MessageImage(data: base64Encode(i.bytes), mime: i.mime),
+    ];
+  }
+
+  /// First attached image only (kept for older callers/tests).
+  MessageImage? takeImageForSend() {
+    final all = takeImagesForSend();
+    return all.isEmpty ? null : all.first;
   }
 
   // ---------------------------------------------------------------------------
@@ -114,8 +156,8 @@ class AttachmentViewModel extends ViewModel<AttachmentState> {
     emit(switch (state) {
       AttachmentEmpty() => AttachmentEmpty(visionSupported: vision),
       AttachmentPicking() => AttachmentPicking(visionSupported: vision),
-      AttachmentAttached(:final image) => AttachmentAttached(
-        image: image,
+      AttachmentAttached(:final images) => AttachmentAttached(
+        images: images,
         visionSupported: vision,
       ),
     });

@@ -252,6 +252,9 @@ export async function handleModelSet(
     const liveReg = ctx?.modelRegistry ?? reg;
     // Refresh first so a model just-added via `/login` is visible.
     liveReg.refresh();
+    if (!isPhoneSelectable(msg.provider)) {
+      throw new Error(`provider "${msg.provider}" isn't usable from the phone; pick the claude-bridge or openai-codex entry`);
+    }
     const model = liveReg.find(msg.provider, msg.model_id);
     if (!model) {
       throw new Error(`model "${msg.provider}/${msg.model_id}" not in registry`);
@@ -268,6 +271,14 @@ export async function handleModelSet(
   });
 }
 
+// Weiss Labs: providers the phone must never pick. Pi's native `anthropic`
+// login is dead (Anthropic rejected it as extra usage, Oct 14; Claude runs
+// through claude-bridge) and `openai-codex-2` was cancelled Oct 8. They stay
+// in Pi's registry, so filter here rather than letting the phone choose a
+// twin with the same display name that fails on the first turn.
+const HIDDEN_PROVIDERS = new Set(["anthropic", "openai-codex-2"]);
+export const isPhoneSelectable = (provider: string): boolean => !HIDDEN_PROVIDERS.has(provider);
+
 export function handleListModels(
   ctx: ActionCtx | null,
   reg: ActionModelRegistry,
@@ -282,7 +293,7 @@ export function handleListModels(
     // Fall back to remote-pi's own disk-backed registry when no ctx exists.
     const liveReg = ctx?.modelRegistry ?? reg;
     liveReg.refresh();
-    const models = liveReg.getAvailable().map(wireFromModel);
+    const models = liveReg.getAvailable().filter((m) => isPhoneSelectable(m.provider)).map(wireFromModel);
     const current = ctx?.getModel?.();
     sender.send({
       type: "models_list",

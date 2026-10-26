@@ -40,20 +40,22 @@ final class AttachmentPicking extends AttachmentState {
   int get hashCode => visionSupported.hashCode;
 }
 
-/// An image is attached and previewed in the composer.
+/// One or more images are attached and previewed in the composer.
 final class AttachmentAttached extends AttachmentState {
-  const AttachmentAttached({required this.image, super.visionSupported});
+  const AttachmentAttached({required this.images, super.visionSupported})
+    : assert(images.length > 0);
 
-  final PickedImage image;
+  final List<PickedImage> images;
+  PickedImage get image => images.first;
 
   @override
   bool operator ==(Object other) =>
       other is AttachmentAttached &&
-      identical(other.image, image) &&
+      identical(other.images, images) &&
       other.visionSupported == visionSupported;
 
   @override
-  int get hashCode => Object.hash(identityHashCode(image), visionSupported);
+  int get hashCode => Object.hash(identityHashCode(images), visionSupported);
 }
 
 /// One-shot hints the composer asks the host page to surface (snackbar /
@@ -64,4 +66,7 @@ enum AttachHint {
 
   /// Pick/compress failed for some other reason.
   pickFailed,
+
+  /// Adding this image would push the message past what the relay accepts.
+  tooLarge,
 }

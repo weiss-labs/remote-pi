@@ -451,6 +451,18 @@ void main() {
       conn.dispose();
     });
 
+    test('Weiss Labs: hide usage is remembered across launches', () async {
+      final store = _FakeSecureStorage();
+      final prefs = Preferences(store);
+      expect(prefs.hideUsage, isFalse);
+      await prefs.setHideUsage(true);
+      final next = Preferences(store);
+      await next.load();
+      expect(next.hideUsage, isTrue);
+      await next.setHideUsage(false);
+      expect(next.hideUsage, isFalse);
+    });
+
     test('Weiss Labs: workspaces follow the dragged order, new ones after', () {
       final storage = _FakeStorage([_peerA]);
       final prefs = Preferences(_FakeSecureStorage());

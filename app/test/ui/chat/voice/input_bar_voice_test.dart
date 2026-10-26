@@ -210,6 +210,61 @@ void main() {
     expect(find.byIcon(LucideIcons.mic600), findsOneWidget);
   });
 
+  testWidgets('Weiss Labs: mic stays available while the pane works (beside stop)', (tester) async {
+    await tester.pumpWidget(MaterialApp(
+      home: Scaffold(
+        body: Align(
+          alignment: Alignment.bottomCenter,
+          child: InputBar(onSend: (_) {}, voice: vm, streaming: true, onCancel: () {}),
+        ),
+      ),
+    ));
+    expect(find.byIcon(LucideIcons.square600), findsOneWidget); // stop
+    expect(find.byKey(const Key('input-bar-extra-mic')), findsOneWidget);
+    await startTap(tester);
+    expect(find.byKey(const Key('recording-strip')), findsOneWidget);
+    await tester.tap(find.byIcon(LucideIcons.x));
+    await tester.pump();
+    await tester.pump();
+    // Hold-to-talk on that mic: it must survive the strip overlay so release
+    // (not the 60s cap) ends the recording.
+    final gesture = await tester.startGesture(tester.getCenter(find.byKey(const Key('input-bar-extra-mic'))));
+    await tester.pump(const Duration(milliseconds: 700));
+    await tester.pump();
+    await tester.pump();
+    expect(find.byKey(const Key('recording-strip')), findsOneWidget);
+    await gesture.up();
+    await tester.pump();
+    await tester.pump();
+    await tester.pump();
+    expect(find.byKey(const Key('recording-strip')), findsNothing);
+    expect(find.text('hello from voice'), findsOneWidget);
+  });
+
+  testWidgets('Weiss Labs: extra mic survives the pane finishing mid-hold', (tester) async {
+    Widget bar(bool streaming) => MaterialApp(
+      home: Scaffold(
+        body: Align(
+          alignment: Alignment.bottomCenter,
+          child: InputBar(onSend: (_) {}, voice: vm, streaming: streaming, onCancel: () {}),
+        ),
+      ),
+    );
+    await tester.pumpWidget(bar(true));
+    final gesture = await tester.startGesture(tester.getCenter(find.byKey(const Key('input-bar-extra-mic'))));
+    await tester.pump(const Duration(milliseconds: 700));
+    await tester.pump();
+    await tester.pump();
+    expect(find.byKey(const Key('recording-strip')), findsOneWidget);
+    await tester.pumpWidget(bar(false)); // pane went idle mid-hold
+    await gesture.up();
+    await tester.pump();
+    await tester.pump();
+    await tester.pump();
+    expect(find.byKey(const Key('recording-strip')), findsNothing);
+    expect(find.text('hello from voice'), findsOneWidget);
+  });
+
   testWidgets('unsupported hides the mic', (tester) async {
     svc.availability = const SpeechUnsupported();
     await pumpBar(tester);

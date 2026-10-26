@@ -111,6 +111,8 @@ class _Prefs extends ChangeNotifier implements Preferences {
   @override
   bool get hideToolCalls => false;
   @override
+  bool get hideUsage => false;
+  @override
   dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
 }
 

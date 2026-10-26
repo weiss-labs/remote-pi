@@ -20,7 +20,7 @@ class Preferences extends ChangeNotifier {
   AppFontScale _fontScale = AppFontScale.extraLarge;
 
   Preferences([FlutterSecureStorage? store])
-      : _store = store ?? const FlutterSecureStorage();
+    : _store = store ?? const FlutterSecureStorage();
 
   static const _kHideToolCallsKey = 'prefs.hide_tool_calls';
   static const _kSelectedPeerEpkKey = 'prefs.selected_peer_epk';
@@ -30,6 +30,7 @@ class Preferences extends ChangeNotifier {
   static const _kFontScaleKey = 'prefs.font_scale';
   static const _kPinnedKey = 'prefs.pinned';
   static const _kWorkspaceOrderKey = 'prefs.workspaceOrder';
+  static const _kHideUsageKey = 'prefs.hide_usage';
 
   /// True → chat hides `ToolEvent` rows (only user/assistant text remain).
   bool get hideToolCalls => _hideToolCalls;
@@ -96,6 +97,16 @@ class Preferences extends ChangeNotifier {
     notifyListeners();
   }
 
+  // Weiss Labs: usage gauges in the chat header, tucked away or shown.
+  bool _hideUsage = false;
+  bool get hideUsage => _hideUsage;
+  Future<void> setHideUsage(bool value) async {
+    if (_hideUsage == value) return;
+    _hideUsage = value;
+    notifyListeners();
+    await _store.write(key: _kHideUsageKey, value: value.toString());
+  }
+
   // Weiss Labs: Herdr workspace order on Home, set by dragging the ≡ handle.
   // Names not in the list (new workspaces) sort after it, alphabetically.
   List<String> _workspaceOrder = [];
@@ -151,15 +162,27 @@ class Preferences extends ChangeNotifier {
       changed = true;
     }
 
+    final hideUsage = await _store.read(key: _kHideUsageKey) == 'true';
+    if (hideUsage != _hideUsage) {
+      _hideUsage = hideUsage;
+      changed = true;
+    }
+
     final orderRaw = await _store.read(key: _kWorkspaceOrderKey);
-    final order = (orderRaw ?? '').split('\n').where((s) => s.isNotEmpty).toList();
+    final order = (orderRaw ?? '')
+        .split('\n')
+        .where((s) => s.isNotEmpty)
+        .toList();
     if (order.join('\n') != _workspaceOrder.join('\n')) {
       _workspaceOrder = order;
       changed = true;
     }
 
     final pinnedRaw = await _store.read(key: _kPinnedKey);
-    final pinned = (pinnedRaw ?? '').split('\n').where((s) => s.isNotEmpty).toSet();
+    final pinned = (pinnedRaw ?? '')
+        .split('\n')
+        .where((s) => s.isNotEmpty)
+        .toSet();
     if (pinned.length != _pinned.length || !pinned.containsAll(_pinned)) {
       _pinned = pinned;
       changed = true;
@@ -171,10 +194,7 @@ class Preferences extends ChangeNotifier {
   Future<void> setHideToolCalls(bool value) async {
     if (_hideToolCalls == value) return;
     _hideToolCalls = value;
-    await _store.write(
-      key: _kHideToolCallsKey,
-      value: value.toString(),
-    );
+    await _store.write(key: _kHideToolCallsKey, value: value.toString());
     notifyListeners();
   }
 
@@ -197,9 +217,7 @@ class Preferences extends ChangeNotifier {
     if (epk == null || epk.isEmpty) {
       return setSelectedPeerEpk(null);
     }
-    final composite = (roomId == null || roomId.isEmpty)
-        ? epk
-        : '$epk:$roomId';
+    final composite = (roomId == null || roomId.isEmpty) ? epk : '$epk:$roomId';
     return setSelectedPeerEpk(composite);
   }
 
@@ -221,10 +239,7 @@ class Preferences extends ChangeNotifier {
   Future<void> setOnboardingCompleted(bool value) async {
     if (_onboardingCompleted == value) return;
     _onboardingCompleted = value;
-    await _store.write(
-      key: _kOnboardingCompletedKey,
-      value: value.toString(),
-    );
+    await _store.write(key: _kOnboardingCompletedKey, value: value.toString());
     notifyListeners();
   }
 

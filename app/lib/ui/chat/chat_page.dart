@@ -173,6 +173,8 @@ class ChatPage extends StatelessWidget {
         : 'offline';
     final ctxPct = footer?.ctxPct;
     final usage = footer?.usage;
+    final prefs = context.watch<Preferences>();
+    final hideUsage = prefs.hideUsage;
 
     return Container(
       constraints: const BoxConstraints(minHeight: 56),
@@ -277,11 +279,46 @@ class ChatPage extends StatelessWidget {
               ),
             ],
           ),
-          if (usage != null && usage.windows.isNotEmpty)
-            Padding(
-              padding: const EdgeInsets.fromLTRB(10, 2, 10, 0),
-              child: UsageGauges(usage),
+          if (usage != null && usage.windows.isNotEmpty) ...[
+            if (!hideUsage)
+              Padding(
+                padding: const EdgeInsets.fromLTRB(10, 2, 10, 0),
+                child: UsageGauges(usage),
+              ),
+            // Weiss Labs: tuck the gauges away / bring them back.
+            Align(
+              alignment: Alignment.centerRight,
+              child: InkWell(
+                onTap: () => prefs.setHideUsage(!hideUsage),
+                child: ConstrainedBox(
+                  constraints: const BoxConstraints(
+                    minHeight: 32,
+                    minWidth: 44,
+                  ),
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 12),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Text(
+                          hideUsage ? 'show usage' : 'hide usage',
+                          style: meta,
+                        ),
+                        const SizedBox(width: 4),
+                        Icon(
+                          hideUsage
+                              ? LucideIcons.chevronDown
+                              : LucideIcons.chevronUp,
+                          size: 14,
+                          color: colors.muted,
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
             ),
+          ],
         ],
       ),
     );
@@ -489,8 +526,8 @@ class ChatPage extends StatelessWidget {
           ? () => _openAttach(context, context.read<AttachmentViewModel>())
           : null,
       onSend: (text) {
-        final image = context.read<AttachmentViewModel>().takeImageForSend();
-        vm.sendMessage(text, image: image);
+        final images = context.read<AttachmentViewModel>().takeImagesForSend();
+        vm.sendMessage(text, images: images);
       },
     );
   }
@@ -543,6 +580,14 @@ class ChatPage extends StatelessWidget {
           const SnackBar(
             content: Text("Couldn't attach that image."),
             duration: Duration(seconds: 3),
+            behavior: SnackBarBehavior.floating,
+          ),
+        );
+      case AttachHint.tooLarge:
+        messenger.showSnackBar(
+          const SnackBar(
+            content: Text('Too many photos for one message. Send these first, then add more.'),
+            duration: Duration(seconds: 4),
             behavior: SnackBarBehavior.floating,
           ),
         );

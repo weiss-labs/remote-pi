@@ -23,6 +23,13 @@ class _FakeBackend implements ImagePickerBackend {
   }
 
   @override
+  Future<Uint8List> compressBytes(
+    Uint8List bytes, {
+    required int maxSide,
+    required int quality,
+  }) async => Uint8List.fromList(bytes.take(100).toList());
+
+  @override
   Future<Uint8List> compress(
     String path, {
     required int maxSide,
@@ -79,5 +86,13 @@ void main() {
       () => svc.pickFromCamera(),
       throwsA(isA<ImagePermissionDeniedException>()),
     );
+  });
+
+  test('Weiss Labs: fromBytes compresses a pasted image, empty → null', () async {
+    final svc = ImagePickerService(_FakeBackend());
+    final out = await svc.fromBytes(Uint8List(5000), 'image/png');
+    expect(out!.bytes.length, 100);
+    expect(out.mime, 'image/jpeg');
+    expect(await svc.fromBytes(Uint8List(0), 'image/png'), isNull);
   });
 }

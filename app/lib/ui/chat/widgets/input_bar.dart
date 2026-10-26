@@ -107,6 +107,7 @@ class _InputBarState extends State<InputBar> {
   // Weiss Labs: a plain tap starts ChatGPT-style dictation (no finger held);
   // the strip then shows cancel / insert / send buttons.
   bool _tapMode = false;
+  bool _extraMicLatched = false;
   bool _sendAfterTranscript = false;
   StreamSubscription<String>? _transcriptSub;
 
@@ -339,13 +340,28 @@ class _InputBarState extends State<InputBar> {
     final hasImage = attachState is AttachmentAttached;
     final visionBlocked = attachState?.attachBlockedByVision ?? false;
     final hasContent = !_empty || hasImage;
+    // Weiss Labs: attach any time, including mid-turn (sent as a steer),
+    // and add as many images as you like.
     final attachEnabled =
         widget.onOpenAttach != null &&
         canInteract &&
-        !widget.streaming &&
         !showStrip &&
         !visionBlocked &&
-        !hasImage;
+        attachState is! AttachmentPicking;
+    // Talk instead of type when the main button is busy being Send (a photo
+    // is attached) or Stop (the pane is working).
+    // Stays mounted while the strip overlays it, like the main mic, so the
+    // hold gesture keeps delivering move/release.
+    var showExtraMic =
+        _empty &&
+        (hasImage || widget.streaming) &&
+        widget.voice != null &&
+        !voiceUnsupported &&
+        canInteract;
+    // Once a hold started on it, keep it until the recording ends even if the
+    // pane stops working or the photo goes away mid-hold.
+    if (showStrip && _extraMicLatched) showExtraMic = true;
+    if (!showStrip) _extraMicLatched = showExtraMic;
 
     final showQuickActions =
         _empty &&
@@ -380,9 +396,18 @@ class _InputBarState extends State<InputBar> {
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               if (hasImage)
-                _AttachmentPreview(
-                  image: attachState.image,
-                  onRemove: widget.attachment!.removeImage,
+                SingleChildScrollView(
+                  scrollDirection: Axis.horizontal,
+                  child: Row(
+                    children: [
+                      for (var i = 0; i < attachState.images.length; i++)
+                        _AttachmentPreview(
+                          key: ValueKey(i),
+                          image: attachState.images[i],
+                          onRemove: () => widget.attachment!.removeImage(i),
+                        ),
+                    ],
+                  ),
                 ),
               for (final item in widget.queuedMessages)
                 _QueuedMessagePreview(
@@ -423,6 +448,24 @@ class _InputBarState extends State<InputBar> {
                       maxLines: 6,
                       keyboardType: TextInputType.multiline,
                       textInputAction: TextInputAction.newline,
+                      // Weiss Labs: paste an image from the clipboard straight
+                      // into the thread (iOS keyboard content insertion).
+                      contentInsertionConfiguration: widget.attachment == null
+                          ? null
+                          : ContentInsertionConfiguration(
+                              allowedMimeTypes: const [
+                                'image/png',
+                                'image/jpeg',
+                                'image/gif',
+                                'image/webp',
+                                'image/heic',
+                              ],
+                              onContentInserted: (c) {
+                                final data = c.data;
+                                if (data == null || data.isEmpty) return;
+                                unawaited(widget.attachment!.attachBytes(data, c.mimeType));
+                              },
+                            ),
                       style: TextStyle(
                         fontFamily: kMonoFamily,
                         fontSize: 13,
@@ -472,6 +515,24 @@ class _InputBarState extends State<InputBar> {
                     ),
                   ),
                   const SizedBox(width: 10),
+                  if (showExtraMic) ...[
+                    _ComposerActionButton(
+                      key: const Key('input-bar-extra-mic'),
+                      streaming: false,
+                      hasContent: false,
+                      disabled: widget.disabled,
+                      onSendText: _submit,
+                      onCancel: null,
+                      onStartAudio: widget.onStartAudio,
+                      voiceEnabled: true,
+                      voiceUnsupported: false,
+                      onVoiceLongPressStart: _onVoiceStart,
+                      onVoiceLongPressMoveUpdate: _onVoiceMove,
+                      onVoiceLongPressEnd: _onVoiceEnd,
+                      onVoiceTap: _onVoiceTap,
+                    ),
+                    const SizedBox(width: 8),
+                  ],
                   _ComposerActionButton(
                     streaming: widget.streaming,
                     hasContent: hasContent,
@@ -742,7 +803,7 @@ class _AttachButton extends StatelessWidget {
 /// Plan/30 — the composer image preview: a rounded thumbnail with an "X" to
 /// discard before sending (decision #4).
 class _AttachmentPreview extends StatelessWidget {
-  const _AttachmentPreview({required this.image, required this.onRemove});
+  const _AttachmentPreview({super.key, required this.image, required this.onRemove});
 
   final PickedImage image;
   final VoidCallback onRemove;
@@ -966,6 +1027,7 @@ enum _ComposerMode { sendAudio, sendText, cancel }
 
 class _ComposerActionButton extends StatelessWidget {
   const _ComposerActionButton({
+    super.key,
     required this.streaming,
     required this.hasContent,
     required this.disabled,

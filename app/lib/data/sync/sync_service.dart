@@ -179,8 +179,13 @@ class SyncService extends Service {
   Future<void> sendMessage(
     String text, {
     MessageImage? image,
+    List<MessageImage> images = const [],
     UserMessageStreamingBehavior? streamingBehavior,
   }) async {
+    // Weiss Labs: every image goes to the Pi; the local bubble keeps the
+    // first (the record stores one).
+    final all = [?image, ...images];
+    image = all.isEmpty ? null : all.first;
     final epk = _activeEpk;
     final id = _newId();
     final now = DateTime.now();
@@ -234,9 +239,9 @@ class SyncService extends Service {
         id: id,
         text: text,
         streamingBehavior: streamingBehavior,
-        images: image == null
+        images: all.isEmpty
             ? null
-            : [WireImage(data: image.data, mime: image.mime)],
+            : [for (final i in all) WireImage(data: i.data, mime: i.mime)],
       ),
     );
   }

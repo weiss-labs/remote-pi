@@ -47,10 +47,12 @@ class RelayVoiceTransport implements VoiceRpcTransport {
   RelayVoiceTransport(
     this._conn, {
     Duration timeout = const Duration(seconds: 30),
-  }) : _timeout = timeout;
+    Duration openTimeout = const Duration(seconds: 10),
+  }) : _timeout = timeout,
+       _openTimeout = openTimeout;
 
   final ConnectionManager _conn;
-  final Duration _timeout;
+  final Duration _timeout, _openTimeout;
   final Map<String, Completer<ServerMessage>> _pending = {};
   StreamSubscription<ServerMessage>? _sub;
   IChannel? _subscribed;
@@ -83,16 +85,22 @@ class RelayVoiceTransport implements VoiceRpcTransport {
     if (c != null && !c.isCompleted) c.complete(m);
   }
 
-  Future<ServerMessage> _send(ClientMessage Function(String id) build) async {
+  Future<ServerMessage> _send(
+    ClientMessage Function(String id) build, {
+    Duration? timeout,
+  }) async {
     final ch = _channel();
     final id = 'voice_${uuid7()}';
     final c = Completer<ServerMessage>();
     _pending[id] = c;
     try {
       await ch.send(build(id));
-      return await c.future.timeout(_timeout);
+      return await c.future.timeout(timeout ?? _timeout);
     } on TimeoutException {
-      throw const VoiceFailure('timeout', 'The Mac did not answer in time.');
+      throw const VoiceFailure(
+        'timeout',
+        "The pane didn't answer. Make sure it's open and idle on the Mac (try /reload there), then start voice again.",
+      );
     } finally {
       _pending.remove(id);
     }
@@ -100,7 +108,16 @@ class RelayVoiceTransport implements VoiceRpcTransport {
 
   @override
   Future<VoiceOpenResult> open() async {
-    final m = await _send((id) => VoiceOpen(id: id));
+    // The relay drops frames for a pane that isn't connected without telling
+    // us, so check first and fail fast instead of sitting on "connecting".
+    final peer = _conn.activePeer;
+    if (peer == null || !_conn.isRoomLive(peer.remoteEpk, _conn.activeRoomId)) {
+      throw const VoiceFailure(
+        'offline',
+        "This pane isn't connected right now. Make sure it's open on the Mac (try /reload there), then start voice again.",
+      );
+    }
+    final m = await _send((id) => VoiceOpen(id: id), timeout: _openTimeout);
     return switch (m) {
       VoiceOpened(:final label, :final ratePerMinute) => VoiceOpenResult(
         label: label,
