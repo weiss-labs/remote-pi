@@ -100,7 +100,7 @@ export class NotificationBridge {
     this.run = randomUUID(); this.failed = false; this.observedError = false; this.waiting = false; this.active = true;
     void this.control({ type: "notification_activity", active: true });
   }
-  /** No arbitrary text, prompts, stdout, tool arguments, or labels enter push payloads. */
+  /** Push content is a generic category plus optional consented pane label, never prompts/stdout/tool arguments. */
   promptOpened(id: string): void {
     if (this.unresolvedPrompts.size < 64) this.unresolvedPrompts.add(id);
     else this.waiting = true; // Conservative bounded overflow: never claim all prompts resolved.
