@@ -14,16 +14,27 @@ void main() {
           home: const Scaffold(body: CredentialNeededDialog()),
         ),
       );
-      expect(find.text('Complete sign-in on your Mac'), findsOneWidget);
+      expect(find.text('Desktop authorization required'), findsOneWidget);
       expect(
-        find.textContaining('Open the requesting pane on your Mac'),
+        find.textContaining('Read the requesting pane’s notice'),
         findsOneWidget,
       );
       expect(find.textContaining('does not unlock your Mac'), findsOneWidget);
       expect(find.textContaining('Do not paste passwords'), findsOneWidget);
+      expect(
+        find.textContaining(
+          'unattended credentials scoped to that integration',
+        ),
+        findsOneWidget,
+      );
+      expect(
+        find.textContaining('does not transfer passwords'),
+        findsOneWidget,
+      );
+      expect(find.textContaining('does not unblock the task'), findsOneWidget);
       expect(find.byType(TextField), findsNothing);
       expect(
-        tester.getSize(find.widgetWithText(TextButton, 'Understood')).height,
+        tester.getSize(find.widgetWithText(TextButton, 'Back to pane')).height,
         greaterThanOrEqualTo(44),
       );
       final target = NotificationTarget.parse({
