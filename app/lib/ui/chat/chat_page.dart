@@ -1,3 +1,4 @@
+import 'package:app/ui/chat/commands/viewmodels/commands_viewmodel.dart';
 import 'package:app/data/preferences/preferences.dart';
 import 'package:app/domain/session_state.dart';
 import 'package:app/pairing/storage.dart';
@@ -497,6 +498,7 @@ class ChatPage extends StatelessWidget {
         !isPresenceOffline;
 
     return InputBar(
+      commands: context.watch<CommandsViewModel?>(),
       onStartVoiceLive: onStartVoiceLive,
       disabled:
           !isReady ||
@@ -586,7 +588,9 @@ class ChatPage extends StatelessWidget {
       case AttachHint.tooLarge:
         messenger.showSnackBar(
           const SnackBar(
-            content: Text('Too many photos for one message. Send these first, then add more.'),
+            content: Text(
+              'Too many photos for one message. Send these first, then add more.',
+            ),
             duration: Duration(seconds: 4),
             behavior: SnackBarBehavior.floating,
           ),

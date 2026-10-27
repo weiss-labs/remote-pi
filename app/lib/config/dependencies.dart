@@ -44,6 +44,9 @@ import 'package:cryptography/cryptography.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:app/domain/contracts/notifications.dart';
+import 'package:app/domain/contracts/pane_commands.dart';
+import 'package:app/data/actions/pane_commands_repository.dart';
+import 'package:app/ui/chat/commands/viewmodels/commands_viewmodel.dart';
 import 'package:app/data/notifications/native_notifications.dart';
 import 'package:app/data/notifications/notification_service.dart';
 import 'package:package_info_plus/package_info_plus.dart';
@@ -155,6 +158,13 @@ Future<void> setupDependencies() async {
   // Repositories
   _injector.addRepository<IActionsRepository>(
     () => ActionsRepository(_injector.get<ConnectionManager>()),
+  );
+
+  _injector.addRepository<PaneCommands>(
+    () => PaneCommandsRepository(_injector.get<ConnectionManager>()),
+  );
+  _injector.addViewModel<CommandsViewModel>(
+    () => CommandsViewModel(_injector.get<PaneCommands>()),
   );
 
   // ViewModels

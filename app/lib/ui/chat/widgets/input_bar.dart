@@ -1,5 +1,7 @@
 import 'dart:async';
 
+import 'package:app/ui/chat/commands/viewmodels/commands_viewmodel.dart';
+import 'package:app/ui/chat/commands/widgets/commands_panel.dart';
 import 'package:app/data/images/image_picker_service.dart';
 import 'package:app/domain/session_state.dart';
 import 'package:app/ui/chat/attachment/states/attachment_state.dart';
@@ -38,6 +40,7 @@ class InputBar extends StatefulWidget {
   final bool disabled; // offline or no peer
   final bool streaming; // show cancel instead of send
   final void Function(String text) onSend;
+  final CommandsViewModel? commands;
   final VoidCallback? onCancel;
   final VoidCallback? onOpenQuickActions;
   final VoidCallback? onStartAudio;
@@ -69,6 +72,7 @@ class InputBar extends StatefulWidget {
   const InputBar({
     super.key,
     required this.onSend,
+    this.commands,
     this.onCancel,
     this.onOpenQuickActions,
     this.onStartAudio,
@@ -99,6 +103,8 @@ class _InputBarState extends State<InputBar> {
   // handling would consume Enter before an ancestor ever sees it.
   late final FocusNode _focusNode = FocusNode(onKeyEvent: _onComposerKey);
   bool _empty = true;
+  String? _commandError;
+  String? _commandNotice;
   bool _cancelArmed = false;
   // True while the hold-to-talk gesture is active. Lets `_beginVoice` tell
   // whether the user is still holding once `startRecording` resolves — if not
@@ -146,11 +152,34 @@ class _InputBarState extends State<InputBar> {
   }
 
   void _onTextChange() {
-    final next = _controller.text.isEmpty;
-    if (next == _empty) return;
+    widget.commands?.queryChanged(_controller.text);
+    if (!mounted) return;
     setState(() {
-      _empty = next;
+      _empty = _controller.text.isEmpty;
+      _commandError = null;
+      _commandNotice = null;
     });
+  }
+
+  Future<void> _runCommand(String text) async {
+    final commands = widget.commands;
+    if (commands == null || (widget.attachment?.hasImage ?? false)) {
+      setState(
+        () => _commandError = commands == null
+            ? 'Commands are unavailable. Nothing was sent.'
+            : 'Remove attachments before running a command.',
+      );
+      return;
+    }
+    final succeeded = await commands.run(text);
+    if (!mounted) return;
+    if (succeeded && _controller.text.trim() == text) {
+      _controller.clear();
+      setState(
+        () => _commandNotice =
+            'Accepted by pane. Watch the conversation for results.',
+      );
+    }
   }
 
   @override
@@ -163,7 +192,12 @@ class _InputBarState extends State<InputBar> {
   }
 
   void _submit() {
+    if (widget.disabled) return;
     final text = _controller.text.trim();
+    if (text.startsWith('/')) {
+      unawaited(_runCommand(text));
+      return;
+    }
     // Plan/30 — an attached image makes an empty-caption send valid.
     final hasImage = widget.attachment?.hasImage ?? false;
     if (text.isEmpty && !hasImage) return;
@@ -313,6 +347,7 @@ class _InputBarState extends State<InputBar> {
     final listenables = <Listenable>[
       if (widget.voice != null) widget.voice!,
       if (widget.attachment != null) widget.attachment!,
+      if (widget.commands != null) widget.commands!,
     ];
     if (listenables.isEmpty) return _composer(context);
     // Rebuild on every voice/attachment emit (tick / level / availability /
@@ -395,6 +430,32 @@ class _InputBarState extends State<InputBar> {
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
+              if (_commandNotice != null)
+                Padding(
+                  padding: const EdgeInsets.only(bottom: 8),
+                  child: Text(
+                    _commandNotice!,
+                    style: context.typo.mono.copyWith(
+                      color: colors.muted,
+                      fontSize: 11,
+                    ),
+                  ),
+                ),
+              if (_controller.text.trimLeft().startsWith('/'))
+                CommandsPanel(
+                  viewModel: widget.commands,
+                  query: _controller.text,
+                  localError: _commandError,
+                  disabled: widget.disabled,
+                  onRun: _submit,
+                  onSelect: (name) {
+                    _controller.text = '/$name ';
+                    _controller.selection = TextSelection.collapsed(
+                      offset: _controller.text.length,
+                    );
+                    _focusNode.requestFocus();
+                  },
+                ),
               if (hasImage)
                 SingleChildScrollView(
                   scrollDirection: Axis.horizontal,
@@ -463,7 +524,12 @@ class _InputBarState extends State<InputBar> {
                               onContentInserted: (c) {
                                 final data = c.data;
                                 if (data == null || data.isEmpty) return;
-                                unawaited(widget.attachment!.attachBytes(data, c.mimeType));
+                                unawaited(
+                                  widget.attachment!.attachBytes(
+                                    data,
+                                    c.mimeType,
+                                  ),
+                                );
                               },
                             ),
                       style: TextStyle(
@@ -803,7 +869,11 @@ class _AttachButton extends StatelessWidget {
 /// Plan/30 — the composer image preview: a rounded thumbnail with an "X" to
 /// discard before sending (decision #4).
 class _AttachmentPreview extends StatelessWidget {
-  const _AttachmentPreview({super.key, required this.image, required this.onRemove});
+  const _AttachmentPreview({
+    super.key,
+    required this.image,
+    required this.onRemove,
+  });
 
   final PickedImage image;
   final VoidCallback onRemove;

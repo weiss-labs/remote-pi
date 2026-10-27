@@ -61,8 +61,13 @@ class NotificationPreferences {
 }
 
 class NotificationTarget {
-  final String peer, room, eventId;
-  const NotificationTarget(this.peer, this.room, this.eventId);
+  final String peer, room, eventId, kind;
+  const NotificationTarget(
+    this.peer,
+    this.room,
+    this.eventId, {
+    this.kind = '',
+  });
   static NotificationTarget? parse(Object? value) {
     if (value is! Map ||
         value['v'] != 1 ||
@@ -82,6 +87,6 @@ class NotificationTarget {
         event.length > 256) {
       return null;
     }
-    return NotificationTarget(peer, room, event);
+    return NotificationTarget(peer, room, event, kind: value['kind'] as String);
   }
 }

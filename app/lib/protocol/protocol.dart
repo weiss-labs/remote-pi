@@ -817,6 +817,14 @@ sealed class ServerMessage {
   factory ServerMessage.fromJson(Map<String, dynamic> json) {
     final type = json['type'] as String?;
     return switch (type) {
+      'commands_list' => CommandsList.fromJson(json),
+      'command_result' => CommandResult(
+        inReplyTo: json['in_reply_to'] as String,
+        name: json['name'] as String? ?? '',
+        accepted: json['status'] == 'accepted',
+        code: json['code'] as String?,
+        message: json['message'] as String?,
+      ),
       'notification_registration' => NotificationRegistration(
         inReplyTo: json['in_reply_to'] as String,
         ok: json['ok'] == true,
@@ -871,6 +879,82 @@ sealed class ServerMessage {
       _ => throw UnsupportedTypeException(type ?? ''),
     };
   }
+}
+
+class ListCommands extends ClientMessage {
+  final String id;
+  ListCommands({required this.id});
+  @override
+  Map<String, dynamic> toJson() => {'type': 'list_commands', 'id': id};
+}
+
+class CommandExecute extends ClientMessage {
+  final String id, name, args;
+  CommandExecute({required this.id, required this.name, required this.args});
+  @override
+  Map<String, dynamic> toJson() => {
+    'type': 'command_execute',
+    'id': id,
+    'name': name,
+    'args': args,
+  };
+}
+
+class CommandDescriptor {
+  final String name, description, source, busyPolicy;
+  final bool available;
+  final String? reason;
+  const CommandDescriptor({
+    required this.name,
+    required this.description,
+    required this.source,
+    required this.busyPolicy,
+    required this.available,
+    this.reason,
+  });
+  factory CommandDescriptor.fromJson(Map<String, dynamic> json) =>
+      CommandDescriptor(
+        name: json['name'] as String,
+        description: json['description'] as String? ?? '',
+        source: json['source'] as String? ?? 'extension',
+        busyPolicy: json['busy_policy'] as String? ?? 'idle_only',
+        available: json['available'] == true,
+        reason: json['reason'] as String?,
+      );
+}
+
+class CommandsList extends ServerMessage {
+  final String inReplyTo;
+  final List<CommandDescriptor> commands;
+  final bool dispatchSupported;
+  const CommandsList({
+    required this.inReplyTo,
+    required this.commands,
+    required this.dispatchSupported,
+  });
+  factory CommandsList.fromJson(Map<String, dynamic> json) => CommandsList(
+    inReplyTo: json['in_reply_to'] as String,
+    commands: (json['commands'] as List)
+        .take(515)
+        .map(
+          (value) => CommandDescriptor.fromJson(value as Map<String, dynamic>),
+        )
+        .toList(),
+    dispatchSupported: json['dispatch_supported'] == true,
+  );
+}
+
+class CommandResult extends ServerMessage {
+  final String inReplyTo, name;
+  final bool accepted;
+  final String? code, message;
+  const CommandResult({
+    required this.inReplyTo,
+    required this.name,
+    required this.accepted,
+    this.code,
+    this.message,
+  });
 }
 
 class NotifyRegister extends ClientMessage {

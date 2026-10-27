@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'package:app/ui/chat/widgets/credential_needed_dialog.dart';
 
 import 'package:app/domain/contracts/notifications.dart';
 import 'package:app/data/transport/epk_encoding.dart';
@@ -84,6 +85,7 @@ class _RemotePiAppState extends State<RemotePiApp> with WidgetsBindingObserver {
         // A stale push never selects or creates a guessed session.
         injector.get<SessionSelection>().clear();
         _router.go('/home');
+        await _showCredentialInstructions(target);
         return;
       }
       final storage = injector.get<PairingStorage>();
@@ -118,10 +120,23 @@ class _RemotePiAppState extends State<RemotePiApp> with WidgetsBindingObserver {
           extra: {'title': 'Pane', 'device': peer.nickname ?? peer.sessionName},
         );
       }
+      await _showCredentialInstructions(target);
     } finally {
       _openingTap = false;
       if (mounted) _routeChanged();
     }
+  }
+
+  Future<void> _showCredentialInstructions(NotificationTarget target) async {
+    if (target.kind != 'credential_needed') return;
+    await WidgetsBinding.instance.endOfFrame;
+    if (!mounted) return;
+    final dialogContext = _router.routerDelegate.navigatorKey.currentContext;
+    if (dialogContext == null || !dialogContext.mounted) return;
+    await showDialog<void>(
+      context: dialogContext,
+      builder: (_) => const CredentialNeededDialog(),
+    );
   }
 
   void _updateVisibleTarget() {

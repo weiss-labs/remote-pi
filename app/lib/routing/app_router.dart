@@ -10,6 +10,7 @@ import 'package:app/pairing/storage.dart';
 import 'package:app/routing/adaptive.dart';
 import 'package:app/ui/chat/attachment/viewmodels/attachment_viewmodel.dart';
 import 'package:app/ui/chat/chat_page.dart';
+import 'package:app/ui/chat/commands/viewmodels/commands_viewmodel.dart';
 import 'package:app/ui/chat/viewmodels/chat_viewmodel.dart';
 import 'package:app/ui/chat/voice/viewmodels/voice_input_viewmodel.dart';
 import 'package:app/ui/chat/widgets/detail_placeholder.dart';
@@ -360,6 +361,7 @@ GoRouter buildRouter(
           return MultiProvider(
             providers: [
               ViewmodelProvider<ChatViewModel>(),
+              ViewmodelProvider<CommandsViewModel>(),
               ViewmodelProvider<VoiceInputViewModel>(),
               ViewmodelProvider<AttachmentViewModel>(),
             ],
@@ -401,6 +403,7 @@ class _DetailPane extends StatelessWidget {
       key: ValueKey('chat-${sel.current!.epk}-${sel.current!.roomId}'),
       providers: [
         ViewmodelProvider<ChatViewModel>(),
+        ViewmodelProvider<CommandsViewModel>(),
         ViewmodelProvider<VoiceInputViewModel>(),
         ViewmodelProvider<AttachmentViewModel>(),
       ],
