@@ -844,6 +844,25 @@ describe("/remote-pi revoke", () => {
     } finally {commit.resolve();relay.emit("close");relay.sendControl.mockImplementation(original);}
   });
 
+  test("a durable QR re-pair from another process restores the revoked phone", async () => {
+    captureHandler("remote-pi");await _connectForTest(makeMockCtx());const relay=relayRef.current!;
+    _knownPeers.push({name:"Phone",remote_epk:OWNER_STANDARD_FIXTURE,paired_at:"before"});
+    await captureHandler("remote-pi revoke")(OWNER_STANDARD_FIXTURE.slice(0,8),makeMockCtx());
+    expect(_knownPeers).toHaveLength(0);
+    // Another pane commits a genuine fresh QR pairing to the shared storage.
+    _knownPeers.push({name:"Phone",remote_epk:OWNER_STANDARD_FIXTURE,paired_at:"after"});
+    relay.emit("message",makeInnerLine(OWNER_STANDARD_FIXTURE,{type:"ping",id:"after-repair"}));
+    await vi.waitFor(()=>expect(_hasActivePeerForTest(OWNER_STANDARD_FIXTURE)).toBe(true));
+  });
+
+  test("notification fanout replies without attaching an owner chat stream", async () => {
+    captureHandler("remote-pi");await _connectForTest(makeMockCtx());const relay=relayRef.current!;
+    _knownPeers.push({name:"Phone",remote_epk:OWNER_STANDARD_FIXTURE,paired_at:"now"});
+    relay.emit("message",makeInnerLine(OWNER_STANDARD_FIXTURE,{type:"notify_unregister",id:"fanout-only",device_id:"test-device"}));
+    await vi.waitFor(()=>expect(relay.sendControl.mock.calls.some(([f])=>f.type==="unregister_notification_device")).toBe(true));
+    expect(_hasActivePeerForTest(OWNER_STANDARD_FIXTURE)).toBe(false);
+  });
+
   test("reconciliation skips strict storage errors instead of revoking all phones", async () => {
     const storage=await import("./pairing/storage.js");vi.mocked(storage.listPeersStrict).mockRejectedValueOnce(new Error("partial storage"));
     captureHandler("remote-pi");await _connectForTest(makeMockCtx());await new Promise(r=>setTimeout(r,0));
@@ -1813,6 +1832,7 @@ describe("multi-channel broadcast (W2D)", () => {
     // model on every call.
     const relayState = { role: "custom", customType: "remote-pi:relay-state", content: "Relay connected", display: false };
     const nameAssigned = { role: "custom", customType: "remote-pi:name-assigned", content: "Mesh name reassigned", display: false };
+    const credentialNotice = {role:"custom",customType:"remote-pi:credential-needed",content:"Retry the blocked step",display:true};
     const paired = { role: "custom", customType: "remote-pi:paired", content: "Paired with Phone", display: false };
     const keepCustom = { role: "custom", customType: "remote-pi:mesh-message", content: "keep", display: true };
     const keepForeign = { role: "custom", customType: "other-ext:data", content: "keep", display: false };
@@ -1821,13 +1841,13 @@ describe("multi-channel broadcast (W2D)", () => {
     const onContext = captureEventHandler("context");
     const result = onContext({
       type: "context",
-      messages: [relayState, keepCustom, nameAssigned, keepForeign, paired, keepUser],
+      messages: [relayState, keepCustom, nameAssigned, keepForeign, paired, keepUser, credentialNotice],
     }) as { messages?: unknown[] };
     expect(result.messages).toEqual([keepCustom, keepForeign, keepUser]);
 
     const onBeforeCompact = captureEventHandler("session_before_compact");
     const preparation = {
-      messagesToSummarize: [relayState, keepUser],
+      messagesToSummarize: [relayState, keepUser, credentialNotice],
       turnPrefixMessages: [paired, keepCustom],
     };
     onBeforeCompact({

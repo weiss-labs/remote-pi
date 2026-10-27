@@ -69,6 +69,7 @@ class Channel implements IChannel, IControlLink, INotificationRoutes {
   );
   final sent = <(String, String, ClientMessage)>[];
   bool autoAck = true;
+  String? rejectedRoom;
   @override
   Stream<ServerMessage> get serverMessages => messages.stream;
   @override
@@ -97,7 +98,8 @@ class Channel implements IChannel, IControlLink, INotificationRoutes {
       room: room,
       reply: NotificationRegistration(
         inReplyTo: message.toJson()['id'] as String,
-        ok: true,
+        ok: room != rejectedRoom,
+        error: room == rejectedRoom ? 'unsupported_type' : null,
       ),
     ),
   );
@@ -124,7 +126,10 @@ void main() {
   late Channel channel;
   late ConnectionManager conn;
   late NotificationService service;
-  Future<void> setup({Duration renewal = const Duration(hours: 12)}) async {
+  Future<void> setup({
+    Duration renewal = const Duration(hours: 12),
+    Duration retry = const Duration(seconds: 30),
+  }) async {
     FlutterSecureStorage.setMockInitialValues({});
     storage = Storage();
     platform = Platform();
@@ -146,6 +151,7 @@ void main() {
       supported: true,
       ownerKey: () => Ed25519().newKeyPairFromSeed(List.filled(32, 1)),
       renewalInterval: renewal,
+      retryDelay: retry,
     );
     await service.start();
     await until(() => channel.sent.length >= 2);
@@ -158,6 +164,32 @@ void main() {
     await channel.controls.close();
     await channel.replies.close();
   });
+  test(
+    'unsupported pane falls through to another live room without changing chat',
+    () async {
+      await setup(retry: const Duration(milliseconds: 20));
+      channel.rejectedRoom = 'live-a';
+      channel.controls.add(
+        RoomsSnapshot(
+          peer: a.remoteEpk,
+          rooms: [
+            const RoomInfo(roomId: 'live-a', startedAt: 1),
+            const RoomInfo(roomId: 'live-z', startedAt: 1),
+          ],
+        ),
+      );
+      await until(() => conn.roomsFor(a.remoteEpk).length == 2);
+      await service.update(service.preferences.copyWith(enabled: true));
+      await until(
+        () => channel.sent.any(
+          (s) =>
+              s.$1 == a.remoteEpk && s.$2 == 'live-z' && s.$3 is NotifyRegister,
+        ),
+      );
+      expect(conn.activeRoomId, 'closed-selected');
+    },
+  );
+
   test(
     'prefs token rotation and disable reach every live paired Mac without changing active chat',
     () async {

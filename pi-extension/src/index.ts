@@ -132,7 +132,7 @@ const _notifications = new NotificationBridge({
   paneName: () => _myRoomMeta?.name ?? null,
   callActive: () => _voiceBridge.isActive(),
   credentialNotice: _announceCredentialNeeded,
-  paired: async (phone) => (await _findKnownPeer(phone)) !== null && _activePeers.has(phone),
+  paired: async (phone) => (await _findKnownPeer(phone)) !== null,
 });
 function _broadcastWithNotifications(msg: ServerMessage): void {
   if (msg.type === "extension_ui_request" && msg.method !== "notify") _notifications.promptOpened(msg.id);
@@ -689,7 +689,7 @@ function _isPureDataContextMessage(message: unknown): boolean {
   return m.role === "custom"
     && typeof m.customType === "string"
     && m.customType.startsWith("remote-pi:")
-    && m.display === false;
+    && (m.display === false || m.customType === "remote-pi:credential-needed");
 }
 
 function _filterInternalMessagesFromContext<T>(messages: T[] | undefined): T[] {
@@ -1421,6 +1421,9 @@ function _denyRevokedOwnerRuntime(owner: string, sendBye = false): boolean {
 }
 function _revokeActiveOwnerRuntime(canonicalOwnerPubkey: string): void {
   const attached = _denyRevokedOwnerRuntime(canonicalOwnerPubkey);
+  // Storage already committed. Keep the epoch invalidation, not a permanent
+  // process-local deny that would block a genuine QR re-pair in another pane.
+  _revokingOwners.delete(canonicalOwnerPubkey);
   // SelfRevoke's storage mutation already committed before this callback.
   void _notifications.revoke(canonicalOwnerPubkey).catch(() => { /* Reconcile on reconnect. */ });
   _refreshPairingsCache();
@@ -1433,7 +1436,7 @@ async function _reconcileNotificationPairings(): Promise<void> {
     const records = (await listPeersStrict()).map(_inspectPeerRecord);
     // A corrupt record is not proof that its owner was intentionally removed.
     if (records.some(p => p === null || p.runtimeKey === null)) return;
-    const phones = records.flatMap(p => p?.runtimeKey && !_revokingOwners.has(p.runtimeKey) ? [p.runtimeKey] : []);
+    const phones = records.flatMap(p => p?.runtimeKey ? [p.runtimeKey] : []);
     _notifications.reconcile(phones);
   } catch { /* Fail closed: do not turn a storage read failure into revocation. */ }
 }
@@ -1446,8 +1449,9 @@ async function _findKnownPeer(appPeerIdStd: string): Promise<PeerRecord | null> 
     return null;
   }
   if (_revokingOwners.has(runtimeKey)) return null;
+  const epoch = _ownerRevocationEpochs.get(runtimeKey) ?? 0;
   for (const record of await listPeers()) {
-    if (_revokingOwners.has(runtimeKey)) return null;
+    if (_revokingOwners.has(runtimeKey) || epoch !== (_ownerRevocationEpochs.get(runtimeKey) ?? 0)) return null;
     const inspected = _inspectPeerRecord(record);
     if (inspected?.runtimeKey === runtimeKey) return inspected.record;
   }
@@ -1961,6 +1965,13 @@ function _installAutoListener(relay: RelayClient): () => void {
     const known = await _findKnownPeer(appPeerId);
     if (!hasListenerAuthority()) return;
     if (known) {
+      // Notification preference fanout must not subscribe the phone to every
+      // pane's full chat stream. Answer a known owner's control request once.
+      if (inner.type === "notify_register" || inner.type === "notify_unregister" || inner.type === "notify_presence") {
+        const reply = await _notifications.handle(appPeerId, inner);
+        if (hasListenerAuthority()) relay.send(JSON.stringify({peer: appPeerId, ct: Buffer.from(JSON.stringify(reply)).toString("base64")}));
+        return;
+      }
       const channel = _attachOwner(relay, appPeerId, known.name);
       // The PlainPeerChannel listener for this owner won't have seen the
       // line that triggered the attach (we already consumed it); route
@@ -3403,7 +3414,10 @@ async function _cmdRevoke(arg: string, ctx: Pick<ExtensionContext, "ui" | "cwd">
   if (peer.runtimeKey !== null) _denyRevokedOwnerRuntime(peer.runtimeKey, true);
   _refreshFooter();
   try {
-    if (peer.runtimeKey !== null) await removeOwnerPeers(peer.runtimeKey);
+    if (peer.runtimeKey !== null) {
+      await removeOwnerPeers(peer.runtimeKey);
+      _revokingOwners.delete(peer.runtimeKey); // durable state now owns authority, including future QR re-pair
+    }
     else await removePeer(peer.rawHandle); // Explicit cleanup of an invalid raw record, not a valid owner.
   }
   catch {

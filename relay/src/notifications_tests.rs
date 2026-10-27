@@ -149,6 +149,21 @@ async fn collapse_id_distinguishes_macs_with_same_room() {
     assert!(d.collapse_id().len() <= 64);
 }
 
+#[tokio::test]
+async fn priority_budget_is_reserved_and_unconfigured_production_reports_disabled() {
+    let f=Arc::new(Fake::default());let n=service(f.clone());
+    let (pi,phone,g)=grant();let g=sign(&pi,&phone,g);register(&n,&g);
+    {
+        let s=n.state.lock().unwrap();
+        for i in 0..30 {s.db.execute("INSERT INTO notification_events(peer,room,event,ts,priority) VALUES(?,?,?,?,0)",params![g.peer,"busy",format!("ordinary-{i}"),now()]).unwrap();}
+    }
+    assert_eq!(n.event(&g.peer,"busy","another","task_finished"),Err("rate_limited"));
+    assert!(n.event(&g.peer,"blocked","important","credential_needed").is_ok());wait(&f,1).await;
+    assert_eq!(f.delivered.lock().unwrap()[0].kind,"credential_needed");
+    let disabled=Notifications::open_restricted(":memory:",None,Default::default(),Some(HashSet::new())).unwrap();
+    assert_eq!(register(&disabled,&g)["error"],"apns_disabled");
+}
+
 #[test]
 fn grant_requires_bilateral_signatures_bound_to_every_field() {
     let (pi, phone, g) = grant();

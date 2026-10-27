@@ -317,6 +317,10 @@ impl Notifications {
             CREATE TABLE IF NOT EXISTS notification_grants(peer TEXT NOT NULL,phone TEXT NOT NULL,device TEXT NOT NULL,expires INTEGER NOT NULL,revoked INTEGER NOT NULL,PRIMARY KEY(peer,phone,device));
             CREATE TABLE IF NOT EXISTS notification_events(peer TEXT NOT NULL,room TEXT NOT NULL,event TEXT NOT NULL,ts INTEGER NOT NULL,PRIMARY KEY(peer,room,event));
             CREATE TABLE IF NOT EXISTS notification_rate(peer TEXT NOT NULL,phone TEXT NOT NULL,device TEXT NOT NULL,kind TEXT NOT NULL,ts INTEGER NOT NULL,PRIMARY KEY(peer,phone,device,kind));")?;
+        let has_priority = db.prepare("PRAGMA table_info(notification_events)")?
+            .query_map([], |r| r.get::<_, String>(1))?
+            .collect::<Result<Vec<_>, _>>()?.iter().any(|c| c == "priority");
+        if !has_priority { db.execute("ALTER TABLE notification_events ADD COLUMN priority INTEGER NOT NULL DEFAULT 0", [])?; }
         let (high, hi) = mpsc::channel(64);
         let (normal, lo) = mpsc::channel(128);
         let service = Arc::new(Self {
@@ -373,6 +377,9 @@ impl Notifications {
         connection: u64,
         f: &Value,
     ) -> Result<(), &'static str> {
+        if !self.enabled && self.allowed_macs.as_ref().is_some_and(HashSet::is_empty) {
+            return Err("apns_disabled");
+        }
         if self
             .allowed_macs
             .as_ref()
@@ -689,17 +696,18 @@ impl Notifications {
         if !subscribed {
             return Ok(());
         }
+        let priority = matches!(kind, "input_needed" | "credential_needed");
         let count: i64 =
             s.db.query_row(
-                "SELECT count(*) FROM notification_events WHERE peer=?",
-                [peer],
+                "SELECT count(*) FROM notification_events WHERE peer=? AND priority=?",
+                params![peer, priority],
                 |r| r.get(0),
             )
             .map_err(|_| "storage_unavailable")?;
         let recent: i64 =
             s.db.query_row(
-                "SELECT count(*) FROM notification_events WHERE peer=? AND ts>?",
-                params![peer, ts - 60],
+                "SELECT count(*) FROM notification_events WHERE peer=? AND priority=? AND ts>?",
+                params![peer, priority, ts - 60],
                 |r| r.get(0),
             )
             .map_err(|_| "storage_unavailable")?;
@@ -708,8 +716,8 @@ impl Notifications {
         }
         let inserted =
             s.db.execute(
-                "INSERT OR IGNORE INTO notification_events VALUES(?,?,?,?)",
-                params![peer, room, event, ts],
+                "INSERT OR IGNORE INTO notification_events(peer,room,event,ts,priority) VALUES(?,?,?,?,?)",
+                params![peer, room, event, ts, priority],
             )
             .map_err(|_| "storage_unavailable")?;
         if inserted == 0 {

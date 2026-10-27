@@ -50,6 +50,7 @@ class NotificationService extends Notifications {
   final Set<String> _seen = {};
   final Map<String, _PendingRegistration> _pending = {};
   final Map<String, String> _synced = {};
+  final Map<String, int> _roomAttempts = {};
   final Map<String, String> _macStates = {};
   StreamSubscription<ConnectionStatus>? _connectionSub;
   StreamSubscription<Map<String, List<RoomInfo>>>? _roomsSub;
@@ -247,11 +248,13 @@ class NotificationService extends Notifications {
         .where((r) => connection.isRoomLive(peer.remoteEpk, r.roomId))
         .toList();
     if (rooms.isNotEmpty) {
-      return rooms
-              .where((r) => r.roomId == connection.activeRoomId)
-              .firstOrNull
-              ?.roomId ??
-          rooms.first.roomId;
+      rooms.sort((a, b) {
+        if (a.roomId == connection.activeRoomId) return -1;
+        if (b.roomId == connection.activeRoomId) return 1;
+        return a.roomId.compareTo(b.roomId);
+      });
+      final attempt = _roomAttempts[toStandardB64(peer.remoteEpk)] ?? 0;
+      return rooms[attempt % rooms.length].roomId;
     }
     // Legacy fake channels cannot advertise rooms. Never guess on production routing.
     if (channel is! INotificationRoutes &&
@@ -337,6 +340,7 @@ class NotificationService extends Notifications {
       final keys = peers.map((p) => toStandardB64(p.remoteEpk)).toSet();
       _macStates.removeWhere((key, _) => !keys.contains(key));
       _synced.removeWhere((key, _) => !keys.contains(key));
+      _roomAttempts.removeWhere((key, _) => !keys.contains(key));
       for (final peer in peers) {
         if (_disposed || revision != _revision) {
           _dirty = true;
@@ -386,12 +390,17 @@ class NotificationService extends Notifications {
             _macStates[key] = '$label: ${enabled ? 'ready' : 'off'}';
           } else {
             needsRetry = true;
+            if (!{'apns_disabled', 'apns_unconfigured'}.contains(reply.error)) {
+              _roomAttempts[key] = (_roomAttempts[key] ?? 0) + 1;
+            }
             _macStates[key] =
                 '$label: ${{'apns_disabled', 'apns_unconfigured'}.contains(reply.error) ? 'push service not configured' : 'pending, registration declined'}';
           }
         } on TimeoutException {
           needsRetry = true;
-          _macStates[key] = '$label: pending, no confirmation';
+          _roomAttempts[key] = (_roomAttempts[key] ?? 0) + 1;
+          _macStates[key] =
+              '$label: pending, no confirmation; trying another live pane';
         } on Exception {
           needsRetry = true;
           _macStates[key] = '$label: pending, connection unavailable';

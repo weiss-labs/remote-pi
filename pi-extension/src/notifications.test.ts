@@ -69,6 +69,12 @@ describe("notification pairing grants", () => {
   });
 });
 describe("notification event lifecycle", () => {
+  it("an aborted prompt does not suppress completion of a later run", async () => {
+    const s=setup();s.bridge.start();s.bridge.promptOpened("orphan");s.bridge.cancelled();s.bridge.end();await settle();
+    expect(s.relay.frames.some(f=>f.kind==="task_finished")).toBe(false);
+    s.bridge.start();s.bridge.end();await settle();
+    expect(s.relay.frames.some(f=>f.kind==="task_finished")).toBe(true);
+  });
   it("notifies generic native UI waits without exposing titles and resumes completion after answer", async () => {
     const s=setup();
     const handlers=new Map<string,(e: {kind?:string;title?:string})=>void>();

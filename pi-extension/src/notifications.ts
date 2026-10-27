@@ -97,6 +97,7 @@ export class NotificationBridge {
     return relay ? notificationControl(relay, frame) : Promise.resolve({ type: "notification_registration", in_reply_to: "", ok: false, error: "relay_unavailable" });
   }
   start(): void {
+    this.unresolvedPrompts.clear();
     this.run = randomUUID(); this.failed = false; this.observedError = false; this.waiting = false; this.active = true;
     void this.control({ type: "notification_activity", active: true });
   }
@@ -129,6 +130,7 @@ export class NotificationBridge {
     if (this.active && this.observedError) void this.emit("task_failed");
     else if (this.active && !this.failed && !this.waiting && this.unresolvedPrompts.size === 0) void this.emit("task_finished");
     this.active = false;
+    this.unresolvedPrompts.clear(); // aborted/expired tool prompts cannot poison a later run
     this.restoreActivity();
   }
   restoreActivity(): void {

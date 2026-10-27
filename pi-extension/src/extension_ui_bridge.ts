@@ -115,6 +115,7 @@ export function createExtensionUiBridge(
       setTimeout(() => {
         if (!activeFlows.delete(flowId)) return; // already resolved
         flowTimers.delete(flowId);
+        onResolved?.(flowId);
         // Tell the app the bridge forgot this flow instead of stranding its
         // modal silently: a matching WARNING notify keeps the modal open with
         // a retry hint. Rich clients can still retry (the response carries
