@@ -65,7 +65,6 @@ REMOTEPI_APNS_KEY_PATH=/secure/path/AuthKey_APNS.p8
 REMOTEPI_APNS_TEAM_ID=<Apple team id>
 REMOTEPI_APNS_KEY_ID=<APNs key id>
 REMOTEPI_APNS_TOPIC=ai.weisslabs.remotepi
-REMOTEPI_NOTIFICATION_ALLOWED_MACS=<canonicalMacKey>
 REMOTEPI_NOTIFICATIONS_DB_PATH=/persistent/private/path/notifications.db
 REMOTEPI_NOTIFICATION_ALLOWED_MACS=<canonicalMacKey>[,<otherExplicitlyAuthorizedMacKey>]
 REMOTEPI_NOTIFICATION_UPDATE_RECIPIENTS=<canonicalMacKey>:<canonicalZachPhoneKey>
