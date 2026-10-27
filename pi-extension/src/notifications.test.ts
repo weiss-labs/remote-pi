@@ -77,6 +77,23 @@ describe("notification event lifecycle", () => {
     const s=setup();s.bridge.start();await s.bridge.emit(kind);s.bridge.end();await settle();
     expect(s.relay.frames.filter(f=>f.type==="notification_event").map(f=>f.kind)).toEqual([kind]);
   });
+  it("resolved asks no longer suppress completion or a subsequent terminal error", async () => {
+    const done=setup();done.bridge.start();done.bridge.promptOpened("ask-1");await settle();done.bridge.promptResolved("ask-1");done.bridge.end();await settle();
+    expect(done.relay.frames.filter(f=>f.type==="notification_event").map(f=>f.kind)).toEqual(["input_needed","task_finished"]);
+    const failed=setup();failed.bridge.start();failed.bridge.promptOpened("ask-2");await settle();failed.bridge.promptResolved("ask-2");failed.bridge.observeAssistant("error");failed.bridge.end();await settle();
+    expect(failed.relay.frames.filter(f=>f.type==="notification_event").map(f=>f.kind)).toEqual(["input_needed","task_failed"]);
+  });
+  it("unresolved asks suppress success but cannot hide a terminal failure", async () => {
+    const waiting=setup();waiting.bridge.start();waiting.bridge.promptOpened("pending");await settle();waiting.bridge.end();await settle();
+    expect(waiting.relay.frames.filter(f=>f.type==="notification_event").map(f=>f.kind)).toEqual(["input_needed"]);
+    const failed=setup();failed.bridge.start();failed.bridge.promptOpened("pending");await settle();failed.bridge.observeAssistant("error");failed.bridge.end();await settle();
+    expect(failed.relay.frames.filter(f=>f.type==="notification_event").map(f=>f.kind)).toEqual(["input_needed","task_failed"]);
+  });
+  it("intentional transport pause clears relay activity without losing a still-running task", async () => {
+    const s=setup();s.bridge.start();s.bridge.pauseTransport();s.bridge.restoreActivity();await settle();
+    expect(s.relay.frames.filter(f=>f.type==="notification_activity").map(f=>f.active)).toEqual([true,false,true]);s.bridge.end();await settle();
+    expect(s.relay.frames.filter(f=>f.type==="notification_event").map(f=>f.kind)).toEqual(["task_finished"]);
+  });
   it("notifies only a terminal observed error, not an error recovered within the run", async () => {
     const s=setup();s.bridge.start();s.bridge.observeAssistant("error");await settle();expect(s.relay.frames.filter(f=>f.type==="notification_event")).toHaveLength(0);
     s.bridge.observeAssistant("stop");s.bridge.end();await settle();expect(s.relay.frames.filter(f=>f.type==="notification_event").map(f=>f.kind)).toEqual(["task_finished"]);

@@ -78,6 +78,7 @@ export interface ExtensionUiBridge {
 export function createExtensionUiBridge(
   pi: ExtensionAPI,
   broadcast: (msg: ServerMessage) => void,
+  onResolved?: (flowId: string) => void,
 ): ExtensionUiBridge | null {
   const eventsRaw = (pi as { events?: EventBus }).events;
   if (
@@ -152,6 +153,7 @@ export function createExtensionUiBridge(
     const flowId = e.flowId;
     clearFlowTtl(flowId);
     activeFlows.delete(flowId);
+    onResolved?.(flowId);
     // Same id as the originating request (the flowId). The app treats a `notify`
     // whose id matches an open interactive request as "that flow resolved —
     // dismiss it". Covers the non-submitting owner in a multi-owner setup.

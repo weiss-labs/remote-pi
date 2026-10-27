@@ -47,6 +47,7 @@ import {
   KeyringUnavailableError,
   PairedIdentityMissingError,
   listPeers,
+  listPeersStrict,
   removePeer,
   snapshotOwnerPubkeys,
   conditionalRemovePeer,
@@ -133,7 +134,7 @@ const _notifications = new NotificationBridge({
   paired: async (phone) => (await _findKnownPeer(phone)) !== null && _activePeers.has(phone),
 });
 function _broadcastWithNotifications(msg: ServerMessage): void {
-  if (msg.type === "extension_ui_request" && msg.method !== "notify") void _notifications.emit("input_needed", msg.id);
+  if (msg.type === "extension_ui_request" && msg.method !== "notify") _notifications.promptOpened(msg.id);
   _broadcastToActive(msg);
 }
 
@@ -1037,6 +1038,8 @@ export async function _stopForTest(ctx: unknown): Promise<void> {
  *  across cases, so they also reset it to avoid cross-test pollution. */
 export function _getDisposedForTest(): boolean { return _disposed; }
 export function _setDisposedForTest(v: boolean): void { _disposed = v; }
+/** Test-only: independent cases seed fresh mocked durable storage. */
+export function _resetOwnerRevocationsForTest(): void { _revokingOwners.clear(); _ownerRevocationEpochs.clear(); }
 
 /** Test-only: reset the once-per-session auto-init gate so session_start re-runs it. */
 export function _resetAutoInitedForTest(): void { _autoInited = false; }
@@ -1405,18 +1408,31 @@ function _reportRevocationByFingerprint(canonicalOwnerPubkey: string): void {
   });
 }
 
+const _revokingOwners = new Set<string>();
+const _ownerRevocationEpochs = new Map<string, number>();
+function _denyRevokedOwnerRuntime(owner: string, sendBye = false): boolean {
+  _revokingOwners.add(owner);
+  _ownerRevocationEpochs.set(owner, (_ownerRevocationEpochs.get(owner) ?? 0) + 1);
+  const channel = _activePeers.get(owner);
+  if (sendBye) { try { channel?.send({ type: "bye", reason: "session_replaced" }); } catch { /* best-effort */ } }
+  _detachPeerChannel(owner);
+  return channel !== undefined;
+}
 function _revokeActiveOwnerRuntime(canonicalOwnerPubkey: string): void {
-  void _notifications.revoke(canonicalOwnerPubkey);
-  if (!_activePeers.has(canonicalOwnerPubkey)) return;
+  const attached = _denyRevokedOwnerRuntime(canonicalOwnerPubkey);
+  // SelfRevoke's storage mutation already committed before this callback.
+  void _notifications.revoke(canonicalOwnerPubkey).catch(() => { /* Reconcile on reconnect. */ });
   _refreshPairingsCache();
-  _detachPeerChannel(canonicalOwnerPubkey);
   _refreshFooter();
-  _reportRevocationByFingerprint(canonicalOwnerPubkey);
+  if (attached) _reportRevocationByFingerprint(canonicalOwnerPubkey);
 }
 
 async function _reconcileNotificationPairings(): Promise<void> {
   try {
-    const phones = (await listPeers()).map(_inspectPeerRecord).filter((p): p is InspectedPeerRecord => p !== null).flatMap(p => p.runtimeKey ? [p.runtimeKey] : []);
+    const records = (await listPeersStrict()).map(_inspectPeerRecord);
+    // A corrupt record is not proof that its owner was intentionally removed.
+    if (records.some(p => p === null || p.runtimeKey === null)) return;
+    const phones = records.flatMap(p => p?.runtimeKey && !_revokingOwners.has(p.runtimeKey) ? [p.runtimeKey] : []);
     _notifications.reconcile(phones);
   } catch { /* Fail closed: do not turn a storage read failure into revocation. */ }
 }
@@ -1428,7 +1444,9 @@ async function _findKnownPeer(appPeerIdStd: string): Promise<PeerRecord | null> 
   } catch {
     return null;
   }
+  if (_revokingOwners.has(runtimeKey)) return null;
   for (const record of await listPeers()) {
+    if (_revokingOwners.has(runtimeKey)) return null;
     const inspected = _inspectPeerRecord(record);
     if (inspected?.runtimeKey === runtimeKey) return inspected.record;
   }
@@ -1447,6 +1465,7 @@ async function _findKnownPeer(appPeerIdStd: string): Promise<PeerRecord | null> 
  * by omitting the reason; app falls back to ping miss naturally.
  */
 function _goIdle(byeReason?: import("./protocol/types.js").ByeReason): void {
+  _notifications.pauseTransport();
   _rootLifecycleGeneration += 1;
   _relayLifecycleGeneration += 1;
 
@@ -2026,12 +2045,15 @@ async function _handlePairRequest(
   const producerEpoch = _selfRevokeEpoch;
   producer?.invalidateStorageAuthority();
   const pairedAt = new Date().toISOString();
+  const ownerRevocationEpoch = _ownerRevocationEpochs.get(appPeerId) ?? 0;
   try {
     await addPeer({
       name: inner.device_name,
       remote_epk: appPeerId,
       paired_at: pairedAt,
     });
+    if ((_ownerRevocationEpochs.get(appPeerId) ?? 0) !== ownerRevocationEpoch) return;
+    _revokingOwners.delete(appPeerId); // Only a genuine new QR pairing restores authority.
     if (!hasListenerAuthority()) return;
     _refreshPairingsCache();
     if (producer && _selfRevoke === producer && _selfRevokeEpoch === producerEpoch) {
@@ -2154,7 +2176,7 @@ const extension: ExtensionFactory = (pi: ExtensionAPI): void => {
   // Pi that doesn't use the extension. Dispose any prior bridge first so a
   // factory re-run (new pi session) can't leak subscriptions or double-send.
   _extensionUiBridge?.dispose();
-  _extensionUiBridge = createExtensionUiBridge(pi, _broadcastWithNotifications);
+  _extensionUiBridge = createExtensionUiBridge(pi, _broadcastWithNotifications, (id) => _notifications.promptResolved(id));
 
   // Plano 19: ensure ~/.pi/remote/{sessions,skills}/ exist and deploy the
   // agent-network skill on first load. resources_discover lets Pi find it.
@@ -2428,7 +2450,7 @@ const extension: ExtensionFactory = (pi: ExtensionAPI): void => {
     // reuses this module instance does NOT re-run the factory, so rebind the
     // bridge here; fresh-module hosts already created theirs in the factory.
     if (!_extensionUiBridge) {
-      _extensionUiBridge = createExtensionUiBridge(pi, _broadcastWithNotifications);
+      _extensionUiBridge = createExtensionUiBridge(pi, _broadcastWithNotifications, (id) => _notifications.promptResolved(id));
     }
     // Rearm a reused-but-disposed instance. The session_shutdown teardown (below)
     // sets _disposed=true assuming the host re-evaluates THIS module fresh for the
@@ -3285,7 +3307,6 @@ async function _cmdPair(ctx: Pick<ExtensionContext, "ui" | "cwd">, args = ""): P
  * `/remote-pi` again.
  */
 async function _cmdStop(ctx: Pick<ExtensionContext, "ui">): Promise<void> {
-  _notifications.stop();
   // Invalidate queued root work and local async candidates even when none has
   // published yet.
   _rootLifecycleGeneration += 1;
@@ -3346,32 +3367,8 @@ async function _cmdRevoke(arg: string, ctx: Pick<ExtensionContext, "ui" | "cwd">
     return;
   }
 
-  // Revoke needs the relay so the revoked device gets a `bye` and its live
-  // channel is torn down — not just a silent peers.json edit. Auto-bootstrap
-  // the mesh + relay when down, mirroring `_cmdPair`.
-  const cwd = "cwd" in ctx ? (ctx as ExtensionCommandContext).cwd : "";
-  if (_state === "idle") {
-    if (!localConfigExists(cwd)) {
-      ctx.ui.notify(
-        "[remote-pi] First-time setup needed. Run /remote-pi to configure, then /remote-pi revoke.",
-        "warning",
-      );
-      return;
-    }
-    ctx.ui.notify("[remote-pi] Starting mesh + relay before revoking…", "info");
-    if (!_meshNode) await _cmdJoin(ctx);
-    if (_state === "idle") await _cmdStart(ctx);
-  }
-  if (_state === "idle" || !_relay) {
-    ctx.ui.notify(
-      "[remote-pi] Revoke requires the relay to be connected. " +
-      "Run /remote-pi to start it (or fix your relay URL via /remote-pi set-relay).",
-      "warning",
-    );
-    return;
-  }
-
-  const matches = (await listPeers())
+  // Security revocation is local-first and never requires a network bootstrap.
+  const matches = (await listPeersStrict())
     .map(_inspectPeerRecord)
     .filter((peer): peer is InspectedPeerRecord => peer !== null)
     .filter((peer) => peer.rawHandle.startsWith(shortid));
@@ -3394,26 +3391,21 @@ async function _cmdRevoke(arg: string, ctx: Pick<ExtensionContext, "ui" | "cwd">
   }
 
   const peer = matches[0]!;
-  if (peer.runtimeKey !== null) {
-    const result = await _notifications.revoke(peer.runtimeKey);
-    if (!result?.ok) { ctx.ui.notify("Notification revocation unavailable. Retry with relay connected before removing pairing.", "error"); return; }
+  if (peer.runtimeKey !== null) _denyRevokedOwnerRuntime(peer.runtimeKey, true);
+  _refreshFooter();
+  try { await removePeer(peer.rawHandle); }
+  catch {
+    ctx.ui.notify("Owner detached in this process, but pairing storage could not be updated. Fix local storage before restarting.", "error");
+    return;
   }
-  await removePeer(peer.rawHandle);
   _refreshPairingsCache();
-
-  // Storage removal uses the exact saved representation; the active channel
-  // is indexed by its canonical identity.
-  if (peer.runtimeKey !== null && _activePeers.has(peer.runtimeKey)) {
-    const channel = _activePeers.get(peer.runtimeKey);
-    try { channel?.send({ type: "bye", reason: "session_replaced" }); } catch { /* best-effort */ }
-    _detachPeerChannel(peer.runtimeKey);
-    _refreshFooter();
+  ctx.ui.notify(`[remote-pi] Revoked locally: ${peer.record.name} (${peer.rawHandle.slice(0, 8)}…)`, "info");
+  if (peer.runtimeKey !== null) {
+    // Cleanup may fail or time out, but the phone has already lost authority.
+    void _notifications.revoke(peer.runtimeKey).then(result => {
+      if (!result?.ok) _safeNotify("Pairing revoked locally. Notification cleanup is pending relay reconnect.", "warning");
+    }).catch(() => _safeNotify("Pairing revoked locally. Notification cleanup is pending relay reconnect.", "warning"));
   }
-
-  ctx.ui.notify(
-    `[remote-pi] Revoked: ${peer.record.name} (${peer.rawHandle.slice(0, 8)}…)`,
-    "info",
-  );
 }
 
 async function _shortidCompletions(
@@ -5241,7 +5233,7 @@ export async function probeListPeers(
 async function _notificationCliControl(frame: object) {
   const relay = new RelayClient(toWebSocketUrl(resolveRelayUrl().url), await readExistingEd25519Keypair());
   try {
-    await relay.connect({ roomId: `notify-${randomUUID().slice(0, 8)}` });
+    await relay.connect({ controlOnly: true });
     return await notificationControl(relay, frame);
   } finally { relay.close(); }
 }
@@ -5269,7 +5261,7 @@ if (_isDirectRun()) {
     if (!shortid) {
       console.log("Usage: revoke <shortid>");
     } else {
-      const matches = (await listPeers())
+      const matches = (await listPeersStrict())
         .map(_inspectPeerRecord)
         .filter((peer): peer is InspectedPeerRecord => peer !== null)
         .filter((peer) => peer.rawHandle.startsWith(shortid));
@@ -5277,13 +5269,14 @@ if (_isDirectRun()) {
       else if (matches.length > 1) console.log(`Ambiguous: ${matches.map((peer) => peer.rawHandle.slice(0, 8)).join(", ")}`);
       else {
         const peer = matches[0]!;
-        if (peer.runtimeKey !== null) {
-          const reply = await _notificationCliControl({ type: "revoke_notification_phone", phone: peer.runtimeKey });
-          if (!reply.ok) throw new Error("Notification revocation unavailable. Pairing retained; retry with relay connected.");
-        }
-        const { removePeer } = await import("./pairing/storage.js");
         await removePeer(peer.rawHandle);
-        console.log(`Revoked: ${peer.record.name} (${peer.rawHandle.slice(0, 8)}…)`);
+        console.log(`Revoked locally: ${peer.record.name} (${peer.rawHandle.slice(0, 8)}…)`);
+        if (peer.runtimeKey !== null) {
+          try {
+            const reply = await _notificationCliControl({ type: "revoke_notification_phone", phone: peer.runtimeKey });
+            if (!reply.ok) console.warn("Notification cleanup pending relay reconnect. Local pairing remains revoked.");
+          } catch { console.warn("Notification cleanup pending relay reconnect. Local pairing remains revoked."); }
+        }
       }
     }
   } else if (subcmd === "set-relay") {

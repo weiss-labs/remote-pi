@@ -97,6 +97,18 @@ describe("extension_ui_bridge", () => {
     expect(req.ask?.questions[0]?.options[1]?.description).toBe("second choice");
   });
 
+  it("resolves notification waiting only on actual ask completion, not a rejected answer", () => {
+    const bus=fakeBus(),resolved=vi.fn();
+    const bridge=createExtensionUiBridge(fakePi(bus),()=>{},resolved)!;
+    bus.emit("@eko24ive/pi-ask:started",singleQuestionFlow());
+    bridge.respond({type:"extension_ui_response",id:"tool:tc_1",value:"Alpha"});
+    expect(resolved).not.toHaveBeenCalled();
+    bus.emit("@eko24ive/pi-ask:submit-result",{version:1,flowId:"tool:tc_1",ok:false,message:"Retry"});
+    expect(resolved).not.toHaveBeenCalled();
+    bus.emit("@eko24ive/pi-ask:completed",{version:1,flowId:"tool:tc_1"});
+    expect(resolved).toHaveBeenCalledWith("tool:tc_1");bridge.dispose();
+  });
+
   it("forwards a rich answer back to pi-ask as a single submit", () => {
     const bus = fakeBus();
     const bridge = createExtensionUiBridge(fakePi(bus), () => {})!;

@@ -55,6 +55,7 @@ export class NotificationBridge {
   private failed = false;
   private observedError = false;
   private waiting = false;
+  private unresolvedPrompts = new Set<string>();
   private run = randomUUID();
   private active = false;
   private last = new Map<string, number>();
@@ -100,8 +101,14 @@ export class NotificationBridge {
     void this.control({ type: "notification_activity", active: true });
   }
   /** No arbitrary text, prompts, stdout, tool arguments, or labels enter push payloads. */
-  async emit(kind: AgentNotificationCategory, eventId?: string): Promise<NotificationReply> {
-    if (kind === "input_needed" || kind === "credential_needed") this.waiting = true;
+  promptOpened(id: string): void {
+    if (this.unresolvedPrompts.size < 64) this.unresolvedPrompts.add(id);
+    else this.waiting = true; // Conservative bounded overflow: never claim all prompts resolved.
+    void this.emit("input_needed", id, true);
+  }
+  promptResolved(id: string): void { this.unresolvedPrompts.delete(id); }
+  async emit(kind: AgentNotificationCategory, eventId?: string, trackedPrompt = false): Promise<NotificationReply> {
+    if (!trackedPrompt && (kind === "input_needed" || kind === "credential_needed")) this.waiting = true;
     if (kind === "credential_needed") this.deps.credentialNotice?.();
     if (kind === "task_failed") this.failed = true;
     const stamp = Date.now();
@@ -119,8 +126,8 @@ export class NotificationBridge {
     if (stopReason === "aborted") this.cancelled();
   }
   end(): void {
-    if (this.active && this.observedError && !this.waiting) void this.emit("task_failed");
-    else if (this.active && !this.failed && !this.waiting) void this.emit("task_finished");
+    if (this.active && this.observedError) void this.emit("task_failed");
+    else if (this.active && !this.failed && !this.waiting && this.unresolvedPrompts.size === 0) void this.emit("task_finished");
     this.active = false;
     this.restoreActivity();
   }
@@ -128,7 +135,8 @@ export class NotificationBridge {
     const call = this.deps.callActive?.() === true;
     void this.control({ type: "notification_activity", active: this.active || call, ...(!this.active && call ? { lease_seconds: 90 } : {}) });
   }
-  stop(): void { this.active = false; void this.control({ type: "notification_activity", active: false }); }
+  pauseTransport(): void { void this.control({ type: "notification_activity", active: false }); }
+  stop(): void { this.active = false; this.waiting = false; this.unresolvedPrompts.clear(); this.pauseTransport(); }
   registerTool(pi: ExtensionAPI): void {
     pi.registerCommand("credential-needed", {
       description: "Show generic credential/sign-in blocker instructions and notify the paired phone (no secrets or arguments)",

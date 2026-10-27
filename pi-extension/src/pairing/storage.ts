@@ -1,5 +1,6 @@
-import { writeFileSync } from "node:fs";
-import { mkdir, readFile, writeFile, chmod, unlink } from "node:fs/promises";
+import { renameSync } from "node:fs";
+import { randomUUID } from "node:crypto";
+import { mkdir, readFile, writeFile, chmod, unlink, open } from "node:fs/promises";
 import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 import { generateEd25519Keypair, type Ed25519Keypair } from "./crypto.js";
@@ -469,8 +470,8 @@ export async function listPeers(): Promise<PeerRecord[]> {
 }
 
 /**
- * Authoritative container read for SelfRevoke's token path. Public readers
- * intentionally remain best-effort; only a missing file is proof of emptiness
+ * Authoritative container read for SelfRevoke and strict mutation/reconciliation.
+ * UI readers remain best-effort; only a missing file is proof of emptiness
  * here. Valid array elements are returned verbatim for corruption isolation.
  */
 async function _readPeerContainerStrict(): Promise<unknown[]> {
@@ -493,6 +494,29 @@ async function _readPeerContainerStrict(): Promise<unknown[]> {
     throw new Error("Invalid peers.json container");
   }
   return parsed.peers;
+}
+
+/** Destructive/reconciliation readers must not treat corrupt or unreadable storage as empty. */
+export async function listPeersStrict(): Promise<PeerRecord[]> {
+  return await _readPeerContainerStrict() as PeerRecord[];
+}
+
+async function _writePeersAtomically(serialized: string, canCommit?: () => boolean): Promise<boolean> {
+  await mkdir(dirname(PEERS_PATH), { recursive: true, mode: 0o700 });
+  const temp = `${PEERS_PATH}.${process.pid}.${randomUUID()}.tmp`;
+  try {
+    const handle = await open(temp, "wx", 0o600);
+    try { await handle.writeFile(serialized, "utf8"); await handle.sync(); }
+    finally { await handle.close(); }
+    if (canCommit) {
+      let authorized = false;
+      try { authorized = canCommit(); } catch { return false; }
+      if (!authorized) return false;
+    }
+    // No await between the final provenance/authority check and atomic replacement.
+    renameSync(temp, PEERS_PATH);
+    return true;
+  } finally { try { await unlink(temp); } catch { /* Renamed or already removed. */ } }
 }
 
 let _peerMutationQueue: Promise<void> = Promise.resolve();
@@ -550,7 +574,7 @@ function _serializePeerMutation<T>(mutation: () => Promise<T>): Promise<T> {
 
 export function addPeer(record: PeerRecord): Promise<void> {
   return _serializePeerMutation(async () => {
-    const peers = await listPeers() as unknown[];
+    const peers = await _readPeerContainerStrict();
     const idx = peers.findIndex((peer) =>
       !!peer &&
       typeof peer === "object" &&
@@ -561,8 +585,7 @@ export function addPeer(record: PeerRecord): Promise<void> {
     } else {
       peers.push(record);
     }
-    await mkdir(dirname(PEERS_PATH), { recursive: true });
-    await writeFile(PEERS_PATH, JSON.stringify({ peers }, null, 2));
+    await _writePeersAtomically(JSON.stringify({ peers }, null, 2));
     // A successful re-pair is a new storage provenance event even when the
     // record bytes happen to be identical.
     _invalidateOwnerSlot(record.remote_epk);
@@ -634,16 +657,12 @@ export function conditionalRemovePeer(
       (peer as { remote_epk?: unknown }).remote_epk !== remoteEpk,
     );
     if (filtered.length === peers.length) return { outcome: "not_found" };
-    await mkdir(dirname(PEERS_PATH), { recursive: true });
-    // No await may intervene between the final token/authority checks and
-    // synchronous write, preserving the lane's fail-closed commit boundary.
-    if (_tokenForSlot(slot) !== expectedToken) return { outcome: "stale" };
-    if (canCommit) {
-      let authorized = false;
-      try { authorized = canCommit(); } catch { return { outcome: "no_authority" }; }
-      if (!authorized) return { outcome: "no_authority" };
-    }
-    writeFileSync(PEERS_PATH, JSON.stringify({ peers: filtered }, null, 2));
+    let denied: "stale" | "no_authority" = "no_authority";
+    const committed = await _writePeersAtomically(JSON.stringify({ peers: filtered }, null, 2), () => {
+      if (_tokenForSlot(slot) !== expectedToken) { denied = "stale"; return false; }
+      return canCommit ? canCommit() : true;
+    });
+    if (!committed) return { outcome: denied };
     return { outcome: "removed", nextToken: _invalidateOwnerSlot(remoteEpk) };
   });
 }
@@ -653,31 +672,16 @@ export function removePeer(
   canCommit?: () => boolean,
 ): Promise<boolean> {
   return _serializePeerMutation(async () => {
-    const peers = await listPeers() as unknown[];
+    const peers = await _readPeerContainerStrict();
     const filtered = peers.filter((peer) =>
       !peer ||
       typeof peer !== "object" ||
       (peer as { remote_epk?: unknown }).remote_epk !== remoteEpk,
     );
     if (filtered.length === peers.length) return false;
-    await mkdir(dirname(PEERS_PATH), { recursive: true });
-
-    const serialized = JSON.stringify({ peers: filtered }, null, 2);
-    if (canCommit) {
-      // Guarded SelfRevoke commits must be atomic with their final authority
-      // check at the JavaScript level: fail closed on false/throw, then perform
-      // the tiny JSON rewrite synchronously with no interruptible await between.
-      let authorized = false;
-      try { authorized = canCommit(); } catch { return false; }
-      if (!authorized) return false;
-      writeFileSync(PEERS_PATH, serialized);
-    } else {
-      // Manual removals keep the established asynchronous storage behavior.
-      await writeFile(PEERS_PATH, serialized);
-    }
-    const removed = true;
-    if (removed) _invalidateOwnerSlot(remoteEpk);
-    return removed;
+    const committed = await _writePeersAtomically(JSON.stringify({ peers: filtered }, null, 2), canCommit);
+    if (committed) _invalidateOwnerSlot(remoteEpk);
+    return committed;
   });
 }
 

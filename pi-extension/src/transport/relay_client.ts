@@ -23,8 +23,9 @@ interface HelloMsg {
   pubkey: string;
   room_id?: string;
   room_meta?: RoomMeta;
+  control_only?: true;
 }
-interface ChallengeMsg { type: "challenge"; nonce: string }
+interface ChallengeMsg { type: "challenge"; nonce: string; control_only?: boolean }
 interface AuthMsg { type: "auth"; sig: string }
 
 export interface RoomMeta {
@@ -45,6 +46,8 @@ export interface RoomMetaUpdateFrame {
 }
 
 export interface ConnectOptions {
+  /** Notification CLI only. Requires relay pre-auth echo and creates no room. */
+  controlOnly?: boolean;
   roomId?: string;
   roomMeta?: RoomMeta;
 }
@@ -212,8 +215,11 @@ export class RelayClient extends EventEmitter {
   private async _authenticate(ws: WebSocket, opts: ConnectOptions): Promise<void> {
     const pubkeyB64 = Buffer.from(this.keypair.publicKey).toString("base64");
     const hello: HelloMsg = { type: "hello", pubkey: pubkeyB64 };
-    if (opts.roomId) hello.room_id = opts.roomId;
-    if (opts.roomMeta) hello.room_meta = opts.roomMeta;
+    if (opts.controlOnly) hello.control_only = true;
+    else {
+      if (opts.roomId) hello.room_id = opts.roomId;
+      if (opts.roomMeta) hello.room_meta = opts.roomMeta;
+    }
     this._rawSend(ws, JSON.stringify(hello));
 
     const challengeRaw = await this._nextMsg(ws);
@@ -234,6 +240,9 @@ export class RelayClient extends EventEmitter {
       throw new Error(`relay auth_failed: expected challenge, got ${challengeRaw}`);
     }
 
+    if (opts.controlOnly && (challenge as ChallengeMsg).control_only !== true) {
+      throw new Error("Relay does not support roomless notification controls. No auth or room registration was sent.");
+    }
     const nonce = Buffer.from((challenge as ChallengeMsg).nonce, "base64");
     const sig = ed25519Sign(this.keypair.secretKey, nonce);
     const auth: AuthMsg = {

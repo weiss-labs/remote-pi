@@ -4,6 +4,7 @@ import {
   mkdirSync,
   mkdtempSync,
   readFileSync,
+  readdirSync,
   rmSync,
   statSync,
   writeFileSync,
@@ -468,6 +469,28 @@ describe("peer record corruption isolation", () => {
     });
     await expect(storage.removePeer(urlSafeHandle)).resolves.toBe(false);
     await expect(storage.removePeer(standardHandle)).resolves.toBe(true);
+  });
+});
+
+describe("strict pairing reads and atomic mutation", () => {
+  const path=join(_tmpHome,".pi","remote","peers.json");
+  test("strict read distinguishes a missing file from corrupt or invalid containers", async()=>{
+    await expect(storage.listPeersStrict()).resolves.toEqual([]);
+    mkdirSync(join(_tmpHome,".pi","remote"),{recursive:true});
+    for(const raw of ["{partial",JSON.stringify({peers:null})]) {
+      writeFileSync(path,raw);await expect(storage.listPeersStrict()).rejects.toThrow();
+      await expect(storage.listPeers()).resolves.toEqual([]);
+      await expect(storage.addPeer({name:"new",remote_epk:"new",paired_at:"now"})).rejects.toThrow();
+      await expect(storage.removePeer("old")).rejects.toThrow();expect(readFileSync(path,"utf8")).toBe(raw);
+    }
+  });
+  test("atomic writes replace the inode, stay private and leave no partial/temp file", async()=>{
+    await storage.addPeer({name:"first",remote_epk:"first",paired_at:"now"});const before=statSync(path).ino;
+    await storage.addPeer({name:"second",remote_epk:"second",paired_at:"now"});
+    expect(statSync(path).ino).not.toBe(before);expect(statSync(path).mode&0o777).toBe(0o600);
+    expect(JSON.parse(readFileSync(path,"utf8")).peers).toHaveLength(2);
+    const raw=readFileSync(path,"utf8");await expect(storage.removePeer("first",()=>false)).resolves.toBe(false);expect(readFileSync(path,"utf8")).toBe(raw);
+    expect(readdirSync(join(_tmpHome,".pi","remote")).filter(name=>name.startsWith("peers.json."))).toEqual([]);
   });
 });
 

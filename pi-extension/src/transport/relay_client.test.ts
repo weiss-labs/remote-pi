@@ -91,6 +91,28 @@ describe("RelayClient", () => {
     client.close();
   });
 
+  test("control-only hello omits room metadata and requires capability echo before auth", async () => {
+    const client = new RelayClient("ws://localhost:9999", keypair);
+    const promise = client.connect({ controlOnly: true, roomId: "must-not-leak", roomMeta: { name: "hidden", cwd: "/private" } });
+    await vi.waitFor(() => expect(currentWs().sent.length).toBe(1));
+    expect(JSON.parse(currentWs().sent[0])).toEqual({ type: "hello", pubkey: Buffer.from(keypair.publicKey).toString("base64"), control_only: true });
+    currentWs().emit("message", Buffer.from(JSON.stringify({ type: "challenge", nonce: Buffer.alloc(32, 1).toString("base64"), control_only: true })));
+    await promise;
+    expect(JSON.parse(currentWs().sent[1]).type).toBe("auth");
+    client.close();
+  });
+
+  test("old relay cannot create a phantom room: no capability echo means no auth", async () => {
+    const client = new RelayClient("ws://localhost:9999", keypair);
+    const promise = client.connect({ controlOnly: true });
+    const rejection = expect(promise).rejects.toThrow("No auth or room registration was sent");
+    await vi.waitFor(() => expect(currentWs().sent.length).toBe(1));
+    simulateChallenge(currentWs());
+    await rejection;
+    expect(currentWs().sent).toHaveLength(1);
+    expect(currentWs().readyState).toBe(3);
+  });
+
   test("connect: sends auth with 64-byte Ed25519 signature", async () => {
     const client = new RelayClient("ws://localhost:9999", keypair);
     await connectWithAuth(client);

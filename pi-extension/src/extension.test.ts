@@ -68,6 +68,7 @@ vi.mock("./pairing/storage.js", async (importOriginal) => {
       secretKey: new Uint8Array(32),
     }),
     listPeers: vi.fn().mockImplementation(async () => [..._knownPeers]),
+    listPeersStrict: vi.fn().mockImplementation(async () => [..._knownPeers]),
     // Hermetic: derive owners from the in-memory _knownPeers instead of the
     // real ~/.pi/remote/peers.json. The unmocked `listOwnerPubkeys` calls the
     // module-internal (real) `listPeers`, so it would read this dev machine's
@@ -233,6 +234,7 @@ const {
   _checkSelfRevokeForTest,
   _restartSupervisorCommand,
   _setDisposedForTest,
+  _resetOwnerRevocationsForTest,
   _resetAutoInitedForTest,
   _setAutoInitedForTest,
   _hasMeshNodeForTest,
@@ -244,6 +246,7 @@ const {
   CTRL_PREFIX,
 } = indexModule;
 const { acquireCwdLock } = await import("./session/cwd_lock.js");
+beforeEach(() => _resetOwnerRevocationsForTest());
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -790,24 +793,49 @@ describe("/remote-pi revoke", () => {
     expect(_removedPeers).toHaveLength(0);
   });
 
-  test("idle (relay off) → refuses instead of a silent peers.json edit", async () => {
+  test("idle (relay off) still revokes local pairing without network setup", async () => {
     _knownPeers.push({ name: "Phone", remote_epk: "aaaa1111zzzz", paired_at: "now" });
 
-    // beforeEach stopped the relay; an isolated empty cwd guarantees no local
-    // config on every OS, so revoke bails (mirrors pair) rather than editing
-    // the file offline. (Fresh tmpdir — see the "pair without start" test.)
+    // Security revocation must work offline without configuration or relay bootstrap.
     const cwd = mkdtempSync(join(tmpdir(), "pi-ext-cwd-"));
     const revoke = captureHandler("remote-pi revoke");
     const ctx = makeMockCtx(cwd);
     await revoke("aaaa1111", ctx);
 
-    expect(_removedPeers).toHaveLength(0);
-    expect(_knownPeers).toHaveLength(1);
-    expect(ctx.ui.notify).toHaveBeenCalledWith(
-      expect.stringContaining("First-time setup needed"),
-      "warning",
-    );
+    expect(_removedPeers).toEqual(["aaaa1111zzzz"]);
+    expect(_knownPeers).toHaveLength(0);
+    expect(_getState()).toBe("idle");
+    expect(ctx.ui.notify).toHaveBeenCalledWith(expect.stringContaining("Revoked locally"), "info");
     rmSync(cwd, { recursive: true, force: true });
+  });
+
+  test("local revoke detaches and denies re-registration before best-effort relay cleanup", async () => {
+    captureHandler("remote-pi");await _connectForTest(makeMockCtx());const relay=relayRef.current!;
+    relay.emit("message",makeInnerLine(OWNER_STANDARD_FIXTURE,{type:"pair_request",id:"pair-before-revoke",token:"test-token",device_name:"Phone"}));
+    await vi.waitFor(()=>expect(_hasActivePeerForTest(OWNER_STANDARD_FIXTURE)).toBe(true));
+    const storage=await import("./pairing/storage.js"),started=deferred<void>(),commit=deferred<void>();
+    vi.mocked(storage.removePeer).mockImplementationOnce(async(raw)=>{
+      started.resolve();await commit.promise;const i=_knownPeers.findIndex(p=>p.remote_epk===raw);if(i>=0)_knownPeers.splice(i,1);_removedPeers.push(raw);return true;
+    });
+    const original=relay.sendControl.getMockImplementation()!;let cleanupLocalFirst=false;
+    relay.sendControl.mockImplementation(frame=>{
+      if(frame.type==="revoke_notification_phone") {cleanupLocalFirst=_removedPeers.includes(OWNER_STANDARD_FIXTURE)&&!_hasActivePeerForTest(OWNER_STANDARD_FIXTURE);return;}
+      original(frame);
+    });
+    try {
+      const revoking=captureHandler("remote-pi revoke")(OWNER_STANDARD_FIXTURE.slice(0,8),makeMockCtx());await started.promise;
+      expect(_hasActivePeerForTest(OWNER_STANDARD_FIXTURE)).toBe(false);
+      relay.emit("message",makeInnerLine(OWNER_STANDARD_FIXTURE,{type:"notify_register",id:"racing-register",device_id:"d",token:"ab".repeat(32),environment:"production",categories:["input_needed"],show_pane_name:false}));
+      await new Promise(r=>setTimeout(r,10));expect(relay.sendControl.mock.calls.some(([f])=>f.type==="register_notification_device")).toBe(false);
+      commit.resolve();await revoking;expect(cleanupLocalFirst).toBe(true);expect(_knownPeers).toHaveLength(0);
+      // No relay reply was sent: local revoke still returned and remains effective.
+    } finally {commit.resolve();relay.emit("close");relay.sendControl.mockImplementation(original);}
+  });
+
+  test("reconciliation skips strict storage errors instead of revoking all phones", async () => {
+    const storage=await import("./pairing/storage.js");vi.mocked(storage.listPeersStrict).mockRejectedValueOnce(new Error("partial storage"));
+    captureHandler("remote-pi");await _connectForTest(makeMockCtx());await new Promise(r=>setTimeout(r,0));
+    expect(relayRef.current!.sendControl.mock.calls.some(([f])=>f.type==="notification_pairings")).toBe(false);
   });
 
   test("valid shortid → peer removed + success notify", async () => {
@@ -825,7 +853,7 @@ describe("/remote-pi revoke", () => {
     expect(_removedPeers).toEqual([OWNER_STANDARD_FIXTURE]);
     expect(_knownPeers.map((p) => p.name)).toEqual(["Phone B"]);
     expect(ctx.ui.notify).toHaveBeenCalledWith(
-      expect.stringContaining("Revoked: Phone A"),
+      expect.stringContaining("Revoked locally: Phone A"),
       "info",
     );
   });
@@ -895,7 +923,7 @@ describe("/remote-pi revoke", () => {
     expect(_removedPeers).toEqual([ACTIVE_PEER]);
     expect(_knownPeers).toHaveLength(0);
     expect(ctx.ui.notify).toHaveBeenCalledWith(
-      expect.stringContaining("Revoked: Active Phone"),
+      expect.stringContaining("Revoked locally: Active Phone"),
       "info",
     );
   });
@@ -4579,7 +4607,10 @@ describe("relay control channel + relay-state event", () => {
     expect(lastRelayState(sendMessage)!.details).toMatchObject({ status: "connected", connected: true });
 
     sendMessage.mockClear();
+    const relay = relayRef.current!;
+    const beforeControls = relay.sendControl.mock.calls.length;
     await _handleControl("relay:off");
+    expect(relay.sendControl.mock.calls.slice(beforeControls).map(([frame])=>frame)).toContainEqual(expect.objectContaining({type:"notification_activity",active:false}));
     expect(_getState()).toBe("idle");
     expect(lastRelayState(sendMessage)!.details).toMatchObject({ status: "disconnected", connected: false });
   });
