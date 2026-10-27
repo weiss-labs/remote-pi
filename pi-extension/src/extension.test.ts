@@ -61,6 +61,7 @@ let _meshOwnerDiscoveryEnabled = false;
 
 vi.mock("./pairing/storage.js", async (importOriginal) => {
   const orig = await importOriginal<typeof import("./pairing/storage.js")>();
+  const { canonicalizeEd25519PublicKey } = await import("./mesh/encoding.js");
   return {
     ...orig,
     getOrCreateEd25519Keypair: vi.fn().mockResolvedValue({
@@ -112,6 +113,17 @@ vi.mock("./pairing/storage.js", async (importOriginal) => {
       _knownPeers.push(...filtered);
       _removedPeers.push(epk);
       return { outcome: "removed", nextToken: epk };
+    }),
+    removeOwnerPeers: vi.fn().mockImplementation(async (owner: string) => {
+      const kept = _knownPeers.filter(peer => {
+        try {
+          if (canonicalizeEd25519PublicKey(peer.remote_epk) !== owner) return true;
+          _removedPeers.push(peer.remote_epk); return false;
+        } catch { return true; }
+      });
+      const changed = kept.length !== _knownPeers.length;
+      _knownPeers.length = 0; _knownPeers.push(...kept);
+      return changed;
     }),
     removePeer: vi.fn().mockImplementation(async (epk: string) => {
       const before = _knownPeers.length;
@@ -814,7 +826,7 @@ describe("/remote-pi revoke", () => {
     relay.emit("message",makeInnerLine(OWNER_STANDARD_FIXTURE,{type:"pair_request",id:"pair-before-revoke",token:"test-token",device_name:"Phone"}));
     await vi.waitFor(()=>expect(_hasActivePeerForTest(OWNER_STANDARD_FIXTURE)).toBe(true));
     const storage=await import("./pairing/storage.js"),started=deferred<void>(),commit=deferred<void>();
-    vi.mocked(storage.removePeer).mockImplementationOnce(async(raw)=>{
+    vi.mocked(storage.removeOwnerPeers).mockImplementationOnce(async(raw)=>{
       started.resolve();await commit.promise;const i=_knownPeers.findIndex(p=>p.remote_epk===raw);if(i>=0)_knownPeers.splice(i,1);_removedPeers.push(raw);return true;
     });
     const original=relay.sendControl.getMockImplementation()!;let cleanupLocalFirst=false;
@@ -928,10 +940,11 @@ describe("/remote-pi revoke", () => {
     );
   });
 
-  test("URL-safe raw records revoke exactly one record and detach by canonical identity", async () => {
+  test("manual revoke purges raw aliases together and detaches by canonical owner identity", async () => {
     const malformedRawOwner = "malformed-owner/+not-a-public-key";
     _knownPeers.push(
       { name: "URL-safe Owner", remote_epk: OWNER_URL_SAFE_FIXTURE, paired_at: "now" },
+      { name: "Standard alias", remote_epk: OWNER_STANDARD_FIXTURE, paired_at: "now" },
       { name: "Malformed", remote_epk: malformedRawOwner, paired_at: "now" },
       { name: "Other Owner", remote_epk: OTHER_OWNER_STANDARD_FIXTURE, paired_at: "now" },
     );
@@ -946,13 +959,15 @@ describe("/remote-pi revoke", () => {
     await vi.waitFor(() => expect(_getActivePeerCountForTest()).toBe(2));
 
     const revoke = captureHandler("remote-pi revoke");
-    await revoke(OWNER_URL_SAFE_FIXTURE, makeMockCtx());
-    expect(_removedPeers).toEqual([OWNER_URL_SAFE_FIXTURE]);
+    // Duplicate encodings of one owner must not make its usual shortid ambiguous.
+    await revoke(OWNER_URL_SAFE_FIXTURE.slice(0, 8), makeMockCtx());
+    expect(_removedPeers).toEqual([OWNER_URL_SAFE_FIXTURE, OWNER_STANDARD_FIXTURE]);
+    expect(_knownPeers.some(p=>p.remote_epk===OWNER_STANDARD_FIXTURE||p.remote_epk===OWNER_URL_SAFE_FIXTURE)).toBe(false);
     expect(_hasActivePeerForTest(OWNER_STANDARD_FIXTURE)).toBe(false);
     expect(_hasActivePeerForTest(OTHER_OWNER_STANDARD_FIXTURE)).toBe(true);
 
     await revoke(malformedRawOwner, makeMockCtx());
-    expect(_removedPeers).toEqual([OWNER_URL_SAFE_FIXTURE, malformedRawOwner]);
+    expect(_removedPeers).toEqual([OWNER_URL_SAFE_FIXTURE, OWNER_STANDARD_FIXTURE, malformedRawOwner]);
     expect(_hasActivePeerForTest(OTHER_OWNER_STANDARD_FIXTURE)).toBe(true);
   });
 

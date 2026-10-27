@@ -685,6 +685,26 @@ export function removePeer(
   });
 }
 
+/** Manual owner revocation purges every equivalent key encoding in one atomic write.
+ * Exact raw-handle removePeer/conditionalRemovePeer retain their historical semantics.
+ */
+export async function removeOwnerPeers(ownerPublicKey: string): Promise<boolean> {
+  const owner = canonicalizeEd25519PublicKey(ownerPublicKey, "Owner revocation key");
+  return _serializePeerMutation(async () => {
+    const peers = await _readPeerContainerStrict();
+    const filtered = peers.filter(peer => {
+      const raw = peer && typeof peer === "object" ? (peer as { remote_epk?: unknown }).remote_epk : undefined;
+      if (typeof raw !== "string") return true;
+      try { return canonicalizeEd25519PublicKey(raw, "Stored Owner key") !== owner; }
+      catch { return true; } // Preserve unrelated corruption; it cannot alias a valid key.
+    });
+    if (filtered.length === peers.length) return false;
+    const committed = await _writePeersAtomically(JSON.stringify({ peers: filtered }, null, 2));
+    if (committed) _invalidateOwnerSlot(owner);
+    return committed;
+  });
+}
+
 // ── Test-only helpers ────────────────────────────────────────────────────────
 
 /** Test-only: expose the identity-file path so tests can clean it. */

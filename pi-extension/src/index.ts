@@ -49,6 +49,7 @@ import {
   listPeers,
   listPeersStrict,
   removePeer,
+  removeOwnerPeers,
   snapshotOwnerPubkeys,
   conditionalRemovePeer,
   type PeerRecord,
@@ -3357,6 +3358,17 @@ async function _cmdList(ctx: Pick<ExtensionContext, "ui">): Promise<void> {
   ctx.ui.notify(`[remote-pi] Paired devices:\n${lines}`, "info");
 }
 
+function _manualRevokeMatches(records: PeerRecord[], prefix: string): InspectedPeerRecord[] {
+  const owners = new Map<string, InspectedPeerRecord>();
+  for (const record of records) {
+    const peer = _inspectPeerRecord(record);
+    if (!peer || !peer.rawHandle.startsWith(prefix)) continue;
+    const identity = peer.runtimeKey !== null ? `owner:${peer.runtimeKey}` : `raw:${peer.rawHandle}`;
+    if (!owners.has(identity)) owners.set(identity, peer);
+  }
+  return [...owners.values()];
+}
+
 async function _cmdRevoke(arg: string, ctx: Pick<ExtensionContext, "ui" | "cwd">): Promise<void> {
   const shortid = arg.trim();
   if (!shortid) {
@@ -3368,10 +3380,7 @@ async function _cmdRevoke(arg: string, ctx: Pick<ExtensionContext, "ui" | "cwd">
   }
 
   // Security revocation is local-first and never requires a network bootstrap.
-  const matches = (await listPeersStrict())
-    .map(_inspectPeerRecord)
-    .filter((peer): peer is InspectedPeerRecord => peer !== null)
-    .filter((peer) => peer.rawHandle.startsWith(shortid));
+  const matches = _manualRevokeMatches(await listPeersStrict(), shortid);
 
   if (matches.length === 0) {
     ctx.ui.notify(
@@ -3393,7 +3402,10 @@ async function _cmdRevoke(arg: string, ctx: Pick<ExtensionContext, "ui" | "cwd">
   const peer = matches[0]!;
   if (peer.runtimeKey !== null) _denyRevokedOwnerRuntime(peer.runtimeKey, true);
   _refreshFooter();
-  try { await removePeer(peer.rawHandle); }
+  try {
+    if (peer.runtimeKey !== null) await removeOwnerPeers(peer.runtimeKey);
+    else await removePeer(peer.rawHandle); // Explicit cleanup of an invalid raw record, not a valid owner.
+  }
   catch {
     ctx.ui.notify("Owner detached in this process, but pairing storage could not be updated. Fix local storage before restarting.", "error");
     return;
@@ -5261,15 +5273,13 @@ if (_isDirectRun()) {
     if (!shortid) {
       console.log("Usage: revoke <shortid>");
     } else {
-      const matches = (await listPeersStrict())
-        .map(_inspectPeerRecord)
-        .filter((peer): peer is InspectedPeerRecord => peer !== null)
-        .filter((peer) => peer.rawHandle.startsWith(shortid));
+      const matches = _manualRevokeMatches(await listPeersStrict(), shortid);
       if (matches.length === 0) console.log("No peer matching that shortid");
       else if (matches.length > 1) console.log(`Ambiguous: ${matches.map((peer) => peer.rawHandle.slice(0, 8)).join(", ")}`);
       else {
         const peer = matches[0]!;
-        await removePeer(peer.rawHandle);
+        if (peer.runtimeKey !== null) await removeOwnerPeers(peer.runtimeKey);
+        else await removePeer(peer.rawHandle);
         console.log(`Revoked locally: ${peer.record.name} (${peer.rawHandle.slice(0, 8)}…)`);
         if (peer.runtimeKey !== null) {
           try {

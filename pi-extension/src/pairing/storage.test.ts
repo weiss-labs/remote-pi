@@ -472,6 +472,34 @@ describe("peer record corruption isolation", () => {
   });
 });
 
+describe("canonical manual owner revocation", () => {
+  const path=join(_tmpHome,".pi","remote","peers.json");
+  const standard="Bz02uLiwrmQZ0S8qiwtFJAt0KzUvrgepYO/oMQ6yyQE=";
+  const urlSafe="Bz02uLiwrmQZ0S8qiwtFJAt0KzUvrgepYO_oMQ6yyQE";
+  const seed=(peers:unknown[])=>{mkdirSync(join(_tmpHome,".pi","remote"),{recursive:true});writeFileSync(path,JSON.stringify({peers}));};
+  test("purges standard/base64url/unpadded aliases durably; restart-equivalent strict read is empty",async()=>{
+    seed([standard,urlSafe,standard.replace(/=+$/,"")].map((remote_epk,i)=>({name:`alias${i}`,remote_epk,paired_at:"now"})));
+    const before=statSync(path).ino;
+    await expect(storage.removeOwnerPeers(urlSafe)).resolves.toBe(true);
+    await expect(storage.listPeersStrict()).resolves.toEqual([]);
+    expect(JSON.parse(readFileSync(path,"utf8"))).toEqual({peers:[]}); // Disk authority, not a runtime deny set.
+    expect(statSync(path).ino).not.toBe(before);expect(statSync(path).mode&0o777).toBe(0o600);
+    await expect(storage.removeOwnerPeers(standard)).resolves.toBe(false);
+  });
+  test("preserves every unrelated owner and corrupt record while exact raw remove semantics remain unchanged",async()=>{
+    const other=Buffer.alloc(32,5).toString("base64");const keep=[null,{name:"invalid",remote_epk:"bad"}, {name:"other",remote_epk:other,paired_at:"now"}];
+    seed([{name:"one",remote_epk:standard,paired_at:"now"},{name:"two",remote_epk:urlSafe,paired_at:"now"},...keep]);
+    await expect(storage.removeOwnerPeers(standard)).resolves.toBe(true);await expect(storage.listPeersStrict()).resolves.toEqual(keep);
+    seed([{name:"one",remote_epk:standard,paired_at:"now"},{name:"two",remote_epk:urlSafe,paired_at:"now"}]);
+    await expect(storage.removePeer(urlSafe)).resolves.toBe(true);expect((await storage.listPeersStrict()).map(p=>p.remote_epk)).toEqual([standard]);
+  });
+  test("invalid owner keys or corrupt containers never erase stored pairings",async()=>{
+    seed([{name:"owner",remote_epk:standard,paired_at:"now"}]);const before=readFileSync(path,"utf8");
+    await expect(storage.removeOwnerPeers("not-a-key")).rejects.toThrow();expect(readFileSync(path,"utf8")).toBe(before);
+    writeFileSync(path,"{partial");await expect(storage.removeOwnerPeers(standard)).rejects.toThrow();expect(readFileSync(path,"utf8")).toBe("{partial");
+  });
+});
+
 describe("strict pairing reads and atomic mutation", () => {
   const path=join(_tmpHome,".pi","remote","peers.json");
   test("strict read distinguishes a missing file from corrupt or invalid containers", async()=>{
