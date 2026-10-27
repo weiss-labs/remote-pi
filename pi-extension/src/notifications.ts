@@ -47,6 +47,7 @@ interface Dependencies {
   room(): string | null;
   paneName?(): string | null;
   callActive?(): boolean;
+  credentialNotice?(): void;
   /** Must recheck durable pairing, not just the relay key authentication. */
   paired(phone: string): Promise<boolean>;
 }
@@ -101,6 +102,7 @@ export class NotificationBridge {
   /** No arbitrary text, prompts, stdout, tool arguments, or labels enter push payloads. */
   async emit(kind: AgentNotificationCategory, eventId?: string): Promise<NotificationReply> {
     if (kind === "input_needed" || kind === "credential_needed") this.waiting = true;
+    if (kind === "credential_needed") this.deps.credentialNotice?.();
     if (kind === "task_failed") this.failed = true;
     const stamp = Date.now();
     if (stamp - (this.last.get(kind) ?? 0) < 30000) return { type: "notification_registration", in_reply_to: "", ok: true };
@@ -128,6 +130,14 @@ export class NotificationBridge {
   }
   stop(): void { this.active = false; void this.control({ type: "notification_activity", active: false }); }
   registerTool(pi: ExtensionAPI): void {
+    pi.registerCommand("credential-needed", {
+      description: "Show generic credential/sign-in blocker instructions and notify the paired phone (no secrets or arguments)",
+      handler: async (args, ctx) => {
+        if (args.trim()) { ctx.ui.notify("This command accepts no arguments or secret values.", "warning"); return; }
+        const reply = await this.emit("credential_needed");
+        if (!reply.ok) ctx.ui.notify("Credential blocker instructions shown on this pane. Phone push is unavailable.", "warning");
+      },
+    });
     const parameters = Type.Object({ category: Type.Union([Type.Literal("input_needed"), Type.Literal("credential_needed"), Type.Literal("review_ready"), Type.Literal("tests_failed"), Type.Literal("task_failed"), Type.Literal("task_finished")]) });
     pi.registerTool({ name: "notify_user", label: "Notify paired phone", description: "Signal a real input/approval or credential/sign-in blocker (highest importance), completed task, terminal task failure, verified failed tests, or work ready for review. Use input_needed before waiting for a human, or credential_needed when a credential/sign-in is required. This never transports credentials or infers arbitrary system prompts. Never call for routine tool activity. Only a generic category leaves the machine. Success means relay accepted the event, not phone delivery; permissions and Focus may suppress it.", parameters,
       execute: async (_id, args) => {

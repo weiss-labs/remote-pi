@@ -111,6 +111,17 @@ import { runSetupWizard, type WizardUI } from "./session/setup_wizard.js";
 import { updateFooter, type FooterState } from "./ui/footer.js";
 import { VoiceBridge, type VoiceClientMessage } from "./voice/bridge.js";
 import { NotificationBridge, notificationControl } from "./notifications.js";
+import { NativeCommands } from "./actions/commands.js";
+import { CREDENTIAL_INSTRUCTIONS, isOpAuthorizationTimeout } from "./actions/credential_blocker.js";
+let _lastCredentialNotice: number | null = null;
+function _announceCredentialNeeded(): void {
+  const now = Date.now();
+  if (_lastCredentialNotice !== null && now - _lastCredentialNotice < 30000) return;
+  _lastCredentialNotice = now;
+  try { _pi?.sendMessage({ customType: "remote-pi:credential-needed", content: CREDENTIAL_INSTRUCTIONS, display: true, details: { kind: "credential_needed" } }); } catch { /* A stale runtime cannot authorize another action. */ }
+  _broadcastToActive({ type: "error", code: "credential_needed", message: CREDENTIAL_INSTRUCTIONS });
+}
+let _commands: NativeCommands | null = null;
 
 const _notifications = new NotificationBridge({
   relay: () => _relay,
@@ -118,6 +129,7 @@ const _notifications = new NotificationBridge({
   room: () => _myRoomId,
   paneName: () => _myRoomMeta?.name ?? null,
   callActive: () => _voiceBridge.isActive(),
+  credentialNotice: _announceCredentialNeeded,
   paired: async (phone) => (await _findKnownPeer(phone)) !== null && _activePeers.has(phone),
 });
 function _broadcastWithNotifications(msg: ServerMessage): void {
@@ -2121,6 +2133,20 @@ const extension: ExtensionFactory = (pi: ExtensionAPI): void => {
   applied.add(pi);
 
   _pi = pi;
+  _commands?.stop();
+  _commands = new NativeCommands(pi, {
+    busy: () => {
+      const context = _lastEventCtx as ExtensionContext | null;
+      try { return _agentRunActive || _myRoomMeta?.working === true || context?.isIdle?.() === false || context?.hasPendingMessages?.() === true; }
+      catch { return true; }
+    },
+    provider: () => { try { return (_lastEventCtx as ExtensionContext | null)?.model?.provider; } catch { return undefined; } },
+    authorize: async (phone, sender) => _activePeers.get(phone) === sender && (await _findKnownPeer(phone)) !== null && _activePeers.get(phone) === sender,
+    promptSubmitted: (id, text) => {
+      _currentTurnId = id;
+      _broadcastToActive({ type: "user_input", id, text });
+    },
+  });
 
   // Plan/57 — bridge @eko24ive/pi-ask clarification flows to the paired app.
   // Inert when pi-ask isn't installed (no events fire) or the SDK exposes no
@@ -2249,6 +2275,12 @@ const extension: ExtensionFactory = (pi: ExtensionAPI): void => {
       tool: event.toolName,
       args: _enrichToolArgs(event.toolName, event.args),
     });
+  });
+
+  // Observe only failed direct op CLI authorization-timeout results. No tool
+  // arguments/results are rewritten, persisted or copied into the notice.
+  pi.on("tool_result", (event) => {
+    if (isOpAuthorizationTimeout(event)) void _notifications.emit("credential_needed");
   });
 
   pi.on("tool_execution_end", (event) => {
@@ -2391,6 +2423,7 @@ const extension: ExtensionFactory = (pi: ExtensionAPI): void => {
   // bound to the current session.
   pi.on("session_start", (_event, ctx) => {
     _lastEventCtx = ctx;
+    _commands?.resume();
     // session_shutdown disposes per-session pi-ask subscriptions. A host that
     // reuses this module instance does NOT re-run the factory, so rebind the
     // bridge here; fresh-module hosts already created theirs in the factory.
@@ -2485,6 +2518,7 @@ const extension: ExtensionFactory = (pi: ExtensionAPI): void => {
   // best-effort: every step is guarded so a partially-initialised instance
   // (e.g. shutdown lands mid-`_cmdRoot`) tears down without throwing.
   pi.on("session_shutdown", async () => {
+    _commands?.stop();
     _notifications.stop();
     // Revoke async authority synchronously, before any teardown await. `_disposed`
     // blocks the outgoing continuation immediately; the root and candidate
@@ -4445,6 +4479,15 @@ export function _routeClientMessageFrom(
     const phone = [..._activePeers].find(([, channel]) => channel === sender)?.[0];
     if (!phone) { sender.send({ type: "notification_registration", in_reply_to: msg.id, ok: false, error: "not_paired" }); return; }
     void _notifications.handle(phone, msg).then(reply => sender.send(reply)).catch(() => sender.send({ type: "notification_registration", in_reply_to: msg.id, ok: false, error: "notification_unavailable" }));
+    return;
+  }
+  if (msg.type === "list_commands" || msg.type === "command_execute") {
+    const phone = [..._activePeers].find(([, channel]) => channel === sender)?.[0];
+    if (!phone || !_commands) {
+      sender.send({ type: "command_result", in_reply_to: msg.id, name: msg.type === "command_execute" ? msg.name : "", status: "rejected", code: "not_paired", message: "An active paired pane is required." });
+      return;
+    }
+    void _commands.handle(phone, sender, msg).catch(() => sender.send({ type: "command_result", in_reply_to: msg.id, name: msg.type === "command_execute" ? msg.name : "", status: "rejected", code: "sdk_unavailable", message: "Native command dispatch is unavailable." }));
     return;
   }
   // session_sync has its own internal guards — handle before the strict

@@ -379,7 +379,8 @@ describe("extension default export", () => {
     // 8 plan-25 + 2 daemon registry (W1) + 6 fleet ops (W2) + 2 install (W3)
     // + 1 cross-PC inventory (plan-25 W D) + 1 cron (plan-39) + 1 rename (plan/41)
     // + 1 relay control (issue #119 — README documents the verb family).
-    expect(registeredCommands).toHaveLength(23);
+    // One reserved native-dispatch gate and one explicit credential blocker command.
+    expect(registeredCommands).toHaveLength(25);
     // `relay` is back as ONE command with verbs (start/stop/status/url), not the
     // five separate registrations plan/19 trimmed — the README documents it and
     // without it every `/remote-pi relay …` silently reprinted the status panel.
@@ -4777,9 +4778,12 @@ describe("session_start auto-init skips relay in print/-p mode (#44)", () => {
     const onSessionStart = captureEventHandler("session_start");
     _resetAutoInitedForTest();
     onSessionStart({ type: "session_start" }, makeMockCtx("/home/user/projects/rp-interactive"));
-    await new Promise<void>((r) => setTimeout(r, 20));
-
-    expect(_hasMeshNodeForTest()).toBe(true);
+    // Wait for the actual asynchronous startup, not a 20ms CPU-load guess.
+    // Leaving startup live after this test also contaminated the next join test.
+    await vi.waitFor(() => {
+      expect(_hasMeshNodeForTest()).toBe(true);
+      expect(_getState()).toBe("started");
+    }, { timeout: 3000 });
   });
 });
 

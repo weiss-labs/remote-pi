@@ -174,6 +174,7 @@ export type ExtensionUiResponseWire =
     };
 
 export type ClientMessage =
+  | import("../actions/commands.js").CommandClientMessage
   | import("../notifications.js").NotificationClientMessage
   | { type: "pair_request"; id: string; token: string; device_name: string }
   // Plan/30: optional `images` carry inline base64 attachments (one today).
@@ -265,6 +266,7 @@ export type SessionHistoryEvent =
   | { ts: number; type: "compaction"; summary: string; tokens_before: number };
 
 export type ServerMessage =
+  | import("../actions/commands.js").CommandServerMessage
   | import("../notifications.js").NotificationReply
 
   | VoiceServerMessage

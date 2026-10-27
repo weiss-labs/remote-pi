@@ -2,6 +2,9 @@ import type { ClientMessage, ServerMessage } from "./types.js";
 
 const SERVER_TYPES = new Set<ServerMessage["type"]>([
   "pair_ok",
+  "commands_list",
+  "command_result",
+  "notification_registration",
   "pair_error",
   "user_input",
   "queued_message_state",

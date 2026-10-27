@@ -94,6 +94,14 @@ describe("notification event lifecycle", () => {
     const s=setup();await s.bridge.emit("review_ready");await s.bridge.emit("tests_failed");
     for(const f of s.relay.frames) expect(Object.keys(f).sort()).toEqual(["event_id","id","kind","type"]);
   });
+  it("explicit credential command rejects secret arguments and shows notice even when APNs disabled", async () => {
+    const relay=new FakeRelay();relay.error="apns_disabled";const notice=vi.fn();let handler:((args:string,ctx:unknown)=>Promise<void>)|undefined;
+    const bridge=new NotificationBridge({relay:()=>relay.typed(),identity:()=>null,room:()=>"room",paired:async()=>false,credentialNotice:notice});
+    const api={registerTool:vi.fn(),registerCommand:(_name:string,options:{handler:typeof handler})=>{handler=options.handler;}};
+    bridge.registerTool(api as unknown as import("@earendil-works/pi-coding-agent").ExtensionAPI);
+    const notify=vi.fn(),ctx={ui:{notify}};await handler!("synthetic-secret-do-not-echo",ctx);expect(relay.frames).toHaveLength(0);expect(notice).not.toHaveBeenCalled();expect(JSON.stringify(notify.mock.calls)).not.toContain("synthetic-secret-do-not-echo");
+    await handler!("",ctx);expect(notice).toHaveBeenCalledWith();expect(relay.frames[0]).toMatchObject({kind:"credential_needed"});expect(notify).toHaveBeenLastCalledWith(expect.stringContaining("Phone push is unavailable"),"warning");
+  });
   it("deduplicates accepted events but never hides disabled transport errors", async () => {
     const s=setup();s.relay.error="apns_disabled";expect((await s.bridge.emit("input_needed")).ok).toBe(false);expect((await s.bridge.emit("input_needed")).ok).toBe(false);
     s.relay.error=undefined;await s.bridge.emit("input_needed");await s.bridge.emit("input_needed");expect(s.relay.frames).toHaveLength(3);
