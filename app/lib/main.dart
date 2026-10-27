@@ -1,3 +1,7 @@
+import 'dart:async';
+
+import 'package:app/domain/contracts/notifications.dart';
+import 'package:app/data/transport/epk_encoding.dart';
 import 'package:app/config/dependencies.dart';
 import 'package:app/data/local/boxes.dart';
 import 'package:app/data/mesh/mesh_sync_service.dart';
@@ -40,15 +44,102 @@ class _RemotePiAppState extends State<RemotePiApp> with WidgetsBindingObserver {
     injector.get<MeshSyncService>(),
   );
 
+  StreamSubscription<NotificationTarget>? _tapSub;
+  final List<NotificationTarget> _pendingTaps = [];
+  bool _openingTap = false;
+  Notifications get _notifications => injector.get<Notifications>();
+
   @override
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
+    _tapSub = _notifications.taps.listen((target) {
+      _pendingTaps.add(target);
+      _routeChanged();
+    });
+    _router.routeInformationProvider.addListener(_routeChanged);
+    injector.get<SessionSelection>().addListener(_updateVisibleTarget);
+    unawaited(_notifications.start());
+  }
+
+  void _routeChanged() {
+    _updateVisibleTarget();
+    final path = _router.routeInformationProvider.value.uri.path;
+    if (!{'/home', '/chat', '/settings'}.contains(path) ||
+        _pendingTaps.isEmpty ||
+        _openingTap) {
+      return;
+    }
+    unawaited(_openTap());
+  }
+
+  Future<void> _openTap() async {
+    _openingTap = true;
+    final target = _pendingTaps.removeAt(0);
+    try {
+      if (!await _notifications.acceptTap(target) || !mounted) return;
+      final storage = injector.get<PairingStorage>();
+      final peers = await storage.listPeers();
+      final peer = peers
+          .where(
+            (p) => toStandardB64(p.remoteEpk) == toStandardB64(target.peer),
+          )
+          .firstOrNull;
+      if (peer == null || !mounted) return;
+      await injector.get<Preferences>().setSelectedRoom(
+        epk: peer.remoteEpk,
+        roomId: target.room,
+      );
+      final conn = injector.get<ConnectionManager>();
+      conn.switchRoom(target.room);
+      unawaited(conn.switchTo(peer.copyWith(roomId: target.room)));
+      injector.get<SessionSelection>().select(
+        peer.remoteEpk,
+        target.room,
+        'Pane',
+        peer.nickname ?? peer.sessionName,
+      );
+      _router.go('/home');
+      await WidgetsBinding.instance.endOfFrame;
+      if (!mounted) return;
+      final view = WidgetsBinding.instance.platformDispatcher.views.first;
+      if (view.physicalSize.shortestSide / view.devicePixelRatio <
+          kTabletBreakpoint) {
+        _router.push(
+          '/chat',
+          extra: {'title': 'Pane', 'device': peer.nickname ?? peer.sessionName},
+        );
+      }
+    } finally {
+      _openingTap = false;
+      if (mounted) _routeChanged();
+    }
+  }
+
+  void _updateVisibleTarget() {
+    final path = _router.routeInformationProvider.value.uri.path;
+    final selected = injector.get<SessionSelection>().current;
+    final view = WidgetsBinding.instance.platformDispatcher.views.first;
+    final wide =
+        view.physicalSize.shortestSide / view.devicePixelRatio >=
+        kTabletBreakpoint;
+    final visible =
+        WidgetsBinding.instance.lifecycleState == AppLifecycleState.resumed &&
+        (path == '/chat' || (path == '/home' && wide));
+    unawaited(
+      _notifications.visibleTarget(
+        visible ? selected?.epk : null,
+        visible ? selected?.roomId : null,
+      ),
+    );
   }
 
   @override
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
+    _tapSub?.cancel();
+    _router.routeInformationProvider.removeListener(_routeChanged);
+    injector.get<SessionSelection>().removeListener(_updateVisibleTarget);
     disposeDependencies();
     super.dispose();
   }
@@ -61,6 +152,8 @@ class _RemotePiAppState extends State<RemotePiApp> with WidgetsBindingObserver {
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
     final meshSync = injector.get<MeshSyncService>();
+    _updateVisibleTarget();
+    if (state == AppLifecycleState.resumed) unawaited(_notifications.refresh());
     switch (state) {
       case AppLifecycleState.resumed:
         meshSync.startPolling();

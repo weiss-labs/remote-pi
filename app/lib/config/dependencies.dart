@@ -41,6 +41,11 @@ import 'package:app/ui/pairing/viewmodels/pairing_viewmodel.dart';
 import 'package:app/ui/settings/viewmodels/settings_viewmodel.dart';
 import 'package:app/ui/update/viewmodels/update_banner_viewmodel.dart';
 import 'package:cryptography/cryptography.dart';
+import 'package:flutter/foundation.dart';
+import 'package:flutter_secure_storage/flutter_secure_storage.dart';
+import 'package:app/domain/contracts/notifications.dart';
+import 'package:app/data/notifications/native_notifications.dart';
+import 'package:app/data/notifications/notification_service.dart';
 import 'package:package_info_plus/package_info_plus.dart';
 import 'package:provider/provider.dart';
 import 'package:remote_pi_identity/remote_pi_identity.dart';
@@ -97,6 +102,17 @@ Future<void> setupDependencies() async {
     () => ConnectionManager(
       factory: _productionConnectionFactory,
       storage: _injector.get<PairingStorage>(),
+    ),
+  );
+
+  _injector.addService<Notifications>(
+    () => NotificationService(
+      platform: NativeNotifications(),
+      ownerKey: _injector.get<OwnerIdentityBridge>().requireKeyPair,
+      store: const FlutterSecureStorage(),
+      connection: _injector.get<ConnectionManager>(),
+      pairing: _injector.get<PairingStorage>(),
+      supported: !kIsWeb && defaultTargetPlatform == TargetPlatform.iOS,
     ),
   );
 
@@ -164,6 +180,7 @@ Future<void> setupDependencies() async {
       _injector.get<Preferences>(),
       _injector.get<ConnectionManager>(),
       _injector.get<MeshSyncService>(),
+      _injector.get<Notifications>(),
     ),
   );
   _injector.addViewModel<PairingViewModel>(

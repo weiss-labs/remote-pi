@@ -657,6 +657,7 @@ class SyncService extends Service {
         // Surface to the UI; never persist (it's a live request, not history).
         _extensionUiController.add(msg);
         break;
+      case NotificationRegistration():
       case Pong():
       case PairOk():
       case PairError():

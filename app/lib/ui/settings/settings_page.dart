@@ -1,3 +1,4 @@
+import 'package:app/domain/entities/notification_preferences.dart';
 import 'package:app/data/preferences/preferences.dart';
 import 'package:app/data/transport/relay_config.dart';
 import 'package:app/pairing/storage.dart';
@@ -52,6 +53,8 @@ class SettingsPage extends StatelessWidget {
           Divider(color: colors.border, height: 1),
           const _DisplaySection(),
           Divider(color: colors.border, height: 1),
+          const _NotificationsSection(),
+          Divider(color: colors.border, height: 1),
           const _SectionHeader('Pairings'),
           switch (state) {
             SettingsLoading() => Padding(
@@ -74,6 +77,92 @@ class SettingsPage extends StatelessWidget {
           const _AddPairingButton(),
         ],
       ),
+    );
+  }
+}
+
+class _NotificationsSection extends StatelessWidget {
+  const _NotificationsSection();
+  @override
+  Widget build(BuildContext context) {
+    final vm = context.watch<SettingsViewModel>();
+    final service = vm.notifications;
+    final prefs = vm.notificationPreferences;
+    final colors = context.colors;
+    Widget toggle(
+      String title,
+      bool value,
+      ValueChanged<bool>? onChanged, {
+      String? subtitle,
+    }) => SwitchListTile.adaptive(
+      title: Text(
+        title,
+        style: context.typo.mono.copyWith(color: colors.text, fontSize: 13),
+      ),
+      subtitle: subtitle == null
+          ? null
+          : Text(
+              subtitle,
+              style: context.typo.mono.copyWith(
+                color: colors.muted,
+                fontSize: 11,
+              ),
+            ),
+      value: value,
+      onChanged: onChanged,
+      activeTrackColor: colors.accent,
+      contentPadding: const EdgeInsets.symmetric(horizontal: 18, vertical: 4),
+    );
+    final available = service?.supported == true;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        const _SectionHeader('Notifications'),
+        toggle(
+          'Allow notifications',
+          prefs.enabled,
+          available ? vm.enableNotifications : null,
+          subtitle: service?.status ?? 'Available on iOS',
+        ),
+        if (service?.permission == 'denied')
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 18),
+            child: OutlinedButton(
+              onPressed: service?.openSettings,
+              style: OutlinedButton.styleFrom(minimumSize: const Size(44, 44)),
+              child: const Text('Open iOS Settings'),
+            ),
+          ),
+        if (prefs.enabled) ...[
+          for (final category in notificationCategories.entries)
+            toggle(
+              category.value,
+              prefs.categories.contains(category.key),
+              available
+                  ? (value) => vm.setNotificationCategory(category.key, value)
+                  : null,
+              subtitle: category.key == 'input_needed'
+                  ? 'Questions and approvals that need you'
+                  : null,
+            ),
+          toggle(
+            'Show pane name',
+            prefs.showPaneName,
+            available ? vm.setPaneName : null,
+            subtitle: 'Off keeps lock-screen alerts generic',
+          ),
+        ],
+        Padding(
+          padding: const EdgeInsets.fromLTRB(18, 8, 18, 18),
+          child: Text(
+            'Messages and tool details stay private. Focus and iOS permissions may silence alerts. Settings sync when each paired Mac connects.',
+            style: context.typo.mono.copyWith(
+              color: colors.muted,
+              fontSize: 11,
+            ),
+          ),
+        ),
+      ],
     );
   }
 }
@@ -280,14 +369,8 @@ class _DisplaySection extends StatelessWidget {
                       value: ThemeMode.system,
                       label: Text('System'),
                     ),
-                    ButtonSegment(
-                      value: ThemeMode.light,
-                      label: Text('Light'),
-                    ),
-                    ButtonSegment(
-                      value: ThemeMode.dark,
-                      label: Text('Dark'),
-                    ),
+                    ButtonSegment(value: ThemeMode.light, label: Text('Light')),
+                    ButtonSegment(value: ThemeMode.dark, label: Text('Dark')),
                   ],
                   selected: {prefs.themeMode},
                   onSelectionChanged: (s) => prefs.setThemeMode(s.first),

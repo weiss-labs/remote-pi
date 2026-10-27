@@ -2,6 +2,8 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
+	<key>APNSEnvironment</key>
+	<string>$(APNS_ENVIRONMENT)</string>
 	<!-- Used for QR pairing (scan the code on your Mac) and, since plan 30,
 	     to capture a photo to attach to a message. The photo library uses
 	     the system PHPicker (iOS 14+), which needs no library permission. -->

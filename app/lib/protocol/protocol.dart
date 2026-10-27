@@ -256,7 +256,9 @@ class RoomInfo {
         ? this.thinking
         : thinking as ThinkingLevel?,
     working: working ?? this.working,
-    footer: identical(footer, _kRoomInfoUnset) ? this.footer : footer as String?,
+    footer: identical(footer, _kRoomInfoUnset)
+        ? this.footer
+        : footer as String?,
   );
 
   @override
@@ -789,7 +791,12 @@ class VoiceRpc extends ClientMessage {
   VoiceRpc({required this.id, required this.path, this.body = const {}});
 
   @override
-  Map<String, dynamic> toJson() => {'type': 'voice_rpc', 'id': id, 'path': path, 'body': body};
+  Map<String, dynamic> toJson() => {
+    'type': 'voice_rpc',
+    'id': id,
+    'path': path,
+    'body': body,
+  };
 }
 
 class VoiceClose extends ClientMessage {
@@ -810,6 +817,11 @@ sealed class ServerMessage {
   factory ServerMessage.fromJson(Map<String, dynamic> json) {
     final type = json['type'] as String?;
     return switch (type) {
+      'notification_registration' => NotificationRegistration(
+        inReplyTo: json['in_reply_to'] as String,
+        ok: json['ok'] == true,
+        error: json['error'] as String?,
+      ),
       'agent_chunk' => AgentChunk.fromJson(json),
       'agent_done' => AgentDone.fromJson(json),
       'tool_request' => ToolRequest.fromJson(json),
@@ -859,6 +871,58 @@ sealed class ServerMessage {
       _ => throw UnsupportedTypeException(type ?? ''),
     };
   }
+}
+
+class NotifyRegister extends ClientMessage {
+  final String id, deviceId, token, environment;
+  final List<String> categories;
+  final bool showPaneName;
+  final int expiresAt;
+  final String signature;
+  NotifyRegister({
+    required this.id,
+    required this.deviceId,
+    required this.token,
+    required this.environment,
+    required this.categories,
+    required this.showPaneName,
+    required this.expiresAt,
+    required this.signature,
+  });
+  @override
+  Map<String, dynamic> toJson() => {
+    'type': 'notify_register',
+    'id': id,
+    'device_id': deviceId,
+    'token': token,
+    'environment': environment,
+    'categories': categories,
+    'show_pane_name': showPaneName,
+    'expires_at': expiresAt,
+    'signature': signature,
+  };
+}
+
+class NotifyUnregister extends ClientMessage {
+  final String id, deviceId;
+  NotifyUnregister({required this.id, required this.deviceId});
+  @override
+  Map<String, dynamic> toJson() => {
+    'type': 'notify_unregister',
+    'id': id,
+    'device_id': deviceId,
+  };
+}
+
+class NotificationRegistration extends ServerMessage {
+  final String inReplyTo;
+  final bool ok;
+  final String? error;
+  const NotificationRegistration({
+    required this.inReplyTo,
+    required this.ok,
+    this.error,
+  });
 }
 
 class AgentChunk extends ServerMessage {
@@ -1545,21 +1609,20 @@ class AskQuestionWire {
   });
 
   factory AskQuestionWire.fromJson(Map<String, dynamic> j) => AskQuestionWire(
-        id: j['id'] as String? ?? '',
-        label: (j['label'] as String?) ?? (j['prompt'] as String?) ?? '',
-        prompt: j['prompt'] as String? ?? '',
-        type: AskQuestionWireType.fromWire(j['type'] as String?) ??
-            AskQuestionWireType.single,
-        required: (j['required'] as bool?) ?? false,
-        presentedType:
-            AskQuestionWireType.fromWire(j['presentedType'] as String?),
-        requestedType:
-            AskQuestionWireType.fromWire(j['requestedType'] as String?),
-        options: (j['options'] as List<dynamic>? ?? const <dynamic>[])
-            .whereType<Map>()
-            .map((m) => AskOptionWire.fromJson(m.cast<String, dynamic>()))
-            .toList(growable: false),
-      );
+    id: j['id'] as String? ?? '',
+    label: (j['label'] as String?) ?? (j['prompt'] as String?) ?? '',
+    prompt: j['prompt'] as String? ?? '',
+    type:
+        AskQuestionWireType.fromWire(j['type'] as String?) ??
+        AskQuestionWireType.single,
+    required: (j['required'] as bool?) ?? false,
+    presentedType: AskQuestionWireType.fromWire(j['presentedType'] as String?),
+    requestedType: AskQuestionWireType.fromWire(j['requestedType'] as String?),
+    options: (j['options'] as List<dynamic>? ?? const <dynamic>[])
+        .whereType<Map>()
+        .map((m) => AskOptionWire.fromJson(m.cast<String, dynamic>()))
+        .toList(growable: false),
+  );
 }
 
 /// Optional pi-ask enrichment on an `extension_ui_request`. When present, the
@@ -1580,7 +1643,8 @@ class AskEnrichmentWire {
     this.questions = const <AskQuestionWire>[],
   });
 
-  factory AskEnrichmentWire.fromJson(Map<String, dynamic> j) => AskEnrichmentWire(
+  factory AskEnrichmentWire.fromJson(Map<String, dynamic> j) =>
+      AskEnrichmentWire(
         flowId: j['flow_id'] as String? ?? '',
         toolCallId: j['tool_call_id'] as String?,
         source: (j['source'] as String?) ?? 'tool',
@@ -1620,7 +1684,8 @@ class ExtensionUiRequest extends ServerMessage {
   factory ExtensionUiRequest.fromJson(Map<String, dynamic> j) =>
       ExtensionUiRequest(
         id: j['id'] as String? ?? '',
-        method: ExtensionUiMethod.fromWire(j['method'] as String?) ??
+        method:
+            ExtensionUiMethod.fromWire(j['method'] as String?) ??
             ExtensionUiMethod.select,
         title: j['title'] as String?,
         message: j['message'] as String?,
@@ -1653,7 +1718,9 @@ class AskAnswerWire {
   Map<String, dynamic> toJson() {
     final m = <String, dynamic>{};
     if (values.isNotEmpty) m['values'] = values;
-    if (customText != null && customText!.isNotEmpty) m['customText'] = customText;
+    if (customText != null && customText!.isNotEmpty) {
+      m['customText'] = customText;
+    }
     if (note != null && note!.isNotEmpty) m['note'] = note;
     if (optionNotes.isNotEmpty) m['optionNotes'] = optionNotes;
     return m;
@@ -1665,6 +1732,7 @@ class AskAnswerWire {
 class AskResponseEnrichmentWire {
   final String flowId;
   final bool isCancel;
+
   /// 'submit' | 'elaborate' (null when cancel). Raw string for forward-compat.
   final String? mode;
   final Map<String, AskAnswerWire> answers;
@@ -1721,19 +1789,31 @@ class VoiceOpened extends ServerMessage {
   final String inReplyTo;
   final String label;
   final double ratePerMinute;
-  VoiceOpened({required this.inReplyTo, required this.label, required this.ratePerMinute});
+  VoiceOpened({
+    required this.inReplyTo,
+    required this.label,
+    required this.ratePerMinute,
+  });
 }
 
 class VoiceError extends ServerMessage {
   final String inReplyTo;
   final String code;
   final String message;
-  VoiceError({required this.inReplyTo, required this.code, required this.message});
+  VoiceError({
+    required this.inReplyTo,
+    required this.code,
+    required this.message,
+  });
 }
 
 class VoiceRpcResult extends ServerMessage {
   final String inReplyTo;
   final int status;
   final Object? body;
-  VoiceRpcResult({required this.inReplyTo, required this.status, required this.body});
+  VoiceRpcResult({
+    required this.inReplyTo,
+    required this.status,
+    required this.body,
+  });
 }

@@ -1,3 +1,6 @@
+import 'dart:async';
+
+import 'package:app/domain/contracts/notifications.dart';
 import 'package:app/data/mesh/mesh_sync_service.dart';
 import 'package:app/data/preferences/preferences.dart';
 import 'package:app/data/transport/connection_manager.dart';
@@ -23,10 +26,47 @@ class SettingsViewModel extends ViewModel<SettingsState> {
   final MeshSyncService? _meshSync;
   bool _disposed = false;
 
-  SettingsViewModel(this._storage, this._prefs, this._conn, [this._meshSync])
-    : super(const SettingsLoading()) {
+  final Notifications? notifications;
+  StreamSubscription<void>? _notificationSub;
+  SettingsViewModel(
+    this._storage,
+    this._prefs,
+    this._conn, [
+    this._meshSync,
+    this.notifications,
+  ]) : super(const SettingsLoading()) {
+    _notificationSub = notifications?.changes.listen((_) {
+      if (!_disposed) notifyListeners();
+    });
     _load();
   }
+
+  NotificationPreferences get notificationPreferences =>
+      notifications?.preferences ?? const NotificationPreferences();
+  Future<void> enableNotifications(bool enabled) async {
+    final saving = notifications?.update(
+      notificationPreferences.copyWith(enabled: enabled),
+    );
+    // Permission is an immediate user action, never blocked on a network ACK.
+    if (enabled) await notifications?.requestPermission();
+    await saving;
+  }
+
+  Future<void> setNotificationCategory(String kind, bool enabled) async {
+    final categories = {...notificationPreferences.categories};
+    if (enabled) {
+      categories.add(kind);
+    } else {
+      categories.remove(kind);
+    }
+    await notifications?.update(
+      notificationPreferences.copyWith(categories: categories),
+    );
+  }
+
+  Future<void> setPaneName(bool value) async => notifications?.update(
+    notificationPreferences.copyWith(showPaneName: value),
+  );
 
   Future<void> _load() async {
     final peers = await _storage.listPeers();
@@ -125,6 +165,7 @@ class SettingsViewModel extends ViewModel<SettingsState> {
   @override
   void dispose() {
     _disposed = true;
+    _notificationSub?.cancel();
     super.dispose();
   }
 }
