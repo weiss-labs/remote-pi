@@ -3,6 +3,7 @@ pub mod handlers;
 mod identity;
 pub mod mesh;
 pub mod metrics;
+pub mod notifications;
 pub mod peers;
 pub mod presence;
 pub mod protocol;
@@ -30,6 +31,7 @@ pub use rooms::{RoomManager, RoomMeta, RoomMetaPatch};
 /// they all read from this struct.
 #[derive(Clone)]
 pub struct AppState {
+    pub notifications: Arc<notifications::Notifications>,
     pub registry: Arc<PeerRegistry>,
     pub presence: Arc<PresenceManager>,
     pub rooms: Arc<RoomManager>,

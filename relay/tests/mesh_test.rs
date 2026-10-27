@@ -36,6 +36,12 @@ async fn spawn_relay() -> (String, tempfile::TempDir) {
     ));
     let mesh_auth = Arc::new(MeshAuthCache::new());
     let state = AppState {
+        notifications: relay::notifications::Notifications::open(
+            ":memory:",
+            None,
+            Default::default(),
+        )
+        .unwrap(),
         registry,
         presence,
         rooms,

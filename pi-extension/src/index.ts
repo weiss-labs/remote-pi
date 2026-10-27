@@ -43,6 +43,7 @@ import { buildQRUri, qrSession, renderQRAscii, clampPairTtlMs, TOKEN_TTL_MS } fr
 import {
   addPeer,
   getOrCreateEd25519Keypair,
+  readExistingEd25519Keypair,
   KeyringUnavailableError,
   PairedIdentityMissingError,
   listPeers,
@@ -109,6 +110,20 @@ import {
 import { runSetupWizard, type WizardUI } from "./session/setup_wizard.js";
 import { updateFooter, type FooterState } from "./ui/footer.js";
 import { VoiceBridge, type VoiceClientMessage } from "./voice/bridge.js";
+import { NotificationBridge, notificationControl } from "./notifications.js";
+
+const _notifications = new NotificationBridge({
+  relay: () => _relay,
+  identity: () => _cachedEd25519,
+  room: () => _myRoomId,
+  paneName: () => _myRoomMeta?.name ?? null,
+  callActive: () => _voiceBridge.isActive(),
+  paired: async (phone) => (await _findKnownPeer(phone)) !== null && _activePeers.has(phone),
+});
+function _broadcastWithNotifications(msg: ServerMessage): void {
+  if (msg.type === "extension_ui_request" && msg.method !== "notify") void _notifications.emit("input_needed", msg.id);
+  _broadcastToActive(msg);
+}
 
 // Weiss Labs, plan 71: one Pi Voice phone session per pane.
 const _voiceBridge = new VoiceBridge();
@@ -1379,11 +1394,19 @@ function _reportRevocationByFingerprint(canonicalOwnerPubkey: string): void {
 }
 
 function _revokeActiveOwnerRuntime(canonicalOwnerPubkey: string): void {
+  void _notifications.revoke(canonicalOwnerPubkey);
   if (!_activePeers.has(canonicalOwnerPubkey)) return;
   _refreshPairingsCache();
   _detachPeerChannel(canonicalOwnerPubkey);
   _refreshFooter();
   _reportRevocationByFingerprint(canonicalOwnerPubkey);
+}
+
+async function _reconcileNotificationPairings(): Promise<void> {
+  try {
+    const phones = (await listPeers()).map(_inspectPeerRecord).filter((p): p is InspectedPeerRecord => p !== null).flatMap(p => p.runtimeKey ? [p.runtimeKey] : []);
+    _notifications.reconcile(phones);
+  } catch { /* Fail closed: do not turn a storage read failure into revocation. */ }
 }
 
 async function _findKnownPeer(appPeerIdStd: string): Promise<PeerRecord | null> {
@@ -1590,6 +1613,8 @@ async function _attemptReconnect(
   }
 
   _relay = relay;
+  _notifications.restoreActivity();
+  void _reconcileNotificationPairings();
   _reconnectAttempt = 0;
 
   relay.on("close", () => _onRelayClose(relay));
@@ -2103,7 +2128,7 @@ const extension: ExtensionFactory = (pi: ExtensionAPI): void => {
   // Pi that doesn't use the extension. Dispose any prior bridge first so a
   // factory re-run (new pi session) can't leak subscriptions or double-send.
   _extensionUiBridge?.dispose();
-  _extensionUiBridge = createExtensionUiBridge(pi, _broadcastToActive);
+  _extensionUiBridge = createExtensionUiBridge(pi, _broadcastWithNotifications);
 
   // Plano 19: ensure ~/.pi/remote/{sessions,skills}/ exist and deploy the
   // agent-network skill on first load. resources_discover lets Pi find it.
@@ -2122,6 +2147,7 @@ const extension: ExtensionFactory = (pi: ExtensionAPI): void => {
   // session network natively. Getter captures `_meshNode` live so the
   // tool always sees the current state.
   registerAgentTools(pi, () => _meshNode?.peer() ?? null);
+  _notifications.registerTool(pi);
   _registerReceivedImageRenderer(pi);
 
   // Received-image preview entries are for local TUI display only. Pi's custom
@@ -2192,6 +2218,7 @@ const extension: ExtensionFactory = (pi: ExtensionAPI): void => {
   });
 
   pi.on("agent_start", () => {
+    _notifications.start();
     _agentRunActive = true;
     _agentRunGeneration += 1;
   });
@@ -2247,6 +2274,7 @@ const extension: ExtensionFactory = (pi: ExtensionAPI): void => {
   pi.on("message_end", (event) => {
     const m = event?.message as { role?: string; content?: unknown; stopReason?: string; errorMessage?: string } | undefined;
     if (!m) return;
+    if (m.role === "assistant") _notifications.observeAssistant(m.stopReason);
     if (m.role === "user" && _anyPeerActive()) {
       _broadcastConsumedSteerForUserContent(m.content);
     }
@@ -2271,6 +2299,7 @@ const extension: ExtensionFactory = (pi: ExtensionAPI): void => {
   });
 
   pi.on("agent_end", () => {
+    _notifications.end();
     // Buffer is fed by `message_end`; here we only finalize the outbound
     // turn signal to every connected owner. No buffer mutation.
     if (_anyPeerActive() && _currentTurnId) {
@@ -2366,7 +2395,7 @@ const extension: ExtensionFactory = (pi: ExtensionAPI): void => {
     // reuses this module instance does NOT re-run the factory, so rebind the
     // bridge here; fresh-module hosts already created theirs in the factory.
     if (!_extensionUiBridge) {
-      _extensionUiBridge = createExtensionUiBridge(pi, _broadcastToActive);
+      _extensionUiBridge = createExtensionUiBridge(pi, _broadcastWithNotifications);
     }
     // Rearm a reused-but-disposed instance. The session_shutdown teardown (below)
     // sets _disposed=true assuming the host re-evaluates THIS module fresh for the
@@ -2456,6 +2485,7 @@ const extension: ExtensionFactory = (pi: ExtensionAPI): void => {
   // best-effort: every step is guarded so a partially-initialised instance
   // (e.g. shutdown lands mid-`_cmdRoot`) tears down without throwing.
   pi.on("session_shutdown", async () => {
+    _notifications.stop();
     // Revoke async authority synchronously, before any teardown await. `_disposed`
     // blocks the outgoing continuation immediately; the root and candidate
     // generations keep queued work stale even if a same-module session_start
@@ -3025,6 +3055,8 @@ async function _cmdStart(ctx: Pick<ExtensionContext, "ui" | "cwd">): Promise<voi
   _relayUrl = relayUrl;
   _peerShort = myShort;
   _myRoomId = roomId;
+  _notifications.restoreActivity();
+  void _reconcileNotificationPairings();
   _state = "started";
   // Set _sessionStartedAt ONLY on first /remote-pi start since process boot.
   // Subsequent start cycles (after stop) preserve the original epoch so the
@@ -3219,6 +3251,7 @@ async function _cmdPair(ctx: Pick<ExtensionContext, "ui" | "cwd">, args = ""): P
  * `/remote-pi` again.
  */
 async function _cmdStop(ctx: Pick<ExtensionContext, "ui">): Promise<void> {
+  _notifications.stop();
   // Invalidate queued root work and local async candidates even when none has
   // published yet.
   _rootLifecycleGeneration += 1;
@@ -3327,6 +3360,10 @@ async function _cmdRevoke(arg: string, ctx: Pick<ExtensionContext, "ui" | "cwd">
   }
 
   const peer = matches[0]!;
+  if (peer.runtimeKey !== null) {
+    const result = await _notifications.revoke(peer.runtimeKey);
+    if (!result?.ok) { ctx.ui.notify("Notification revocation unavailable. Retry with relay connected before removing pairing.", "error"); return; }
+  }
   await removePeer(peer.rawHandle);
   _refreshPairingsCache();
 
@@ -4404,6 +4441,12 @@ export function _routeClientMessageFrom(
   msg: ClientMessage,
   ctx: Pick<ExtensionContext, "abort">,
 ): void {
+  if (msg.type === "notify_register" || msg.type === "notify_unregister" || msg.type === "notify_presence") {
+    const phone = [..._activePeers].find(([, channel]) => channel === sender)?.[0];
+    if (!phone) { sender.send({ type: "notification_registration", in_reply_to: msg.id, ok: false, error: "not_paired" }); return; }
+    void _notifications.handle(phone, msg).then(reply => sender.send(reply)).catch(() => sender.send({ type: "notification_registration", in_reply_to: msg.id, ok: false, error: "notification_unavailable" }));
+    return;
+  }
   // session_sync has its own internal guards — handle before the strict
   // pi-binding guard so a missing _pi doesn't drop the reply.
   if (msg.type === "session_sync") {
@@ -4440,7 +4483,7 @@ export function _routeClientMessageFrom(
   // Weiss Labs, plan 71: Pi Voice on the phone. Paired owners only (this
   // router is only reached through an attached owner channel).
   if (VoiceBridge.handles(msg.type)) {
-    void _voiceBridge.handle(msg as VoiceClientMessage, (m) => sender.send(m));
+    void _voiceBridge.handle(msg as VoiceClientMessage, (m) => sender.send(m)).finally(() => _notifications.restoreActivity());
     return;
   }
   if (!_pi) return;
@@ -5152,6 +5195,14 @@ export async function probeListPeers(
   });
 }
 
+async function _notificationCliControl(frame: object) {
+  const relay = new RelayClient(toWebSocketUrl(resolveRelayUrl().url), await readExistingEd25519Keypair());
+  try {
+    await relay.connect({ roomId: `notify-${randomUUID().slice(0, 8)}` });
+    return await notificationControl(relay, frame);
+  } finally { relay.close(); }
+}
+
 if (_isDirectRun()) {
   const [, , subcmd, ...cliArgs] = process.argv;
   if (subcmd === "devices" || subcmd === "list") {
@@ -5164,6 +5215,12 @@ if (_isDirectRun()) {
         console.log(`• ${peer.rawHandle.slice(0, 8)} — ${peer.record.name}`);
       }
     }
+  } else if (subcmd === "notify-release") {
+    const release = cliArgs[0] ?? "";
+    if (!/^[A-Za-z0-9._-]{1,64}$/.test(release)) throw new Error("Usage: notify-release <successful-TestFlight-build-id>");
+    const reply = await _notificationCliControl({ type: "notification_release", release_id: release });
+    if (!reply.ok) throw new Error(`Release notification unavailable: ${reply.error ?? "unknown"}`);
+    console.log("Release notification event accepted. Delivery is not guaranteed.");
   } else if (subcmd === "revoke") {
     const shortid = (cliArgs[0] ?? "").trim();
     if (!shortid) {
@@ -5177,6 +5234,10 @@ if (_isDirectRun()) {
       else if (matches.length > 1) console.log(`Ambiguous: ${matches.map((peer) => peer.rawHandle.slice(0, 8)).join(", ")}`);
       else {
         const peer = matches[0]!;
+        if (peer.runtimeKey !== null) {
+          const reply = await _notificationCliControl({ type: "revoke_notification_phone", phone: peer.runtimeKey });
+          if (!reply.ok) throw new Error("Notification revocation unavailable. Pairing retained; retry with relay connected.");
+        }
         const { removePeer } = await import("./pairing/storage.js");
         await removePeer(peer.rawHandle);
         console.log(`Revoked: ${peer.record.name} (${peer.rawHandle.slice(0, 8)}…)`);

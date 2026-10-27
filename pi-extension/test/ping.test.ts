@@ -17,7 +17,10 @@ class MockRelay extends EventEmitter {
   readyState = MockRelay.OPEN;
   connect     = vi.fn();
   send        = vi.fn();
-  sendControl = vi.fn();
+  sendControl = vi.fn((frame: { type?: string; id?: string }) => {
+    if (frame.id && frame.type?.includes("notification_")) queueMicrotask(() => this.emit("message", JSON.stringify({ type: "notification_registration", in_reply_to: frame.id, ok: true })));
+  });
+  isOpen      = vi.fn(() => this.readyState === MockRelay.OPEN);
   close       = vi.fn();
   constructor() { super(); relayRef.current = this; }
 }

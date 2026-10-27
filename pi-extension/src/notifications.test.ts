@@ -1,0 +1,95 @@
+import { EventEmitter } from "node:events";
+import { describe, it, expect, vi } from "vitest";
+import { NotificationBridge, grantBytes, notificationControl, type NotificationClientMessage } from "./notifications.js";
+import { generateEd25519Keypair, ed25519Sign, ed25519Verify } from "./pairing/crypto.js";
+import type { RelayClient } from "./transport/relay_client.js";
+
+class FakeRelay extends EventEmitter {
+  frames: Record<string, unknown>[] = [];
+  error: string | undefined;
+  open = true;
+  reply = true;
+  isOpen() { return this.open; }
+  send(line: string) {
+    const frame = JSON.parse(line); this.frames.push(frame);
+    if (this.reply) queueMicrotask(() => this.emit("message", JSON.stringify({ type: "notification_registration", in_reply_to: frame.id, ok: !this.error, error: this.error })));
+  }
+  sendControl(frame: object) { this.send(JSON.stringify(frame)); }
+  typed() { return this as unknown as RelayClient; }
+}
+function setup() {
+  const relay = new FakeRelay(), identity = generateEd25519Keypair(), phone = generateEd25519Keypair();
+  const phoneId = Buffer.from(phone.publicKey).toString("base64"), peer = Buffer.from(identity.publicKey).toString("base64");
+  let paired = true;
+  const bridge = new NotificationBridge({ relay: () => relay.typed(), identity: () => identity, room: () => "room-one", paired: async key => paired && key === phoneId });
+  const msg: Extract<NotificationClientMessage, { type: "notify_register" }> = { type: "notify_register", id: "phone-request", device_id: "device-1", token: "ab".repeat(32), environment: "production", categories: ["input_needed", "task_finished", "task_failed"], show_pane_name: false, expires_at: Math.floor(Date.now()/1000)+86400, signature: "" };
+  msg.signature = Buffer.from(ed25519Sign(phone.secretKey, grantBytes(peer, phoneId, msg))).toString("base64");
+  return { relay, identity, phone, phoneId, peer, bridge, msg, unpair: () => { paired = false; } };
+}
+const settle = async () => { await new Promise(resolve => setTimeout(resolve, 0)); };
+
+describe("notification pairing grants", () => {
+  it("derives authority from paired phone, forwards bilateral signatures and original request id", async () => {
+    const s=setup(); const reply=await s.bridge.handle(s.phoneId,s.msg);
+    expect(reply).toMatchObject({ok:true,in_reply_to:"phone-request"});
+    const grant=s.relay.frames[0].grant as {phone:string;peer:string;pi_signature:string};
+    expect(grant.phone).toBe(s.phoneId); expect(grant.peer).toBe(s.peer);
+    expect(ed25519Verify(s.identity.publicKey,grantBytes(s.peer,s.phoneId,s.msg),Buffer.from(grant.pi_signature,"base64"))).toBe(true);
+    expect(grantBytes(s.peer,s.phoneId,s.msg).toString()).toBe("remote-pi-notify-device-v1\n"+JSON.stringify([s.peer,s.phoneId,"device-1",s.msg.token,"production",s.msg.categories,false,s.msg.expires_at]));
+  });
+  it("does not let relay key possession, stale pairing, or body target select a recipient", async () => {
+    const s=setup();s.unpair();expect((await s.bridge.handle(s.phoneId,s.msg)).error).toBe("not_paired");expect(s.relay.frames).toHaveLength(0);
+    const other=setup();expect((await other.bridge.handle(s.phoneId,s.msg)).error).toBe("not_paired");
+  });
+  it.each(["token","device_id","environment","categories","expires_at","show_pane_name"])("rejects phone-proof tampering with %s", async field => {
+    const s=setup(); const tampered={...s.msg,[field]:({token:"cd".repeat(32),device_id:"other-device",environment:"sandbox",categories:["review_ready"],expires_at:s.msg.expires_at+1,show_pane_name:true} as Record<string,unknown>)[field]};
+    expect((await s.bridge.handle(s.phoneId,tampered as typeof s.msg)).error).toBe("invalid_grant");expect(s.relay.frames).toHaveLength(0);
+  });
+  it("reports disabled APNs and never returns optimistic registration success", async () => {
+    const s=setup();s.relay.error="apns_disabled";expect(await s.bridge.handle(s.phoneId,s.msg)).toMatchObject({ok:false,error:"apns_disabled"});
+    s.relay.open=false;expect((await s.bridge.handle(s.phoneId,s.msg)).error).toBe("relay_unavailable");
+  });
+  it("times out older relays and ignores forged inner peer replies", async () => {
+    vi.useFakeTimers();try {
+      const relay=new FakeRelay();relay.reply=false;const pending=notificationControl(relay.typed(),{type:"notification_activity",active:true});const id=relay.frames[0].id;
+      relay.emit("message",JSON.stringify({peer:"stranger",ct:Buffer.from(JSON.stringify({type:"notification_registration",in_reply_to:id,ok:true})).toString("base64")}));
+      await vi.advanceTimersByTimeAsync(12001);expect(await pending).toMatchObject({ok:false,error:"notification_timeout"});expect(relay.listenerCount("message")).toBe(0);
+    } finally {vi.useRealTimers();}
+  });
+  it("caps in-flight controls and cleans up on close", async () => {
+    const relay=new FakeRelay();relay.setMaxListeners(100);relay.reply=false;
+    const requests=Array.from({length:32},()=>notificationControl(relay.typed(),{type:"notification_event"}));
+    expect((await notificationControl(relay.typed(),{})).error).toBe("rate_limited");relay.emit("close");expect((await Promise.all(requests)).every(r=>!r.ok)).toBe(true);expect(relay.listenerCount("message")).toBe(0);
+  });
+});
+describe("notification event lifecycle", () => {
+  it("emits one completion on agent run end, never per tool invocation", async () => {
+    const s=setup();s.bridge.start();s.bridge.end();s.bridge.end();await settle();
+    expect(s.relay.frames.filter(f=>f.type==="notification_event").map(f=>f.kind)).toEqual(["task_finished"]);
+  });
+  it.each(["input_needed","task_failed"] as const)("does not announce success while %s", async kind => {
+    const s=setup();s.bridge.start();await s.bridge.emit(kind);s.bridge.end();await settle();
+    expect(s.relay.frames.filter(f=>f.type==="notification_event").map(f=>f.kind)).toEqual([kind]);
+  });
+  it("notifies only a terminal observed error, not an error recovered within the run", async () => {
+    const s=setup();s.bridge.start();s.bridge.observeAssistant("error");await settle();expect(s.relay.frames.filter(f=>f.type==="notification_event")).toHaveLength(0);
+    s.bridge.observeAssistant("stop");s.bridge.end();await settle();expect(s.relay.frames.filter(f=>f.type==="notification_event").map(f=>f.kind)).toEqual(["task_finished"]);
+    const terminal=setup();terminal.bridge.start();terminal.bridge.observeAssistant("error");terminal.bridge.end();await settle();expect(terminal.relay.frames.filter(f=>f.type==="notification_event").map(f=>f.kind)).toEqual(["task_failed"]);
+  });
+  it("publishes leased real call activity while the agent is idle", async () => {
+    const relay=new FakeRelay();let call=true;
+    const bridge=new NotificationBridge({relay:()=>relay.typed(),identity:()=>null,room:()=>"r",paired:async()=>false,callActive:()=>call});
+    bridge.restoreActivity();await settle();expect(relay.frames[0]).toMatchObject({active:true,lease_seconds:90});call=false;bridge.restoreActivity();await settle();expect(relay.frames[1]).toMatchObject({active:false});
+  });
+  it("does not announce success on aborted runs", async () => {
+    const s=setup();s.bridge.start();s.bridge.cancelled();s.bridge.end();await settle();expect(s.relay.frames.filter(f=>f.type==="notification_event")).toHaveLength(0);
+  });
+  it("explicit review and verified test failures send only category and event ids", async () => {
+    const s=setup();await s.bridge.emit("review_ready");await s.bridge.emit("tests_failed");
+    for(const f of s.relay.frames) expect(Object.keys(f).sort()).toEqual(["event_id","id","kind","type"]);
+  });
+  it("deduplicates accepted events but never hides disabled transport errors", async () => {
+    const s=setup();s.relay.error="apns_disabled";expect((await s.bridge.emit("input_needed")).ok).toBe(false);expect((await s.bridge.emit("input_needed")).ok).toBe(false);
+    s.relay.error=undefined;await s.bridge.emit("input_needed");await s.bridge.emit("input_needed");expect(s.relay.frames).toHaveLength(3);
+  });
+});

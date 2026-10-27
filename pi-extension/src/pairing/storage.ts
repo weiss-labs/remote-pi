@@ -325,6 +325,16 @@ async function _writeKeypairToFile(kp: Ed25519Keypair): Promise<void> {
  * Idempotent: subsequent calls return the same identity. The migration
  * runs at most once per machine (the old entry is deleted after copy).
  */
+/** Read-only identity lookup for release automation. Never creates or migrates credentials. */
+export async function readExistingEd25519Keypair(): Promise<Ed25519Keypair> {
+  const file = await _readKeypairFromFile();
+  if (file) return file;
+  const backend = _getBackend();
+  const saved = await backend.read(NEW_SERVICE, ACCOUNT) ?? await backend.read(OLD_SERVICE, ACCOUNT);
+  if (!saved) throw new Error("Existing Remote Pi identity required");
+  return _deserialize(saved);
+}
+
 export async function getOrCreateEd25519Keypair(): Promise<Ed25519Keypair> {
   const backend = _getBackend();
 

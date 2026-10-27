@@ -174,6 +174,7 @@ export type ExtensionUiResponseWire =
     };
 
 export type ClientMessage =
+  | import("../notifications.js").NotificationClientMessage
   | { type: "pair_request"; id: string; token: string; device_name: string }
   // Plan/30: optional `images` carry inline base64 attachments (one today).
   // Omitted entirely on text-only messages — the no-image path is unchanged.
@@ -264,6 +265,8 @@ export type SessionHistoryEvent =
   | { ts: number; type: "compaction"; summary: string; tokens_before: number };
 
 export type ServerMessage =
+  | import("../notifications.js").NotificationReply
+
   | VoiceServerMessage
   | {
       type: "pair_ok";

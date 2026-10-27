@@ -52,7 +52,25 @@ async fn main() -> anyhow::Result<()> {
         }
     });
 
+    let transport = relay::notifications::Apns::from_env()?
+        .map(|t| Arc::new(t) as Arc<dyn relay::notifications::PushTransport>);
+    info!(
+        enabled = transport.is_some(),
+        "APNs notification transport configuration"
+    );
+    let notifications = relay::notifications::Notifications::open(
+        &std::env::var("REMOTEPI_NOTIFICATIONS_DB_PATH")
+            .unwrap_or_else(|_| "data/notifications.db".into()),
+        transport,
+        std::env::var("REMOTEPI_NOTIFICATION_UPDATE_RECIPIENTS")
+            .unwrap_or_default()
+            .split(',')
+            .filter(|s| !s.is_empty())
+            .map(String::from)
+            .collect(),
+    )?;
     let state = relay::AppState {
+        notifications,
         registry,
         presence,
         rooms,

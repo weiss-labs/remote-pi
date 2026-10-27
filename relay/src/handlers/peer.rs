@@ -148,6 +148,8 @@ async fn handle_peer(socket: WebSocket, peer_addr: SocketAddr, state: AppState) 
     // subscription set per conn) and `rooms` (one slot per target peer).
     let mut last_presence_resp: Option<String> = None;
     let mut last_rooms_resp: HashMap<String, String> = HashMap::new();
+    let mut notification_window = time::Instant::now();
+    let mut notification_count = 0_u32;
 
     // ── 4. Routing loop ───────────────────────────────────────────────────
     // Send a WS Ping every 25 s so NAT/LB idle timers don't close the connection.
@@ -194,6 +196,17 @@ async fn handle_peer(socket: WebSocket, peer_addr: SocketAddr, state: AppState) 
                                 .unwrap_or_default();
 
                             match t {
+                                "register_notification_device" | "unregister_notification_device" |
+                                "revoke_notification_phone" | "notification_presence" | "notification_activity" |
+                                "notification_event" | "notification_release" | "notification_pairings" => {
+                                    if notification_window.elapsed() >= Duration::from_secs(60) {
+                                        notification_window = time::Instant::now(); notification_count = 0;
+                                    }
+                                    notification_count += 1;
+                                    if notification_count > 120 || text.len() > 8192 { continue; }
+                                    let reply = state.notifications.control_connection(&peer_id, &room_id, conn_id, &frame);
+                                    if sink.send(Message::Text(reply.to_string())).await.is_err() { break; }
+                                }
                                 // ── presence control frames (plano 12) ──
                                 "subscribe_presence" => {
                                     presence.subscribe(peer_id.clone(), peers.clone()).await;
@@ -401,6 +414,9 @@ async fn handle_peer(socket: WebSocket, peer_addr: SocketAddr, state: AppState) 
         }
     }
 
+    state
+        .notifications
+        .disconnected_connection(&peer_id, &room_id, conn_id);
     registry.unregister(&peer_id, &room_id, conn_id).await;
     rooms.unsubscribe_all(&peer_id).await;
     info!(peer = %peer_short, room = %room_id, addr = %peer_addr, "disconnected");

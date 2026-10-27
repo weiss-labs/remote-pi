@@ -33,6 +33,12 @@ pub async fn start_relay() -> u16 {
     ));
     let mesh_auth = Arc::new(MeshAuthCache::new());
     let state = AppState {
+        notifications: relay::notifications::Notifications::open(
+            ":memory:",
+            None,
+            Default::default(),
+        )
+        .unwrap(),
         registry,
         presence,
         rooms,

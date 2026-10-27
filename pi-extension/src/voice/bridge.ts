@@ -63,6 +63,11 @@ export class VoiceBridge {
     this.fetchFn = deps.fetch ?? fetch;
   }
 
+  /** Actual remote call state, not just an open bridge or a phone connection. */
+  isActive(): boolean {
+    try { return this.session !== null && this.api()?.isActive() === true; } catch { return false; }
+  }
+
   static handles(type: string): type is VoiceClientMessage["type"] {
     return type === "voice_open" || type === "voice_rpc" || type === "voice_close";
   }
