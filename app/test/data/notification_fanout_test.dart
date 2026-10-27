@@ -165,6 +165,38 @@ void main() {
     await channel.replies.close();
   });
   test(
+    'private registrations keep v1, opting in uses v2, opting out returns v1',
+    () async {
+      await setup();
+      await service.update(service.preferences.copyWith(enabled: true));
+      await until(
+        () => channel.sent.where((s) => s.$3 is NotifyRegister).length >= 2,
+      );
+      for (final s in channel.sent.where((s) => s.$3 is NotifyRegister)) {
+        expect(s.$3.toJson().containsKey('show_question_preview'), false);
+      }
+      channel.sent.clear();
+      await service.update(
+        service.preferences.copyWith(
+          showPaneName: true,
+          showQuestionPreview: true,
+        ),
+      );
+      await until(() => channel.sent.length >= 2);
+      for (final s in channel.sent) {
+        expect(s.$3.toJson()['show_question_preview'], true);
+      }
+      channel.sent.clear();
+      await service.update(
+        service.preferences.copyWith(showQuestionPreview: false),
+      );
+      await until(() => channel.sent.length >= 2);
+      for (final s in channel.sent) {
+        expect(s.$3.toJson().containsKey('show_question_preview'), false);
+      }
+    },
+  );
+  test(
     'unsupported pane falls through to another live room without changing chat',
     () async {
       await setup(retry: const Duration(milliseconds: 20));

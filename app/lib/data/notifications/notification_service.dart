@@ -289,7 +289,9 @@ class NotificationService extends Notifications {
         categories: _preferences.categories.toList(),
         showPaneName: _preferences.showPaneName,
         showQuestionPreview:
-            _preferences.showPaneName && _preferences.showQuestionPreview,
+            _preferences.showPaneName && _preferences.showQuestionPreview
+            ? true
+            : null,
         expiresAt: expiry,
         signature: '',
       ),

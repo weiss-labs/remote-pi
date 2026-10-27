@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'package:app/data/transport/channel.dart';
 import 'package:app/data/repositories/artifact_preview_repository.dart';
 import 'package:app/data/transport/connection_manager.dart';
 import 'package:app/domain/contracts/artifact_preview.dart';
@@ -7,6 +8,25 @@ import 'package:cryptography/cryptography.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'pane_commands_repository_test.dart' show Channel, Storage, peer, flush;
+
+// Production channels implement notification fanout, but it is notify-only.
+// Artifact lifecycle messages must stay on the captured active channel.
+class ProductionLikeChannel extends Channel implements INotificationRoutes {
+  @override
+  Stream<RoutedNotificationReply> get notificationReplies =>
+      const Stream.empty();
+  @override
+  Future<void> sendNotificationTo(
+    ClientMessage message, {
+    required String peer,
+    required String room,
+  }) async {
+    if (message is! NotifyRegister && message is! NotifyUnregister) {
+      throw Exception('Only notification registration may use fanout');
+    }
+    await send(message);
+  }
+}
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
@@ -21,7 +41,7 @@ void main() {
     hash = (await Sha256().hash(
       bytes,
     )).bytes.map((b) => b.toRadixString(16).padLeft(2, '0')).join();
-    channel = Channel();
+    channel = ProductionLikeChannel();
     connection = ConnectionManager(
       factory: (_, _) async => channel,
       storage: Storage(),

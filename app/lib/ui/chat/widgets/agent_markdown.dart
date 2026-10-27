@@ -90,7 +90,7 @@ class AgentMarkdown extends StatelessWidget {
       );
       return;
     }
-    if (uri.scheme != 'https' && uri.scheme != 'http') {
+    if (!const {'https', 'http', 'mailto', 'tel'}.contains(uri.scheme)) {
       messenger?.showSnackBar(
         const SnackBar(content: Text('This link type is not supported.')),
       );

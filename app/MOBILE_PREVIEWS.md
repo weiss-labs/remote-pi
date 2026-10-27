@@ -18,7 +18,7 @@ Allowed formats are PDF, PNG, JPEG, GIF and WebP. SVG, HTML, documents, archives
 
 ## Notification grants
 
-`Show question previews` defaults off. Enabling it atomically enables pane names; disabling pane names disables question previews. Existing category choices and v1 signature behavior remain intact. Absence of `show_question_preview` signs v1; explicit false or true signs v2 using the exact ordered array in the shared brief. New app registrations send explicit false until opted in. Settings explain lock-screen visibility and best-effort sensitive-text filtering; credential notifications remain generic in backend policy.
+`Show question previews` defaults off. Enabling it atomically enables pane names; disabling pane names disables question previews. Existing category choices and v1 signature behavior remain intact. Absence of `show_question_preview` signs v1; explicit false or true signs v2 using the exact ordered array in the shared brief. Normal app registrations omit the preview field until opted in, preserving v1 compatibility with older Mac extensions. Opting out sends v1 again; the relay resets preview permission to false. Explicit-false v2 remains supported by the protocol. Settings explain lock-screen visibility and best-effort sensitive-text filtering; credential notifications remain generic in backend policy.
 
 ## Fonts
 

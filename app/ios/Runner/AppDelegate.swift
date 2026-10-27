@@ -186,7 +186,10 @@ private final class ArtifactViewer: NSObject, QLPreviewControllerDataSource, QLP
       controller = preview
       preview.dataSource = self
       preview.delegate = self
-      presenter.present(preview, animated: true)
+      presenter.present(preview, animated: true) { [weak self] in
+        // Cancellation can race UIKit's presentation animation.
+        if self?.file != url { preview.dismiss(animated: false) }
+      }
       expiry = Timer.scheduledTimer(withTimeInterval: 300, repeats: false) { [weak self] _ in
         self?.controller?.dismiss(animated: false)
         self?.cleanup()
@@ -196,9 +199,11 @@ private final class ArtifactViewer: NSObject, QLPreviewControllerDataSource, QLP
       result(FlutterError(code: "cache_failed", message: "Unable to prepare private preview", details: nil))
     }
   }
-  func numberOfPreviewItems(in controller: QLPreviewController) -> Int { file == nil ? 0 : 1 }
-  func previewController(_ controller: QLPreviewController, previewItemAt index: Int) -> QLPreviewItem { file! as NSURL }
-  func previewControllerDidDismiss(_ controller: QLPreviewController) { cleanup() }
+  func numberOfPreviewItems(in controller: QLPreviewController) -> Int { self.controller === controller && file != nil ? 1 : 0 }
+  func previewController(_ controller: QLPreviewController, previewItemAt index: Int) -> QLPreviewItem { ((self.controller === controller ? file : nil) ?? directory.appendingPathComponent("unavailable")) as NSURL }
+  func previewControllerDidDismiss(_ controller: QLPreviewController) {
+    if self.controller === controller { cleanup() }
+  }
   private func cleanup() {
     expiry?.invalidate()
     expiry = nil

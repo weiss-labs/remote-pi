@@ -201,9 +201,9 @@ class ArtifactPreviewRepository extends ArtifactPreview {
         offset += part.length;
         progress(offset / size);
       }
-      final actual = (await Sha256().hash(bytes)).bytes
-          .map((b) => b.toRadixString(16).padLeft(2, '0'))
-          .join();
+      final actual = (await Sha256().hash(
+        bytes,
+      )).bytes.map((b) => b.toRadixString(16).padLeft(2, '0')).join();
       _check(generation);
       if (actual != hash.toLowerCase()) {
         throw const ArtifactFailure(
@@ -246,13 +246,7 @@ class ArtifactPreviewRepository extends ArtifactPreview {
     );
     try {
       final channel = _channel;
-      if (channel is INotificationRoutes) {
-        await (channel as INotificationRoutes).sendNotificationTo(
-          request,
-          peer: _peer!,
-          room: _room!,
-        );
-      } else if (_sameSource) {
+      if (_sameSource) {
         await channel?.send(request);
       }
     } on Exception {
