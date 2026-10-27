@@ -141,8 +141,11 @@ class _NotificationsSection extends StatelessWidget {
               available
                   ? (value) => vm.setNotificationCategory(category.key, value)
                   : null,
-              subtitle: category.key == 'input_needed'
-                  ? 'Questions and approvals that need you'
+              subtitle:
+                  highPriorityNotificationCategories.contains(category.key)
+                  ? (category.key == 'credential_needed'
+                        ? 'High priority. A pane needs sign-in or credentials.'
+                        : 'High priority. Questions and approvals that need you.')
                   : null,
             ),
           toggle(

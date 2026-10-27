@@ -1,5 +1,6 @@
 const notificationCategories = <String, String>{
   'input_needed': 'Input needed',
+  'credential_needed': 'Credential or sign-in needed',
   'task_finished': 'Task finished',
   'task_failed': 'Task failed',
   'tests_failed': 'Tests failed',
@@ -8,13 +9,24 @@ const notificationCategories = <String, String>{
   'connection_lost': 'Connection lost',
 };
 
+const defaultNotificationCategories = {
+  'input_needed',
+  'credential_needed',
+  'task_finished',
+  'task_failed',
+};
+const highPriorityNotificationCategories = {
+  'input_needed',
+  'credential_needed',
+};
+
 class NotificationPreferences {
   final bool enabled;
   final Set<String> categories;
   final bool showPaneName;
   const NotificationPreferences({
     this.enabled = false,
-    this.categories = const {'input_needed', 'task_finished', 'task_failed'},
+    this.categories = defaultNotificationCategories,
     this.showPaneName = false,
   });
   NotificationPreferences copyWith({
@@ -27,6 +39,7 @@ class NotificationPreferences {
     showPaneName: showPaneName ?? this.showPaneName,
   );
   Map<String, dynamic> toJson() => {
+    'schema_version': 2,
     'enabled': enabled,
     'categories': categories.toList(),
     'show_pane_name': showPaneName,
@@ -35,12 +48,14 @@ class NotificationPreferences {
       NotificationPreferences(
         enabled: json['enabled'] == true,
         categories: json['categories'] is List
-            ? Set.unmodifiable(
-                (json['categories'] as List).whereType<String>().where(
+            ? Set.unmodifiable({
+                ...(json['categories'] as List).whereType<String>().where(
                   notificationCategories.containsKey,
                 ),
-              )
-            : const {'input_needed', 'task_finished', 'task_failed'},
+                // Add the new default once; later explicit opt-outs survive.
+                if (json['schema_version'] != 2) 'credential_needed',
+              })
+            : defaultNotificationCategories,
         showPaneName: json['show_pane_name'] == true,
       );
 }

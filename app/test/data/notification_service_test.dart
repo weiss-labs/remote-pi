@@ -125,7 +125,7 @@ void main() {
   });
 
   test(
-    'startup never prompts; defaults are generic and three categories only',
+    'startup never prompts; private defaults include both high-priority categories',
     () async {
       platform.permission = 'notDetermined';
       platform.token = '';
@@ -135,6 +135,7 @@ void main() {
       expect(service.preferences.showPaneName, false);
       expect(service.preferences.categories, {
         'input_needed',
+        'credential_needed',
         'task_finished',
         'task_failed',
       });
@@ -332,6 +333,91 @@ void main() {
       expect(jsonEncode(json), isNot(contains('sessionName')));
     },
   );
+  test('credential category migrates once and explicit opt-out persists', () {
+    final migrated = NotificationPreferences.fromJson({
+      'enabled': true,
+      'categories': ['input_needed', 'task_finished'],
+    });
+    expect(migrated.categories, {
+      'input_needed',
+      'task_finished',
+      'credential_needed',
+    });
+    final optedOut = migrated.copyWith(categories: {'input_needed'});
+    expect(NotificationPreferences.fromJson(optedOut.toJson()).categories, {
+      'input_needed',
+    });
+    expect(highPriorityNotificationCategories, {
+      'input_needed',
+      'credential_needed',
+    });
+    expect(notificationCategories.length, 8);
+    expect(
+      NotificationTarget.parse({
+        'v': 1,
+        'peer': peer.remoteEpk,
+        'room': 'room-a',
+        'event_id': 'credential-event',
+        'kind': 'credential_needed',
+      }),
+      isNotNull,
+    );
+  });
+  test('signed grant accepts all eight categories in wire order', () async {
+    await service.start();
+    await connection.connectTo(peer);
+    await settle();
+    await service.update(
+      NotificationPreferences(
+        enabled: true,
+        categories: notificationCategories.keys.toSet(),
+      ),
+    );
+    final message = channel.sent.last as NotifyRegister;
+    expect(message.categories, notificationCategories.keys.toList());
+    final key = await ownerKey();
+    final publicKey = await key.extractPublicKey();
+    expect(
+      await Ed25519().verify(
+        notificationGrantBytes(
+          peer.remoteEpk,
+          base64Encode(publicKey.bytes),
+          message,
+        ),
+        signature: Signature(
+          base64Decode(message.signature),
+          publicKey: publicKey,
+        ),
+      ),
+      true,
+    );
+    final withoutCredential = NotifyRegister(
+      id: message.id,
+      deviceId: message.deviceId,
+      token: message.token,
+      environment: message.environment,
+      categories: message.categories
+          .where((kind) => kind != 'credential_needed')
+          .toList(),
+      showPaneName: message.showPaneName,
+      expiresAt: message.expiresAt,
+      signature: message.signature,
+    );
+    expect(
+      await Ed25519().verify(
+        notificationGrantBytes(
+          peer.remoteEpk,
+          base64Encode(publicKey.bytes),
+          withoutCredential,
+        ),
+        signature: Signature(
+          base64Decode(message.signature),
+          publicKey: publicKey,
+        ),
+      ),
+      false,
+    );
+  });
   test('unpaired connection never receives a registration', () async {
     await service.start();
     storage.peers = [];

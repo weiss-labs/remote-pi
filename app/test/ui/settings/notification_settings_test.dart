@@ -93,6 +93,28 @@ void main() {
     await tester.pumpAndSettle();
     expect(tester.getSize(input).height, greaterThanOrEqualTo(44));
     expect(notifications.preferences.categories.contains('input_needed'), true);
+    final credential = find.widgetWithText(
+      SwitchListTile,
+      'Credential or sign-in needed',
+    );
+    await tester.ensureVisible(credential);
+    await tester.pumpAndSettle();
+    expect(tester.getSize(credential).height, greaterThanOrEqualTo(44));
+    expect(
+      notifications.preferences.categories.contains('credential_needed'),
+      true,
+    );
+    expect(
+      find.text('High priority. A pane needs sign-in or credentials.'),
+      findsOneWidget,
+    );
+    await tester.tap(credential);
+    await tester.pumpAndSettle();
+    expect(
+      notifications.preferences.categories.contains('credential_needed'),
+      false,
+    );
+    expect(notifications.prompts, 1);
     final privacy = find.widgetWithText(SwitchListTile, 'Show pane name');
     await tester.ensureVisible(privacy);
     await tester.pumpAndSettle();
