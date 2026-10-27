@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Build Remote Pi WL and ship it to TestFlight (internal group "Zach" only).
 # Usage: app/ship-testflight.sh [build-number]   (default: latest uploaded + 1)
-# ASC app 6826925709, profile "Remote Pi WL App Store", key in ~/.appstoreconnect.
+# ASC app 6826925709, profile "Remote Pi WL App Store Push", key in ~/.appstoreconnect.
 set -euo pipefail
 export PATH="$PATH:/opt/homebrew/bin"
 cd "$(dirname "$0")"
@@ -14,3 +14,8 @@ xcodebuild -workspace ios/Runner.xcworkspace -scheme Runner -configuration Relea
 xcodebuild -exportArchive -archivePath "$OUT/a.xcarchive" -exportPath "$OUT/export" -exportOptionsPlist ExportOptions.testflight.plist -quiet
 xcrun altool --upload-app -f "$OUT/export/Remote Pi WL.ipa" -t ios --apiKey "$KID" --apiIssuer "$ISS"
 node ../scripts/testflight-release.mjs "$NUM"
+# Processing and tester assignment above must succeed before announcing it.
+# Push failure must not misreport an already-released TestFlight build as failed.
+if ! node ../pi-extension/dist/index.js notify-release "testflight-$NUM"; then
+  echo "Build $NUM released; update notification was not accepted. Check relay push configuration." >&2
+fi

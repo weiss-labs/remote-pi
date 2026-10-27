@@ -122,6 +122,12 @@ pub struct Delivery {
     pub pane_name: Option<String>,
 }
 impl Delivery {
+    pub fn collapse_id(&self) -> String {
+        B64.encode(Sha256::digest(format!(
+            "{}:{}:{}",
+            self.peer, self.room, self.kind
+        )))
+    }
     pub fn payload(&self) -> Value {
         let body = match self.kind.as_str() {
             "input_needed" => "A pane needs your input",
@@ -233,10 +239,7 @@ impl PushTransport for Apns {
                 .header("apns-push-type", "alert")
                 .header("apns-priority", "10")
                 .header("apns-expiration", d.expires_at.to_string())
-                .header(
-                    "apns-collapse-id",
-                    B64.encode(Sha256::digest(format!("{}:{}", d.room, d.kind))),
-                )
+                .header("apns-collapse-id", d.collapse_id())
                 .json(&d.payload());
             match request.send().await {
                 Ok(r) => {
@@ -260,13 +263,32 @@ pub struct Notifications {
     normal: mpsc::Sender<Delivery>,
     enabled: bool,
     updates: HashSet<String>,
+    allowed_macs: Option<HashSet<String>>,
 }
 impl Notifications {
     pub fn open(
         path: &str,
         transport: Option<Arc<dyn PushTransport>>,
-        mut updates: HashSet<String>,
+        updates: HashSet<String>,
     ) -> anyhow::Result<Arc<Self>> {
+        Self::open_restricted(path, transport, updates, None)
+    }
+    pub fn open_restricted(
+        path: &str,
+        transport: Option<Arc<dyn PushTransport>>,
+        mut updates: HashSet<String>,
+        allowed_macs: Option<HashSet<String>>,
+    ) -> anyhow::Result<Arc<Self>> {
+        if let Some(allowed) = &allowed_macs {
+            anyhow::ensure!(
+                allowed.iter().all(|p| key(p).is_some()),
+                "invalid notification Mac allowlist"
+            );
+            anyhow::ensure!(
+                transport.is_none() || !allowed.is_empty(),
+                "APNs requires an explicit notification Mac allowlist"
+            );
+        }
         updates.retain(|s| {
             s.split_once(':')
                 .is_some_and(|(pi, phone)| key(pi).is_some() && key(phone).is_some())
@@ -307,6 +329,7 @@ impl Notifications {
             normal,
             enabled: transport.is_some(),
             updates,
+            allowed_macs,
         });
         if let Some(t) = transport {
             // A separate input queue worker keeps ordinary retry backoff off the critical path.
@@ -350,6 +373,13 @@ impl Notifications {
         connection: u64,
         f: &Value,
     ) -> Result<(), &'static str> {
+        if self
+            .allowed_macs
+            .as_ref()
+            .is_some_and(|allowed| !allowed.contains(sender))
+        {
+            return Err("notification_sender_not_allowed");
+        }
         if !bounded(room, 48) {
             return Err("invalid_room");
         }
@@ -368,15 +398,21 @@ impl Notifications {
                 s.db.execute("DELETE FROM notification_grants WHERE expires<?", [ts])
                     .map_err(|_| "storage_unavailable")?;
                 let grants: i64 =
-                    s.db.query_row("SELECT count(*) FROM notification_grants", [], |r| r.get(0))
-                        .map_err(|_| "storage_unavailable")?;
-                if grants >= 20000 {
-                    return Err("device_limit");
-                }
+                    s.db.query_row(
+                        "SELECT count(*) FROM notification_grants WHERE peer=?",
+                        [sender],
+                        |r| r.get(0),
+                    )
+                    .map_err(|_| "storage_unavailable")?;
                 s.db.execute("DELETE FROM notification_devices WHERE expires<=?", [ts])
                     .map_err(|_| "storage_unavailable")?;
                 // Tombstones outlive grant validity, preventing signed register replay after revoke.
                 let previous:Option<(i64,bool)>=s.db.query_row("SELECT expires,revoked FROM notification_grants WHERE peer=? AND phone=? AND device=?",params![sender,g.phone,g.device_id],|r|Ok((r.get(0)?,r.get(1)?))).ok();
+                // New-device churn is bounded per Mac, but must not prevent
+                // renewal of an existing live grant or tombstone.
+                if previous.is_none() && grants >= 256 {
+                    return Err("device_limit");
+                }
                 if previous
                     .is_some_and(|(exp, rev)| g.expires_at < exp || (rev && g.expires_at <= exp))
                 {
@@ -617,6 +653,13 @@ impl Notifications {
         if !self.enabled {
             return Err("apns_disabled");
         }
+        if self
+            .allowed_macs
+            .as_ref()
+            .is_some_and(|allowed| !allowed.contains(peer))
+        {
+            return Err("notification_sender_not_allowed");
+        }
         let ts = now();
         let mut s = self.state.lock().map_err(|_| "storage_unavailable")?;
         s.presence.retain(|_, (_, t)| ts - *t < 120);
@@ -639,9 +682,20 @@ impl Notifications {
         if !registered {
             return Err("no_registered_devices");
         }
+        let subscribed = s.db.query_row(
+            "SELECT 1 FROM notification_devices WHERE peer=? AND expires>? AND categories LIKE ? LIMIT 1",
+            params![peer, ts, format!("%\"{}\"%", kind)], |_| Ok(())
+        ).is_ok();
+        if !subscribed {
+            return Ok(());
+        }
         let count: i64 =
-            s.db.query_row("SELECT count(*) FROM notification_events", [], |r| r.get(0))
-                .map_err(|_| "storage_unavailable")?;
+            s.db.query_row(
+                "SELECT count(*) FROM notification_events WHERE peer=?",
+                [peer],
+                |r| r.get(0),
+            )
+            .map_err(|_| "storage_unavailable")?;
         let recent: i64 =
             s.db.query_row(
                 "SELECT count(*) FROM notification_events WHERE peer=? AND ts>?",
@@ -696,7 +750,11 @@ impl Notifications {
             {
                 continue;
             }
-            let last:i64=s.db.query_row("SELECT ts FROM notification_rate WHERE peer=? AND phone=? AND device=? AND kind=?",params![peer,phone,device_id,kind],|r|r.get(0)).unwrap_or(0);
+            // Rate-limit repeated alerts from one pane, not different panes
+            // needing attention at the same time. The global Mac limit still
+            // bounds aggregate traffic.
+            let rate_kind = format!("{kind}:{room}");
+            let last:i64=s.db.query_row("SELECT ts FROM notification_rate WHERE peer=? AND phone=? AND device=? AND kind=?",params![peer,phone,device_id,rate_kind],|r|r.get(0)).unwrap_or(0);
             if ts - last < 30 {
                 continue;
             }
@@ -738,7 +796,7 @@ impl Notifications {
             }
             s.db.execute(
                 "INSERT OR REPLACE INTO notification_rate VALUES(?,?,?,?,?)",
-                params![peer, phone, device_id, kind, ts],
+                params![peer, phone, device_id, rate_kind, ts],
             )
             .map_err(|_| "storage_unavailable")?;
         }

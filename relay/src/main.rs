@@ -58,7 +58,7 @@ async fn main() -> anyhow::Result<()> {
         enabled = transport.is_some(),
         "APNs notification transport configuration"
     );
-    let notifications = relay::notifications::Notifications::open(
+    let notifications = relay::notifications::Notifications::open_restricted(
         &std::env::var("REMOTEPI_NOTIFICATIONS_DB_PATH")
             .unwrap_or_else(|_| "data/notifications.db".into()),
         transport,
@@ -68,6 +68,14 @@ async fn main() -> anyhow::Result<()> {
             .filter(|s| !s.is_empty())
             .map(String::from)
             .collect(),
+        Some(
+            std::env::var("REMOTEPI_NOTIFICATION_ALLOWED_MACS")
+                .unwrap_or_default()
+                .split(',')
+                .filter(|s| !s.is_empty())
+                .map(String::from)
+                .collect(),
+        ),
     )?;
     let state = relay::AppState {
         notifications,

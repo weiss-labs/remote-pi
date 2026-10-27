@@ -518,7 +518,7 @@
 					"@executable_path/Frameworks",
 				);
 				PRODUCT_BUNDLE_IDENTIFIER = ai.weisslabs.remotepi;
-				PROVISIONING_PROFILE_SPECIFIER = "Remote Pi WL Direct ZSW";
+				PROVISIONING_PROFILE_SPECIFIER = "Remote Pi WL Direct Push";
 				"CODE_SIGN_IDENTITY[sdk=iphoneos*]" = "Apple Distribution";
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SWIFT_OBJC_BRIDGING_HEADER = "Runner/Runner-Bridging-Header.h";
@@ -732,7 +732,7 @@
 					"@executable_path/Frameworks",
 				);
 				PRODUCT_BUNDLE_IDENTIFIER = ai.weisslabs.remotepi;
-				PROVISIONING_PROFILE_SPECIFIER = "Remote Pi WL Direct ZSW";
+				PROVISIONING_PROFILE_SPECIFIER = "Remote Pi WL Direct Push";
 				"CODE_SIGN_IDENTITY[sdk=iphoneos*]" = "Apple Distribution";
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SWIFT_OBJC_BRIDGING_HEADER = "Runner/Runner-Bridging-Header.h";

@@ -61,6 +61,94 @@ fn service(fake: Arc<Fake>) -> Arc<Notifications> {
     Notifications::open(":memory:", Some(fake), Default::default()).unwrap()
 }
 
+#[tokio::test]
+async fn unapproved_macs_cannot_consume_notification_state() {
+    let f = Arc::new(Fake::default());
+    let (pi, phone, g) = grant();
+    let g = sign(&pi, &phone, g);
+    let allowed = B64.encode(SigningKey::from_bytes(&[44; 32]).verifying_key().to_bytes());
+    let n = Notifications::open_restricted(
+        ":memory:",
+        Some(f),
+        Default::default(),
+        Some(HashSet::from([allowed])),
+    )
+    .unwrap();
+    assert_eq!(register(&n, &g)["error"], "notification_sender_not_allowed");
+    assert_eq!(
+        n.event(&g.peer, "room-one", "attack", "input_needed"),
+        Err("notification_sender_not_allowed")
+    );
+    let s = n.state.lock().unwrap();
+    for table in [
+        "notification_devices",
+        "notification_grants",
+        "notification_events",
+    ] {
+        let count: i64 =
+            s.db.query_row(&format!("SELECT count(*) FROM {table}"), [], |r| r.get(0))
+                .unwrap();
+        assert_eq!(count, 0);
+    }
+}
+
+#[tokio::test]
+async fn empty_preferences_create_no_events_and_existing_grants_can_renew_at_cap() {
+    let f = Arc::new(Fake::default());
+    let n = service(f);
+    let (pi, phone, mut g) = grant();
+    g.categories.clear();
+    let mut g = sign(&pi, &phone, g);
+    assert_eq!(register(&n, &g)["ok"], true);
+    for i in 0..40 {
+        assert!(
+            n.event(&g.peer, "room-one", &format!("off-{i}"), "input_needed")
+                .is_ok()
+        );
+    }
+    {
+        let s = n.state.lock().unwrap();
+        let count: i64 =
+            s.db.query_row("SELECT count(*) FROM notification_events", [], |r| r.get(0))
+                .unwrap();
+        assert_eq!(count, 0);
+        for i in 0..255 {
+            s.db.execute(
+                "INSERT INTO notification_grants VALUES(?,?,?,?,1)",
+                params![g.peer, g.phone, format!("old-{i}"), g.expires_at],
+            )
+            .unwrap();
+        }
+    }
+    g.expires_at += 1;
+    g = sign(&pi, &phone, g);
+    assert_eq!(
+        register(&n, &g)["ok"],
+        true,
+        "existing row must renew despite tombstone cap"
+    );
+    g.device_id = "new-over-cap".into();
+    g = sign(&pi, &phone, g);
+    assert_eq!(register(&n, &g)["error"], "device_limit");
+}
+
+#[tokio::test]
+async fn collapse_id_distinguishes_macs_with_same_room() {
+    let f = Arc::new(Fake::default());
+    let n = service(f.clone());
+    let (pi, phone, g) = grant();
+    let g = sign(&pi, &phone, g);
+    register(&n, &g);
+    n.event(&g.peer, "room-one", "event-one", "input_needed")
+        .unwrap();
+    wait(&f, 1).await;
+    let d = f.delivered.lock().unwrap()[0].clone();
+    let mut other = d.clone();
+    other.peer = "another-mac".into();
+    assert_ne!(d.collapse_id(), other.collapse_id());
+    assert!(d.collapse_id().len() <= 64);
+}
+
 #[test]
 fn grant_requires_bilateral_signatures_bound_to_every_field() {
     let (pi, phone, g) = grant();
@@ -194,6 +282,10 @@ async fn event_ids_and_per_device_categories_are_rate_limited() {
     assert_eq!(f.delivered.lock().unwrap().len(), 1);
     n.event(&g.peer, "room-one", "c", "task_failed").unwrap();
     wait(&f, 2).await;
+    // Another pane's question must not disappear behind room-one's throttle.
+    n.event(&g.peer, "room-two", "d", "input_needed").unwrap();
+    wait(&f, 3).await;
+    assert_eq!(f.delivered.lock().unwrap()[2].room, "room-two");
 }
 #[tokio::test]
 async fn invalid_token_cleanup_and_retry_are_bounded() {
