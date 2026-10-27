@@ -1,6 +1,7 @@
 // Opt-in PNG capture: RP_REVIEW_DIR=/tmp/rp-astra/review/before flutter test test/ui/design_review_test.dart
 import 'dart:async';
 import 'dart:convert';
+import '../support/system_font.dart';
 import 'dart:io';
 import 'dart:ui' as ui;
 
@@ -246,11 +247,7 @@ class _Chat extends ChangeNotifier implements ChatViewModel {
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
   setUpAll(() async {
-    final loader = FontLoader(kMonoFamily);
-    for (final weight in ['Regular']) {
-      loader.addFont(rootBundle.load('assets/fonts/SF-Mono-$weight.otf'));
-    }
-    await loader.load();
+    await loadSystemMono();
     final manifest =
         jsonDecode(await rootBundle.loadString('FontManifest.json')) as List;
     for (final entry in manifest.where(
@@ -308,7 +305,7 @@ void main() {
     await tester.pump(const Duration(milliseconds: 400));
   }
 
-  testWidgets('home review with real SF Mono and synthetic panes', (
+  testWidgets('home review with system Menlo and synthetic panes', (
     tester,
   ) async {
     final home = _Home();

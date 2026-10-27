@@ -5,27 +5,14 @@ import 'package:app/ui/core/themes/app_colors.dart';
 /// Monospace font family — used for code, terminal-style chrome, and most of
 /// the app's UI text (the product's "coding agent" identity).
 ///
-/// **To swap the app font, change this one line.** Bundle a real font in
-/// `pubspec.yaml` under this family name (e.g. JetBrains Mono) and it flows
-/// everywhere automatically. `'Courier'` is the platform fallback.
-// Weiss Labs: SF Mono, the font Zach's Ghostty/Herdr terminal uses.
-const String kMonoFamily = 'SF Mono';
+/// Resolved by the platform, never bundled or downloaded.
+const String kMonoFamily = 'Menlo';
 
-/// Sans family for body/system text. `null` → the platform default sans.
-/// Set to a bundled family name to override globally.
-const String kSansFamily = 'SF Mono';
+/// Body text inherits the platform-resolved theme family when null.
+const String? kSansFamily = null;
 
-/// Brand wordmark style — the "Remote Pi" marca. **Always Inter** (the
-/// wireframe's `RP_SANS`: `screens.jsx` renders the title in `RP_SANS` bold),
-/// served via the `google_fonts` package so it renders identically on iOS and
-/// Android. This is the ONE font that must stay constant everywhere the product
-/// name appears (Home title, onboarding, splash) — never substitute the
-/// mono/system font for it.
-///
-/// **To change the brand font, change this one call** (e.g. `GoogleFonts.x`).
-///
-/// Returns a runtime [TextStyle] (Google Fonts can't be `const`); pass the
-/// brightness-appropriate [color] from `context.colors.text`.
+/// Brand wordmark preserves the existing mono treatment, using the OS font.
+/// Pass the brightness-appropriate color from `context.colors.text`.
 TextStyle brandTextStyle({
   required double fontSize,
   FontWeight fontWeight = FontWeight.w700,

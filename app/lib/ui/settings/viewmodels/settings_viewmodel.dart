@@ -68,6 +68,13 @@ class SettingsViewModel extends ViewModel<SettingsState> {
     notificationPreferences.copyWith(showPaneName: value),
   );
 
+  Future<void> setQuestionPreview(bool value) async => notifications?.update(
+    notificationPreferences.copyWith(
+      showPaneName: value ? true : notificationPreferences.showPaneName,
+      showQuestionPreview: value,
+    ),
+  );
+
   Future<void> _load() async {
     final peers = await _storage.listPeers();
     if (_disposed) return;

@@ -817,6 +817,9 @@ sealed class ServerMessage {
   factory ServerMessage.fromJson(Map<String, dynamic> json) {
     final type = json['type'] as String?;
     return switch (type) {
+      'artifact_opened' ||
+      'artifact_chunk' ||
+      'artifact_error' => ArtifactReply(json),
       'commands_list' => CommandsList.fromJson(json),
       'command_result' => CommandResult(
         inReplyTo: json['in_reply_to'] as String,
@@ -957,10 +960,37 @@ class CommandResult extends ServerMessage {
   });
 }
 
+class ArtifactRequest extends ClientMessage {
+  final String type, id;
+  final String? url, transferId;
+  final int? offset;
+  ArtifactRequest({
+    required this.type,
+    required this.id,
+    this.url,
+    this.transferId,
+    this.offset,
+  });
+  @override
+  Map<String, dynamic> toJson() => {
+    'type': type,
+    'id': id,
+    if (url != null) 'url': url,
+    if (transferId != null) 'transfer_id': transferId,
+    if (offset != null) 'offset': offset,
+  };
+}
+
+class ArtifactReply extends ServerMessage {
+  final Map<String, dynamic> data;
+  const ArtifactReply(this.data);
+}
+
 class NotifyRegister extends ClientMessage {
   final String id, deviceId, token, environment;
   final List<String> categories;
   final bool showPaneName;
+  final bool? showQuestionPreview;
   final int expiresAt;
   final String signature;
   NotifyRegister({
@@ -970,6 +1000,7 @@ class NotifyRegister extends ClientMessage {
     required this.environment,
     required this.categories,
     required this.showPaneName,
+    this.showQuestionPreview,
     required this.expiresAt,
     required this.signature,
   });
@@ -982,6 +1013,8 @@ class NotifyRegister extends ClientMessage {
     'environment': environment,
     'categories': categories,
     'show_pane_name': showPaneName,
+    if (showQuestionPreview != null)
+      'show_question_preview': showQuestionPreview,
     'expires_at': expiresAt,
     'signature': signature,
   };

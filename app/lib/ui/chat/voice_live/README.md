@@ -20,4 +20,4 @@ The phone contract does not expose desktop screen-sharing, work-model/voice pick
 
 `flutter test --no-pub test/ui/chat/voice_live` covers contiguous draft visibility, disabled send before acknowledgment, approval taps, same-hash heartbeat replacement during acknowledgment, composer gating, typed input, mute, cancel, stop/restart, wake lifecycle, back-edge confirmation and small-phone keyboard layout.
 
-`RP_REVIEW_DIR=/tmp/rp-astra/review flutter test --no-pub test/ui/chat/voice_live/voice_gallery_test.dart` exports synthetic widget previews. macOS review runs load real SF Pro from the system and bundled SF Mono for tool args and the Herdr composer. No provider connection or paid call is made.
+`RP_REVIEW_DIR=/tmp/rp-astra/review flutter test --no-pub test/ui/chat/voice_live/voice_gallery_test.dart` exports synthetic widget previews. macOS review runs load real SF Pro from the system and test-only system Menlo (outside the shipping bundle) for tool args and the Herdr composer. No provider connection or paid call is made.

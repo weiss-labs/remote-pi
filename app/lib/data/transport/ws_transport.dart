@@ -109,12 +109,18 @@ class WsTransport implements PeerTransport, IControlLink, INotificationRoutes {
                   RoutedNotificationReply(
                     peer: _normalizeToStandard(frame['peer'] as String),
                     room: senderRoom,
-                    reply:
-                        ServerMessage.fromJson(inner)
-                            as NotificationRegistration,
+                    reply: ServerMessage.fromJson(
+                      inner,
+                    ) as NotificationRegistration,
                   ),
                 );
               }
+              return;
+            }
+            // File bytes require an explicit source room, never legacy routing.
+            if (inner is Map<String, dynamic> &&
+                (inner['type'] as String? ?? '').startsWith('artifact_') &&
+                senderRoom == null) {
               return;
             }
             // Fanout can attach this phone to other Macs whose deterministic

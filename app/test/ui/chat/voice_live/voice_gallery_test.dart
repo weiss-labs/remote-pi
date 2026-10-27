@@ -1,4 +1,5 @@
 import 'dart:convert';
+import '../../../support/system_font.dart';
 import 'dart:io';
 import 'dart:ui' as ui;
 import 'package:app/ui/chat/voice_live/voice_live_page.dart';
@@ -14,9 +15,7 @@ import 'fake_voice_live_session.dart';
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
   setUpAll(() async {
-    final loader = FontLoader(kMonoFamily)
-      ..addFont(rootBundle.load('assets/fonts/SF-Mono-Regular.otf'));
-    await loader.load();
+    await loadSystemMono();
     final systemFont = File('/System/Library/Fonts/SFNS.ttf');
     if (await systemFont.exists()) {
       final sans = FontLoader('.SF Pro Text');
@@ -37,7 +36,7 @@ void main() {
       await icons.load();
     }
   });
-  testWidgets('voice review gallery, synthetic data and real SF Mono', (
+  testWidgets('voice review gallery, synthetic data and system Menlo', (
     t,
   ) async {
     t.view.physicalSize = const Size(440, 956);

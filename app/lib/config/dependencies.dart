@@ -1,5 +1,8 @@
 import 'dart:async';
 
+import 'package:app/domain/contracts/artifact_preview.dart';
+import 'package:app/data/repositories/artifact_preview_repository.dart';
+
 import 'package:app/config/utils/injector.dart';
 import 'package:app/data/voice_live/voice_live_controller.dart';
 import 'package:app/data/voice_live/voice_live_transport.dart';
@@ -156,6 +159,9 @@ Future<void> setupDependencies() async {
   );
 
   // Repositories
+  _injector.addRepository<ArtifactPreview>(
+    () => ArtifactPreviewRepository(_injector.get<ConnectionManager>()),
+  );
   _injector.addRepository<IActionsRepository>(
     () => ActionsRepository(_injector.get<ConnectionManager>()),
   );
@@ -175,6 +181,7 @@ Future<void> setupDependencies() async {
       _injector.get<ConnectionManager>(),
       _injector.get<Preferences>(),
       _injector.get<PairingStorage>(),
+      artifacts: _injector.get<ArtifactPreview>(),
     ),
   );
   _injector.addViewModel<HomeViewModel>(

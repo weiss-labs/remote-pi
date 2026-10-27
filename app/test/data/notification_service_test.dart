@@ -315,7 +315,7 @@ void main() {
       );
       expect(
         utf8.decode(notificationGrantBytes('peer', 'phone', message)),
-        'remote-pi-notify-device-v1\n${jsonEncode(['peer', 'phone', message.deviceId, message.token, message.environment, message.categories, message.showPaneName, message.expiresAt])}',
+        'remote-pi-notify-device-v2\n${jsonEncode(['peer', 'phone', message.deviceId, message.token, message.environment, message.categories, message.showPaneName, false, message.expiresAt])}',
       );
       expect(json.keys.toSet(), {
         'type',
@@ -325,6 +325,7 @@ void main() {
         'environment',
         'categories',
         'show_pane_name',
+        'show_question_preview',
         'expires_at',
         'signature',
       });

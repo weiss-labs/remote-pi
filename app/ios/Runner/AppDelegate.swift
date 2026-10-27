@@ -1,9 +1,11 @@
 import Flutter
 import UIKit
 import UserNotifications
+import QuickLook
 
 @main
 @objc class AppDelegate: FlutterAppDelegate, FlutterImplicitEngineDelegate {
+  private var artifacts: ArtifactViewer?
   private var notifications: FlutterMethodChannel?
   private var pushToken: String?
   private var pendingTaps: [[String: Any]] = []
@@ -21,6 +23,7 @@ import UserNotifications
 
   func didInitializeImplicitFlutterEngine(_ engineBridge: FlutterImplicitEngineBridge) {
     GeneratedPluginRegistrant.register(with: engineBridge.pluginRegistry)
+    artifacts = ArtifactViewer(messenger: engineBridge.applicationRegistrar.messenger())
     let channel = FlutterMethodChannel(
       name: "ai.weisslabs.remotepi/notifications",
       binaryMessenger: engineBridge.applicationRegistrar.messenger())
@@ -109,5 +112,101 @@ import UserNotifications
       isActive: UIApplication.shared.applicationState == .active,
       visiblePeer: visiblePeer, visibleRoom: visibleRoom, target: target)
     completionHandler(activeRoom ? [] : [.banner, .sound, .list])
+  }
+}
+
+/// Receives verified bytes only. Never accepts desktop URLs or arbitrary paths.
+private final class ArtifactViewer: NSObject, QLPreviewControllerDataSource, QLPreviewControllerDelegate {
+  private let channel: FlutterMethodChannel
+  private let directory = FileManager.default.temporaryDirectory.appendingPathComponent("paired-artifacts", isDirectory: true)
+  private var file: URL?
+  private var controller: QLPreviewController?
+  private var completion: FlutterResult?
+  private var expiry: Timer?
+
+  init(messenger: FlutterBinaryMessenger) {
+    channel = FlutterMethodChannel(name: "ai.weisslabs.remotepi/artifacts", binaryMessenger: messenger)
+    super.init()
+    try? FileManager.default.removeItem(at: directory)
+    channel.setMethodCallHandler { [weak self] call, result in
+      guard let self = self else { return }
+      switch call.method {
+      case "preview": self.open(call.arguments, result)
+      case "dismiss":
+        self.controller?.dismiss(animated: false)
+        self.cleanup()
+        result(nil)
+      default: result(FlutterMethodNotImplemented)
+      }
+    }
+  }
+
+  private func open(_ arguments: Any?, _ result: @escaping FlutterResult) {
+    guard completion == nil,
+      let args = arguments as? [String: Any],
+      let typed = args["bytes"] as? FlutterStandardTypedData,
+      let ext = args["extension"] as? String,
+      ["pdf", "png", "jpg", "gif", "webp"].contains(ext),
+      !typed.data.isEmpty, typed.data.count <= 20 * 1024 * 1024 else {
+      result(FlutterError(code: "invalid_preview", message: "Invalid preview data", details: nil)); return
+    }
+    let data = typed.data
+    let prefix = [UInt8](data.prefix(12))
+    let valid: Bool
+    switch ext {
+    case "pdf": valid = data.starts(with: Data("%PDF-".utf8))
+    case "png": valid = prefix.starts(with: [137,80,78,71,13,10,26,10])
+    case "jpg": valid = prefix.starts(with: [255,216,255])
+    case "gif": valid = data.starts(with: Data("GIF87a".utf8)) || data.starts(with: Data("GIF89a".utf8))
+    case "webp": valid = prefix.count >= 12 && String(bytes: prefix[0..<4], encoding: .ascii) == "RIFF" && String(bytes: prefix[8..<12], encoding: .ascii) == "WEBP"
+    default: valid = false
+    }
+    guard valid else { result(FlutterError(code: "invalid_signature", message: "Invalid file signature", details: nil)); return }
+    guard let scene = UIApplication.shared.connectedScenes.compactMap({ $0 as? UIWindowScene }).first(where: { $0.activationState == .foregroundActive }),
+      var presenter = scene.windows.first(where: { $0.isKeyWindow })?.rootViewController else {
+      result(FlutterError(code: "unavailable", message: "No active viewer", details: nil)); return
+    }
+    while let presented = presenter.presentedViewController { presenter = presented }
+    do {
+      try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true,
+        attributes: [.protectionKey: FileProtectionType.complete])
+      var folder = directory
+      var values = URLResourceValues()
+      values.isExcludedFromBackup = true
+      try folder.setResourceValues(values)
+      let url = directory.appendingPathComponent(UUID().uuidString).appendingPathExtension(ext)
+      try data.write(to: url, options: [.atomic, .completeFileProtection])
+      guard QLPreviewController.canPreview(url as NSURL) else {
+        try? FileManager.default.removeItem(at: url)
+        result(FlutterError(code: "unsupported", message: "This format cannot be previewed", details: nil)); return
+      }
+      file = url
+      completion = result
+      let preview = QLPreviewController()
+      controller = preview
+      preview.dataSource = self
+      preview.delegate = self
+      presenter.present(preview, animated: true)
+      expiry = Timer.scheduledTimer(withTimeInterval: 300, repeats: false) { [weak self] _ in
+        self?.controller?.dismiss(animated: false)
+        self?.cleanup()
+      }
+    } catch {
+      cleanup()
+      result(FlutterError(code: "cache_failed", message: "Unable to prepare private preview", details: nil))
+    }
+  }
+  func numberOfPreviewItems(in controller: QLPreviewController) -> Int { file == nil ? 0 : 1 }
+  func previewController(_ controller: QLPreviewController, previewItemAt index: Int) -> QLPreviewItem { file! as NSURL }
+  func previewControllerDidDismiss(_ controller: QLPreviewController) { cleanup() }
+  private func cleanup() {
+    expiry?.invalidate()
+    expiry = nil
+    try? FileManager.default.removeItem(at: directory)
+    file = nil
+    controller = nil
+    let result = completion
+    completion = nil
+    result?(nil)
   }
 }

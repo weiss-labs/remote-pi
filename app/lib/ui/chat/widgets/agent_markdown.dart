@@ -1,5 +1,10 @@
 import 'dart:async';
 
+import 'package:app/domain/entities/draft_panel.dart';
+import 'package:app/ui/chat/viewmodels/chat_viewmodel.dart';
+import 'package:app/ui/chat/widgets/artifact_dialog.dart';
+import 'package:provider/provider.dart';
+
 import 'package:app/ui/core/themes/themes.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -41,8 +46,12 @@ class AgentMarkdown extends StatelessWidget {
       highlightBuilder: (context, text, style) =>
           Text(text, style: typo.mono.copyWith(color: colors.codeAccent)),
       // Fenced ``` blocks — dark card + copy button.
-      codeBuilder: (context, name, code, closed) =>
-          _CodeBlock(language: name, code: code),
+      codeBuilder: (context, name, code, closed) {
+        final panel = DraftPanel.parse(name, code);
+        return panel == null
+            ? _CodeBlock(language: name, code: code)
+            : _DraftCard(panel: panel);
+      },
     );
     // Weiss Labs: Pi's desktop markdown palette (gold headings, blue links).
     TextStyle h(double size) => typo.mono.copyWith(
@@ -72,6 +81,21 @@ class AgentMarkdown extends StatelessWidget {
     final messenger = ScaffoldMessenger.maybeOf(context);
     final uri = Uri.tryParse(url);
     if (uri == null) return;
+    if (uri.scheme == 'file') {
+      final vm = context.read<ChatViewModel>();
+      await showDialog<void>(
+        context: context,
+        barrierDismissible: false,
+        builder: (_) => ArtifactDialog(url: url, viewModel: vm),
+      );
+      return;
+    }
+    if (uri.scheme != 'https' && uri.scheme != 'http') {
+      messenger?.showSnackBar(
+        const SnackBar(content: Text('This link type is not supported.')),
+      );
+      return;
+    }
     try {
       final ok = await launchUrl(uri, mode: LaunchMode.externalApplication);
       if (!ok) {
@@ -81,6 +105,40 @@ class AgentMarkdown extends StatelessWidget {
       messenger?.showSnackBar(SnackBar(content: Text("Couldn't open $url")));
     }
   }
+}
+
+class _DraftCard extends StatelessWidget {
+  const _DraftCard({required this.panel});
+  final DraftPanel panel;
+
+  @override
+  Widget build(BuildContext context) => Container(
+    key: const Key('mobile-draft-card'),
+    width: double.infinity,
+    margin: const EdgeInsets.symmetric(vertical: 6),
+    padding: const EdgeInsets.fromLTRB(12, 6, 12, 12),
+    decoration: BoxDecoration(
+      color: context.colors.codeBg,
+      border: Border.all(color: context.colors.border),
+    ),
+    child: Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Row(
+          children: [
+            Expanded(
+              child: Text(
+                panel.title ?? 'Draft preview',
+                style: context.typo.monoSmall,
+              ),
+            ),
+            _CopyButton(code: panel.source),
+          ],
+        ),
+        Text(panel.content, softWrap: true, style: context.typo.sansBody),
+      ],
+    ),
+  );
 }
 
 class _CodeBlock extends StatelessWidget {

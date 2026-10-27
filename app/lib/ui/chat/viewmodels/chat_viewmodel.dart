@@ -1,5 +1,7 @@
 import 'dart:async';
 
+import 'package:app/domain/contracts/artifact_preview.dart';
+
 import 'package:app/data/local/records/message_record.dart';
 import 'package:app/data/local/records/runtime_record.dart';
 import 'package:app/data/preferences/preferences.dart';
@@ -26,6 +28,19 @@ class ChatViewModel extends ViewModel<ChatState> {
   final ConnectionManager _conn;
   final Preferences _prefs;
   final PairingStorage _storage;
+  final ArtifactPreview? artifacts;
+  Future<void> previewArtifact(
+    String url,
+    void Function(double) progress,
+  ) async {
+    final service = artifacts;
+    if (service == null) {
+      throw const ArtifactFailure('File preview is unavailable.');
+    }
+    await service.open(url, progress: progress);
+  }
+
+  Future<void> cancelArtifact() async => artifacts?.cancel();
 
   StreamSubscription<List<MessageRecord>>? _msgsSub;
   StreamSubscription<RuntimeRecord>? _runtimeSub;
@@ -57,8 +72,14 @@ class ChatViewModel extends ViewModel<ChatState> {
   String? _peerOfflineReason;
   ConnectionStatus? _lastStatus;
 
-  ChatViewModel(this._read, this._sync, this._conn, this._prefs, this._storage)
-    : super(const ChatReady(messages: [])) {
+  ChatViewModel(
+    this._read,
+    this._sync,
+    this._conn,
+    this._prefs,
+    this._storage, {
+    this.artifacts,
+  }) : super(const ChatReady(messages: [])) {
     // Plan/32f — do NOT seed _streaming/_working from the shared SyncService
     // here: it may still be bound to the PREVIOUS chat (this VM is recreated
     // on session switch, before _bootstrap rebinds via activate). Seeding now
@@ -317,14 +338,11 @@ class ChatViewModel extends ViewModel<ChatState> {
     String text, {
     MessageImage? image,
     List<MessageImage> images = const [],
-  }) =>
-      _sync.sendMessage(
-        text,
-        images: [?image, ...images],
-        streamingBehavior: isWorking
-            ? UserMessageStreamingBehavior.steer
-            : null,
-      );
+  }) => _sync.sendMessage(
+    text,
+    images: [?image, ...images],
+    streamingBehavior: isWorking ? UserMessageStreamingBehavior.steer : null,
+  );
 
   Future<void> cancel(String targetId) => _sync.cancel(targetId);
 

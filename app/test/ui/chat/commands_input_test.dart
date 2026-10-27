@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:convert';
+import '../../support/system_font.dart';
 import 'dart:io';
 import 'dart:ui' as ui;
 import 'package:flutter/rendering.dart';
@@ -14,11 +15,7 @@ import 'commands_viewmodel_test.dart' show FakePaneCommands;
 void main() {
   setUpAll(() async {
     if (Platform.environment['RP_REVIEW_DIR'] == null) return;
-    final mono = FontLoader(kMonoFamily);
-    for (final weight in ['Regular', 'Light', 'Medium', 'Bold']) {
-      mono.addFont(rootBundle.load('assets/fonts/SF-Mono-$weight.otf'));
-    }
-    await mono.load();
+    await loadSystemMono();
     final manifest =
         jsonDecode(await rootBundle.loadString('FontManifest.json')) as List;
     for (final entry in manifest.cast<Map<String, dynamic>>()) {

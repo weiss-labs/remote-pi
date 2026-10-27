@@ -1,8 +1,11 @@
 import 'dart:async';
 import 'dart:convert';
 import 'dart:math';
+
 import 'package:cryptography/cryptography.dart';
+
 import 'notification_grant.dart';
+
 import 'package:flutter/services.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:app/domain/contracts/notifications.dart';
@@ -285,6 +288,8 @@ class NotificationService extends Notifications {
         environment: _environment,
         categories: _preferences.categories.toList(),
         showPaneName: _preferences.showPaneName,
+        showQuestionPreview:
+            _preferences.showPaneName && _preferences.showQuestionPreview,
         expiresAt: expiry,
         signature: '',
       ),

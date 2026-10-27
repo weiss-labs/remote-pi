@@ -6,7 +6,7 @@ import 'package:app/ui/core/themes/themes.dart';
 import 'package:flutter/material.dart';
 
 /// Plan/30 — static image thumbnail + optional caption inside the user
-/// bubble (decision #7: no full-screen, no tap/zoom). Renders straight from
+/// bubble, with an in-app pinch-to-zoom viewer. Renders straight from
 /// the inline base64 ([MessageImage.data]); the bytes are decoded once so
 /// list scrolling doesn't re-decode every frame.
 class ImageBubble extends StatefulWidget {
@@ -74,10 +74,46 @@ class _ImageBubbleState extends State<ImageBubble> {
             constraints: const BoxConstraints(maxHeight: ImageBubble.maxHeight),
             child: _bytes.isEmpty
                 ? _broken(context)
-                : Image.memory(
-                    _bytes,
-                    fit: BoxFit.cover,
-                    gaplessPlayback: true,
+                : Semantics(
+                    button: true,
+                    label: 'Open image preview',
+                    child: GestureDetector(
+                      onTap: () => showDialog<void>(
+                        context: context,
+                        builder: (previewContext) => Dialog.fullscreen(
+                          child: Scaffold(
+                            appBar: AppBar(
+                              title: const Text('Image preview'),
+                              leading: CloseButton(
+                                onPressed: () => Navigator.of(
+                                  previewContext,
+                                  rootNavigator: true,
+                                ).pop(),
+                              ),
+                            ),
+                            body: Center(
+                              child: InteractiveViewer(
+                                minScale: 0.5,
+                                maxScale: 8,
+                                child: Image.memory(
+                                  _bytes,
+                                  fit: BoxFit.contain,
+                                  errorBuilder: (context, error, stack) =>
+                                      _broken(context),
+                                ),
+                              ),
+                            ),
+                          ),
+                        ),
+                      ),
+                      child: Image.memory(
+                        _bytes,
+                        fit: BoxFit.cover,
+                        gaplessPlayback: true,
+                        errorBuilder: (context, error, stack) =>
+                            _broken(context),
+                      ),
+                    ),
                   ),
           ),
           if (caption.isNotEmpty)

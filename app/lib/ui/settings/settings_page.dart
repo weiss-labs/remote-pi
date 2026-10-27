@@ -161,10 +161,16 @@ class _NotificationsSection extends StatelessWidget {
                   : null,
             ),
           toggle(
-            'Show pane name',
+            'Show pane names',
             prefs.showPaneName,
             available ? vm.setPaneName : null,
             subtitle: 'Off keeps lock-screen alerts generic',
+          ),
+          toggle(
+            'Show question previews',
+            prefs.showQuestionPreview,
+            available ? vm.setQuestionPreview : null,
+            subtitle: 'Shows short questions on your lock screen and enables pane names. Sensitive-text filtering is best effort. Sign-in alerts stay generic.',
           ),
         ],
         Padding(

@@ -1,4 +1,5 @@
 import 'dart:convert';
+
 import 'package:cryptography/cryptography.dart';
 import 'package:app/protocol/protocol.dart';
 
@@ -8,7 +9,7 @@ List<int> notificationGrantBytes(
   String phone,
   NotifyRegister message,
 ) => utf8.encode(
-  'remote-pi-notify-device-v1\n${jsonEncode([peer, phone, message.deviceId, message.token, message.environment, message.categories, message.showPaneName, message.expiresAt])}',
+  'remote-pi-notify-device-v${message.showQuestionPreview == null ? 1 : 2}\n${jsonEncode([peer, phone, message.deviceId, message.token, message.environment, message.categories, message.showPaneName, if (message.showQuestionPreview != null) message.showQuestionPreview, message.expiresAt])}',
 );
 
 Future<NotifyRegister> signNotificationGrant(
@@ -28,6 +29,7 @@ Future<NotifyRegister> signNotificationGrant(
     environment: message.environment,
     categories: message.categories,
     showPaneName: message.showPaneName,
+    showQuestionPreview: message.showQuestionPreview,
     expiresAt: message.expiresAt,
     signature: base64Encode(signature.bytes),
   );

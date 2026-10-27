@@ -118,13 +118,32 @@ void main() {
       false,
     );
     expect(notifications.prompts, 1);
-    final privacy = find.widgetWithText(SwitchListTile, 'Show pane name');
+    final privacy = find.widgetWithText(SwitchListTile, 'Show pane names');
     await tester.ensureVisible(privacy);
     await tester.pumpAndSettle();
     expect(notifications.preferences.showPaneName, false);
     await tester.tap(privacy);
     await tester.pumpAndSettle();
     expect(notifications.preferences.showPaneName, true);
+    await tester.tap(privacy);
+    await tester.pumpAndSettle();
+    final preview = find.widgetWithText(
+      SwitchListTile,
+      'Show question previews',
+    );
+    await tester.ensureVisible(preview);
+    await tester.pumpAndSettle();
+    expect(notifications.preferences.showQuestionPreview, false);
+    await tester.tap(preview);
+    await tester.pumpAndSettle();
+    expect(notifications.preferences.showQuestionPreview, true);
+    expect(notifications.preferences.showPaneName, true);
+    await tester.ensureVisible(privacy);
+    await tester.pumpAndSettle();
+    await tester.tap(privacy);
+    await tester.pumpAndSettle();
+    expect(notifications.preferences.showQuestionPreview, false);
+    expect(notifications.preferences.showPaneName, false);
     expect(notifications.prompts, 1);
     expect(tester.takeException(), null);
     await tester.pumpWidget(const SizedBox());

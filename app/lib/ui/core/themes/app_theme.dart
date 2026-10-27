@@ -16,6 +16,7 @@ ThemeData _buildTheme({
   required AppTypography typo,
 }) {
   return ThemeData(
+    fontFamilyFallback: const ['Courier', 'monospace'],
     brightness: brightness,
     fontFamily: kMonoFamily,
     scaffoldBackgroundColor: colors.bg,

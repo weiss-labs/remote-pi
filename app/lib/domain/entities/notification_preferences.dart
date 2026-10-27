@@ -24,25 +24,32 @@ class NotificationPreferences {
   final bool enabled;
   final Set<String> categories;
   final bool showPaneName;
+  final bool showQuestionPreview;
   const NotificationPreferences({
     this.enabled = false,
     this.categories = defaultNotificationCategories,
     this.showPaneName = false,
+    this.showQuestionPreview = false,
   });
   NotificationPreferences copyWith({
     bool? enabled,
     Set<String>? categories,
     bool? showPaneName,
+    bool? showQuestionPreview,
   }) => NotificationPreferences(
     enabled: enabled ?? this.enabled,
     categories: Set.unmodifiable(categories ?? this.categories),
     showPaneName: showPaneName ?? this.showPaneName,
+    showQuestionPreview:
+        (showPaneName ?? this.showPaneName) &&
+        (showQuestionPreview ?? this.showQuestionPreview),
   );
   Map<String, dynamic> toJson() => {
     'schema_version': 2,
     'enabled': enabled,
     'categories': categories.toList(),
     'show_pane_name': showPaneName,
+    'show_question_preview': showPaneName && showQuestionPreview,
   };
   factory NotificationPreferences.fromJson(Map<String, dynamic> json) =>
       NotificationPreferences(
@@ -57,6 +64,9 @@ class NotificationPreferences {
               })
             : defaultNotificationCategories,
         showPaneName: json['show_pane_name'] == true,
+        showQuestionPreview:
+            json['show_pane_name'] == true &&
+            json['show_question_preview'] == true,
       );
 }
 
