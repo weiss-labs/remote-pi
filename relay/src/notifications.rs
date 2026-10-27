@@ -1,4 +1,4 @@
-//! Paired-device notification metadata. Message bodies never enter this module.
+//! Paired-device notification metadata. Opted-in short questions stay in memory only.
 //! Both phone and target Pi sign registration; relay authentication alone is not pairing.
 use base64::{Engine as _, engine::general_purpose::STANDARD as B64};
 use ed25519_dalek::{Signature, VerifyingKey};
@@ -39,6 +39,93 @@ pub fn now() -> i64 {
 fn bounded(s: &str, max: usize) -> bool {
     !s.is_empty() && s.len() <= max && !s.chars().any(char::is_control)
 }
+fn preview_char(c: char) -> bool {
+    !c.is_control()
+        && !matches!(c, '\u{00ad}' | '\u{0600}'..='\u{0605}' | '\u{061c}' | '\u{06dd}' | '\u{070f}' |
+            '\u{0890}'..='\u{0891}' | '\u{08e2}' | '\u{180e}' | '\u{200b}'..='\u{200f}' |
+            '\u{202a}'..='\u{202e}' | '\u{2060}'..='\u{206f}' | '\u{feff}' | '\u{fff9}'..='\u{fffb}' |
+            '\u{110bd}' | '\u{110cd}' | '\u{13430}'..='\u{13455}' | '\u{1bca0}'..='\u{1bca3}' |
+            '\u{1d173}'..='\u{1d17a}' | '\u{e0001}' | '\u{e0020}'..='\u{e007f}')
+}
+// Best effort, never a promise that arbitrary natural language is secret-free.
+fn sanitize_question(s: &str) -> Option<String> {
+    if s.len() > 4096 {
+        return None;
+    }
+    let clean: String = s.chars().filter(|c| preview_char(*c)).collect();
+    let clean = clean.trim();
+    let lower = clean.to_ascii_lowercase();
+    let compact: String = lower
+        .chars()
+        .filter(|c| !matches!(c, ' ' | '-' | '_'))
+        .collect();
+    if clean.is_empty()
+        || [
+            "password",
+            "passphrase",
+            "credential",
+            "secret",
+            "token",
+            "otp",
+            "onetime",
+            "verificationcode",
+            "apikey",
+            "privatekey",
+            "signin",
+            "login",
+            "bearer",
+            "authorization",
+        ]
+        .iter()
+        .any(|p| compact.contains(p))
+        || lower.contains("-----begin")
+        || [
+            "sk-",
+            "sk_",
+            "pk-",
+            "pk_",
+            "ghp_",
+            "github_pat_",
+            "xoxb-",
+            "xoxp-",
+            "xoxa-",
+            "xoxr-",
+            "xoxs-",
+        ]
+        .iter()
+        .any(|p| lower.contains(p))
+    {
+        return None;
+    }
+    let (mut digits, mut opaque) = (0, 0);
+    for c in clean.chars() {
+        digits = if c.is_ascii_digit() { digits + 1 } else { 0 };
+        opaque = if c.is_ascii_alphanumeric() || "_+/=-".contains(c) {
+            opaque + 1
+        } else {
+            0
+        };
+        if digits >= 4 || opaque >= 24 {
+            return None;
+        }
+    }
+    Some(clean.chars().take(180).collect())
+}
+fn readable_label(s: &str) -> Option<String> {
+    if s.len() > 4096 {
+        return None;
+    }
+    let clean: String = s.chars().filter(|c| preview_char(*c)).collect();
+    let leaf = clean
+        .rsplit(['/', '\\', '@', '›'])
+        .find(|s| !s.trim().is_empty())?
+        .trim();
+    if leaf.is_empty() {
+        None
+    } else {
+        Some(leaf.chars().take(64).collect())
+    }
+}
 fn key(s: &str) -> Option<VerifyingKey> {
     let b: [u8; 32] = B64.decode(s).ok()?.try_into().ok()?;
     if B64.encode(b) != s {
@@ -57,6 +144,11 @@ fn verify(pk: &str, bytes: &[u8], sig: &str) -> bool {
         .unwrap_or(false)
 }
 
+// Present null is invalid, rather than silently downgrading to the v1 domain.
+fn preview_flag<'de, D: serde::Deserializer<'de>>(d: D) -> Result<Option<bool>, D::Error> {
+    bool::deserialize(d).map(Some)
+}
+
 #[derive(Clone, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct Grant {
@@ -67,29 +159,45 @@ pub struct Grant {
     pub environment: String,
     pub categories: Vec<String>,
     pub show_pane_name: bool,
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "preview_flag"
+    )]
+    pub show_question_preview: Option<bool>,
     pub expires_at: i64,
     pub signature: String,
     pub pi_signature: String,
 }
 impl Grant {
     pub fn bytes(&self) -> Vec<u8> {
+        let mut fields = vec![
+            json!(self.peer),
+            json!(self.phone),
+            json!(self.device_id),
+            json!(self.token),
+            json!(self.environment),
+            json!(self.categories),
+            json!(self.show_pane_name),
+        ];
+        if let Some(preview) = self.show_question_preview {
+            fields.push(json!(preview));
+        }
+        fields.push(json!(self.expires_at));
         format!(
-            "remote-pi-notify-device-v1\n{}",
-            json!([
-                self.peer,
-                self.phone,
-                self.device_id,
-                self.token,
-                self.environment,
-                self.categories,
-                self.show_pane_name,
-                self.expires_at
-            ])
+            "remote-pi-notify-device-v{}\n{}",
+            if self.show_question_preview.is_some() {
+                2
+            } else {
+                1
+            },
+            json!(fields)
         )
         .into_bytes()
     }
     fn valid(&self, sender: &str, ts: i64) -> bool {
         self.peer == sender
+            && (self.show_question_preview != Some(true) || self.show_pane_name)
             && key(sender).is_some()
             && key(&self.phone).is_some()
             && bounded(&self.device_id, 128)
@@ -120,6 +228,7 @@ pub struct Delivery {
     pub kind: String,
     pub expires_at: i64,
     pub pane_name: Option<String>,
+    pub question: Option<String>,
 }
 impl Delivery {
     pub fn collapse_id(&self) -> String {
@@ -138,6 +247,11 @@ impl Delivery {
             "review_ready" => "Work is ready for review",
             "update_available" => "A TestFlight update is available",
             _ => "An active pane disconnected",
+        };
+        let body = if self.kind == "input_needed" {
+            self.question.as_deref().unwrap_or(body)
+        } else {
+            body
         };
         json!({"aps":{"alert":{"title":self.pane_name.as_ref().map(|n|format!("Remote Pi · {n}")).unwrap_or_else(||"Remote Pi".into()),"body":body},"sound":"default","thread-id":format!("{}:{}",self.peer,self.room),"interruption-level":"active"},"remote_pi":{"v":1,"peer":self.peer,"room":self.room,"event_id":self.event_id,"kind":self.kind}})
     }
@@ -317,10 +431,27 @@ impl Notifications {
             CREATE TABLE IF NOT EXISTS notification_grants(peer TEXT NOT NULL,phone TEXT NOT NULL,device TEXT NOT NULL,expires INTEGER NOT NULL,revoked INTEGER NOT NULL,PRIMARY KEY(peer,phone,device));
             CREATE TABLE IF NOT EXISTS notification_events(peer TEXT NOT NULL,room TEXT NOT NULL,event TEXT NOT NULL,ts INTEGER NOT NULL,PRIMARY KEY(peer,room,event));
             CREATE TABLE IF NOT EXISTS notification_rate(peer TEXT NOT NULL,phone TEXT NOT NULL,device TEXT NOT NULL,kind TEXT NOT NULL,ts INTEGER NOT NULL,PRIMARY KEY(peer,phone,device,kind));")?;
-        let has_priority = db.prepare("PRAGMA table_info(notification_events)")?
+        let has_preview = db
+            .prepare("PRAGMA table_info(notification_devices)")?
             .query_map([], |r| r.get::<_, String>(1))?
-            .collect::<Result<Vec<_>, _>>()?.iter().any(|c| c == "priority");
-        if !has_priority { db.execute("ALTER TABLE notification_events ADD COLUMN priority INTEGER NOT NULL DEFAULT 0", [])?; }
+            .collect::<Result<Vec<_>, _>>()?
+            .iter()
+            .any(|c| c == "show_preview");
+        if !has_preview {
+            db.execute("ALTER TABLE notification_devices ADD COLUMN show_preview INTEGER NOT NULL DEFAULT 0", [])?;
+        }
+        let has_priority = db
+            .prepare("PRAGMA table_info(notification_events)")?
+            .query_map([], |r| r.get::<_, String>(1))?
+            .collect::<Result<Vec<_>, _>>()?
+            .iter()
+            .any(|c| c == "priority");
+        if !has_priority {
+            db.execute(
+                "ALTER TABLE notification_events ADD COLUMN priority INTEGER NOT NULL DEFAULT 0",
+                [],
+            )?;
+        }
         let (high, hi) = mpsc::channel(64);
         let (normal, lo) = mpsc::channel(128);
         let service = Arc::new(Self {
@@ -456,7 +587,7 @@ impl Notifications {
                 )
                 .map_err(|_| "storage_unavailable")?;
                 tx.execute(
-                    "INSERT OR REPLACE INTO notification_devices VALUES(?,?,?,?,?,?,?,?,?)",
+                    "INSERT OR REPLACE INTO notification_devices(peer,phone,device,token,environment,categories,show_name,expires,room,show_preview) VALUES(?,?,?,?,?,?,?,?,?,?)",
                     params![
                         sender,
                         g.phone,
@@ -466,7 +597,8 @@ impl Notifications {
                         serde_json::to_string(&g.categories).map_err(|_| "invalid_grant")?,
                         g.show_pane_name,
                         g.expires_at,
-                        room
+                        room,
+                        g.show_question_preview.unwrap_or(false)
                     ],
                 )
                 .map_err(|_| "storage_unavailable")?;
@@ -590,8 +722,20 @@ impl Notifications {
                     .as_str()
                     .filter(|s| bounded(s, 128))
                     .ok_or("invalid_event")?;
-                let label = f["pane_name"].as_str().filter(|s| bounded(s, 64));
-                self.event_with_label(sender, room, event, kind, label)
+                let label = f["pane_name"].as_str().and_then(readable_label);
+                let question = if kind == "input_needed" {
+                    f["question"].as_str().and_then(sanitize_question)
+                } else {
+                    None
+                };
+                self.event_with_preview(
+                    sender,
+                    room,
+                    event,
+                    kind,
+                    label.as_deref(),
+                    question.as_deref(),
+                )
             }
             "notification_release" => {
                 if !self
@@ -657,6 +801,24 @@ impl Notifications {
         kind: &str,
         label: Option<&str>,
     ) -> Result<(), &'static str> {
+        self.event_with_preview(peer, room, event, kind, label, None)
+    }
+    fn event_with_preview(
+        &self,
+        peer: &str,
+        room: &str,
+        event: &str,
+        kind: &str,
+        label: Option<&str>,
+        question: Option<&str>,
+    ) -> Result<(), &'static str> {
+        // Defense in depth for internal callers too. Never take values for credential_needed.
+        let question = if kind == "input_needed" {
+            question.and_then(sanitize_question)
+        } else {
+            None
+        };
+        let label = label.and_then(readable_label);
         if !self.enabled {
             return Err("apns_disabled");
         }
@@ -723,7 +885,7 @@ impl Notifications {
         if inserted == 0 {
             return Ok(());
         }
-        let mut stmt=s.db.prepare("SELECT phone,device,token,environment,categories,room,show_name FROM notification_devices WHERE peer=? AND expires>?").map_err(|_|"storage_unavailable")?;
+        let mut stmt=s.db.prepare("SELECT phone,device,token,environment,categories,room,show_name,show_preview FROM notification_devices WHERE peer=? AND expires>?").map_err(|_|"storage_unavailable")?;
         let rows = stmt
             .query_map(params![peer, ts], |r| {
                 Ok((
@@ -734,12 +896,21 @@ impl Notifications {
                     r.get::<_, String>(4)?,
                     r.get::<_, String>(5)?,
                     r.get::<_, bool>(6)?,
+                    r.get::<_, bool>(7)?,
                 ))
             })
             .map_err(|_| "storage_unavailable")?;
         for row in rows {
-            let (phone, device_id, token, environment, categories, registered_room, show_name) =
-                row.map_err(|_| "storage_unavailable")?;
+            let (
+                phone,
+                device_id,
+                token,
+                environment,
+                categories,
+                registered_room,
+                show_name,
+                show_preview,
+            ) = row.map_err(|_| "storage_unavailable")?;
             let room = if kind == "update_available" {
                 registered_room.as_str()
             } else {
@@ -776,8 +947,9 @@ impl Notifications {
                 event_id: event.into(),
                 kind: kind.into(),
                 expires_at: ts + 120,
-                pane_name: if show_name {
-                    label.map(String::from)
+                pane_name: if show_name { label.clone() } else { None },
+                question: if show_name && show_preview {
+                    question.clone()
                 } else {
                     None
                 },
@@ -811,7 +983,7 @@ impl Notifications {
         Ok(())
     }
     fn current(&self, d: &Delivery) -> bool {
-        self.state.lock().ok().is_some_and(|s|s.db.query_row("SELECT 1 FROM notification_devices WHERE peer=? AND phone=? AND device=? AND token=? AND environment=? AND expires>? AND categories LIKE ? AND (? OR show_name=1)",params![d.peer,d.phone,d.device_id,d.token,d.environment,now(),format!("%\"{}\"%",d.kind),d.pane_name.is_none()],|_|Ok(())).is_ok() && !s.presence.get(&(d.peer.clone(),d.phone.clone(),d.device_id.clone())).is_some_and(|(r,t)|r.as_deref()==Some(&d.room)&&now()-*t<120))
+        self.state.lock().ok().is_some_and(|s|s.db.query_row("SELECT 1 FROM notification_devices WHERE peer=? AND phone=? AND device=? AND token=? AND environment=? AND expires>? AND categories LIKE ? AND (? OR show_name=1) AND (? OR (show_name=1 AND show_preview=1))",params![d.peer,d.phone,d.device_id,d.token,d.environment,now(),format!("%\"{}\"%",d.kind),d.pane_name.is_none(),d.question.is_none()],|_|Ok(())).is_ok() && !s.presence.get(&(d.peer.clone(),d.phone.clone(),d.device_id.clone())).is_some_and(|(r,t)|r.as_deref()==Some(&d.room)&&now()-*t<120))
     }
     async fn worker(
         weak: std::sync::Weak<Self>,

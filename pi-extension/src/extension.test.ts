@@ -1257,6 +1257,49 @@ async function _pairForTestWithCtx(
   await vi.waitFor(() => expect(_getState()).toBe("paired"), { timeout: 2000 });
 }
 
+describe("private artifact room routing", () => {
+  test("requires the exact attached durable owner, replies privately and never prompts the agent", async () => {
+    await captureHandler("remote-pi stop")("",makeMockCtx());
+    _knownPeers.length=0;_tokenStatus="ok";
+    const dir=mkdtempSync(join(tmpdir(),"rp-artifact-route-"));
+    const path=join(dir,"route.pdf"),url=new URL(`file://${path}`).href;
+    const pdf=Buffer.from("%PDF-1.4\nsynthetic route fixture\n%%EOF\n");writeFileSync(path,pdf);
+    const handlers=new Map<string,(event:unknown,ctx?:unknown)=>unknown>();
+    const sendUserMessage=vi.fn(),sendMessage=vi.fn();
+    const {pi}=makeMockPi();
+    Object.assign(pi,{on:(name:string,handler:(event:unknown,ctx?:unknown)=>unknown)=>handlers.set(name,handler),sendUserMessage,sendMessage});
+    (extension as ExtensionFactory)(pi);
+    const ctx={...makeMockCtx(dir),sessionManager:{getSessionId:()=>"synthetic-session",getBranch:()=>[{type:"message",message:{role:"assistant",content:[{type:"text",text:`[Preview](${url})`}]}}]}};
+    _setAutoInitedForTest(true);
+    try {
+      handlers.get("session_start")!({type:"session_start"},ctx);
+      await _connectForTest(ctx);const relay=relayRef.current!;
+      relay.emit("message",makeInnerLine(OWNER_STANDARD_FIXTURE,{type:"pair_request",id:"artifact-pair",token:"test-token",device_name:"Synthetic phone"}));
+      await vi.waitFor(()=>expect(_hasActivePeerForTest(OWNER_STANDARD_FIXTURE)).toBe(true));
+      const start=relay.send.mock.calls.length;sendUserMessage.mockClear();sendMessage.mockClear();
+      relay.emit("message",makeInnerLine(OWNER_STANDARD_FIXTURE,{type:"artifact_open",id:"artifact-open",url,peer:"not-authority"}));
+      const replies=()=>relay.send.mock.calls.slice(start).map(([line])=>decodeSentCt(line as string));
+      await vi.waitFor(()=>expect(replies().some(r=>r.inner.type==="artifact_opened")).toBe(true));
+      const opened=replies().find(r=>r.inner.type==="artifact_opened")!;
+      expect(opened.peer).toBe(OWNER_STANDARD_FIXTURE);expect(opened.inner.sha256).toBe(createHash("sha256").update(pdf).digest("hex"));
+      relay.emit("message",makeInnerLine(OWNER_STANDARD_FIXTURE,{type:"artifact_chunk",id:"artifact-read",transfer_id:opened.inner.transfer_id,offset:0}));
+      await vi.waitFor(()=>expect(replies().some(r=>r.inner.type==="artifact_chunk")).toBe(true));
+      const chunk=replies().find(r=>r.inner.type==="artifact_chunk")!;
+      expect(Buffer.from(chunk.inner.data as string,"base64")).toEqual(pdf);
+      handlers.get("session_tree")!({type:"session_tree"},ctx);
+      relay.emit("message",makeInnerLine(OWNER_STANDARD_FIXTURE,{type:"artifact_chunk",id:"stale-read",transfer_id:opened.inner.transfer_id,offset:0}));
+      await vi.waitFor(()=>expect(replies().some(r=>r.inner.type==="artifact_error"&&r.inner.in_reply_to==="stale-read")).toBe(true));
+      const foreignSend=vi.fn();
+      _routeClientMessageFrom({send:foreignSend} as unknown as Parameters<typeof _routeClientMessageFrom>[0],{type:"artifact_open",id:"foreign",url},ctx);
+      expect(foreignSend).toHaveBeenCalledWith(expect.objectContaining({type:"artifact_error"}));
+      expect(sendUserMessage).not.toHaveBeenCalled();expect(sendMessage).not.toHaveBeenCalled();
+      expect(replies().filter(r=>r.inner.type.startsWith("artifact_")).every(r=>r.peer===OWNER_STANDARD_FIXTURE)).toBe(true);
+    } finally {
+      await captureHandler("remote-pi stop")("",ctx);_resetAutoInitedForTest();rmSync(dir,{recursive:true,force:true});
+    }
+  });
+});
+
 // ── Multi-channel (plan/24 W2D) ──────────────────────────────────────────────
 //
 // These tests pin down the new contract: N owners can be connected at the

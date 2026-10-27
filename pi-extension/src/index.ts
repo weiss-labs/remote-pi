@@ -112,7 +112,13 @@ import {
 import { runSetupWizard, type WizardUI } from "./session/setup_wizard.js";
 import { updateFooter, type FooterState } from "./ui/footer.js";
 import { VoiceBridge, type VoiceClientMessage } from "./voice/bridge.js";
-import { NotificationBridge, notificationControl } from "./notifications.js";
+import { NotificationBridge, notificationControl, questionForPrompt } from "./notifications.js";
+import { ArtifactBridge } from "./artifacts.js";
+
+const _artifacts = new ArtifactBridge({
+  authorize: async (phone, sender) => _activePeers.get(phone) === sender && (await _findKnownPeer(phone)) !== null && _activePeers.get(phone) === sender,
+  session: () => (_lastEventCtx as ExtensionContext | null)?.sessionManager ?? null,
+});
 import { NativeCommands } from "./actions/commands.js";
 import { CREDENTIAL_INSTRUCTIONS, isOpAuthorizationTimeout } from "./actions/credential_blocker.js";
 let _lastCredentialNotice: number | null = null;
@@ -135,7 +141,9 @@ const _notifications = new NotificationBridge({
   paired: async (phone) => (await _findKnownPeer(phone)) !== null,
 });
 function _broadcastWithNotifications(msg: ServerMessage): void {
-  if (msg.type === "extension_ui_request" && msg.method !== "notify") _notifications.promptOpened(msg.id);
+  if (msg.type === "extension_ui_request" && msg.method !== "notify") {
+    _notifications.promptOpened(msg.id, questionForPrompt(msg));
+  }
   _broadcastToActive(msg);
 }
 
@@ -1287,6 +1295,7 @@ function _attachPeerChannel(appPeerId: string, channel: PlainPeerChannel): void 
 /** Detaches a single owner's channel + removes it from the map. Used by
  *  `_onPeerDisconnect`, `_cmdRevoke`, and the SelfRevoke callback. */
 function _detachPeerChannel(appPeerId: string): void {
+  _artifacts.detach(appPeerId);
   const ch = _activePeers.get(appPeerId);
   if (!ch) return;
   try { ch.detach(); } catch { /* best-effort */ }
@@ -1470,6 +1479,7 @@ async function _findKnownPeer(appPeerIdStd: string): Promise<PeerRecord | null> 
  * by omitting the reason; app falls back to ping miss naturally.
  */
 function _goIdle(byeReason?: import("./protocol/types.js").ByeReason): void {
+  _artifacts.reset();
   _notifications.pauseTransport();
   _rootLifecycleGeneration += 1;
   _relayLifecycleGeneration += 1;
@@ -1546,6 +1556,7 @@ function _onRelayClose(closedRelay: RelayClient): void {
   if (_relay !== closedRelay) return; // delayed close from a replaced Relay
   if (_state === "idle") return;  // already torn down (e.g. /remote-pi stop)
 
+  _artifacts.reset();
   _relayLifecycleGeneration += 1;
   _stopAutoListener?.();
   _stopAutoListener = null;
@@ -2455,7 +2466,9 @@ const extension: ExtensionFactory = (pi: ExtensionAPI): void => {
   // "stale after session replacement" crash when the app taps Compact after a
   // New session. Fires on startup/new/fork/reload/resume; the ctx is always
   // bound to the current session.
+  pi.on("session_tree", () => { _artifacts.reset(); });
   pi.on("session_start", (_event, ctx) => {
+    _artifacts.reset();
     _lastEventCtx = ctx;
     _commands?.resume();
     // session_shutdown disposes per-session pi-ask subscriptions. A host that
@@ -2552,6 +2565,7 @@ const extension: ExtensionFactory = (pi: ExtensionAPI): void => {
   // best-effort: every step is guarded so a partially-initialised instance
   // (e.g. shutdown lands mid-`_cmdRoot`) tears down without throwing.
   pi.on("session_shutdown", async () => {
+    _artifacts.reset();
     _commands?.stop();
     _notifications.stop();
     // Revoke async authority synchronously, before any teardown await. `_disposed`
@@ -4493,6 +4507,12 @@ export function _routeClientMessageFrom(
   msg: ClientMessage,
   ctx: Pick<ExtensionContext, "abort">,
 ): void {
+  if (msg.type === "artifact_open" || msg.type === "artifact_chunk" || msg.type === "artifact_close") {
+    const phone = [..._activePeers].find(([, channel]) => channel === sender)?.[0];
+    if (!phone) { sender.send({ type: "artifact_error", in_reply_to: typeof msg.id === "string" ? msg.id.slice(0,128) : "", code: "unavailable", message: "An active paired pane is required." }); return; }
+    void _artifacts.handle(phone, sender, msg).then(reply => { if (reply && _activePeers.get(phone) === sender) sender.send(reply); }).catch(() => {});
+    return;
+  }
   if (msg.type === "notify_register" || msg.type === "notify_unregister" || msg.type === "notify_presence") {
     const phone = [..._activePeers].find(([, channel]) => channel === sender)?.[0];
     if (!phone) { sender.send({ type: "notification_registration", in_reply_to: msg.id, ok: false, error: "not_paired" }); return; }

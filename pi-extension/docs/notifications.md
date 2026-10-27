@@ -4,17 +4,25 @@
 
 Relay key authentication proves possession of a key, not pairing. A registration needs BOTH the paired phone's Ed25519 signature and the target Mac's countersignature over the same domain-separated grant. The Pi only signs for the sender of an attached channel that still exists in durable pairing storage. The relay requires the authenticated connection key to equal that grant's target Mac. Body-supplied target identities never select authority. Neither mesh co-membership nor arbitrary relay key possession grants notification access.
 
-Grant bytes are UTF-8 of `remote-pi-notify-device-v1\n` followed by compact JSON of this ordered array, with no spaces:
+When `show_question_preview` is absent, grant bytes are unchanged UTF-8 of `remote-pi-notify-device-v1\n` followed by compact JSON of this ordered array, with no spaces:
 
 ```text
 [mac_public_key,phone_public_key,device_id,token,environment,categories,show_pane_name,expires_at]
 ```
 
+Presence of the optional boolean `show_question_preview`, including `false`, selects the domain `remote-pi-notify-device-v2\n` and this exact ordered array:
+
+```text
+[mac_public_key,phone_public_key,device_id,token,environment,categories,show_pane_name,show_question_preview,expires_at]
+```
+
+`null` and non-boolean values are rejected. Enabling question previews requires `show_pane_name:true`. Omitted flags never imply preview consent, and a new v1 registration resets any previous preview opt-in to false. SQLite migrates old devices with `show_preview INTEGER NOT NULL DEFAULT 0`; only consent is persisted, never question content.
+
 Keys and signatures use padded standard base64. Categories retain their wire order. Expiry is an integer Unix timestamp in seconds, greater than now and no more than 30 days ahead. Use a 29-day default and monotonically increasing expiry per Mac/device for every preference/token change or re-enable, including same-second changes. The relay rejects older grants and revoked equal-expiry grants. A phone must renew before expiry while connected to its paired Mac.
 
 Registrations, category preferences, expiry and revocation tombstones survive relay restart in a separate SQLite DB. The DB and its backup must be treated as secret because APNs tokens are present. It contains no message, tool argument or agent-output bodies. Generic event deduplication/rate metadata is bounded and pruned. Pending notifications are memory-only, not a message archive. A restart drops pending pushes rather than delivering old work. No tokens, signatures, key contents or push payloads are logged.
 
-Lock-screen bodies are fixed generic category messages. Pane names are included only when the signed device preference `show_pane_name` is true, and only when a producer supplies a bounded label. Queued sends recheck current registration, token, environment, preferences, foreground state and expiry. Revocation cannot recall an APNs request already in flight or a notification already delivered.
+Lock-screen bodies remain the same fixed generic category messages unless both signed name and question preferences permit a supplied sanitized `input_needed` question. Pane names are included only when the signed device preference `show_pane_name` is true, and only when a producer supplies a bounded readable leaf label. `credential_needed` always has a generic body. Question text is at most 180 Unicode characters, stripped of control/format characters and refused for credential keywords, common key/token prefixes, long opaque strings or numeric codes. This refusal is best effort, not perfect sensitive-data detection. It cannot recall a push already in flight. Question values exist only in bounded in-memory queues. Queued sends recheck current registration, token, environment, preferences, foreground state and expiry. Revocation cannot recall an APNs request already in flight or a notification already delivered.
 
 ## Paired-room wire contract
 
@@ -24,7 +32,8 @@ The phone sends ordinary inner room messages to the paired Pi, never a direct re
 { type: 'notify_register', id, device_id, token,
   environment: 'production' | 'sandbox',
   categories: ['input_needed', 'credential_needed', 'task_finished', 'task_failed'],
-  show_pane_name: false, expires_at, signature: phoneSignatureBase64 }
+  show_pane_name: false, show_question_preview: false,
+  expires_at, signature: phoneSignatureBase64 }
 { type: 'notify_unregister', id, device_id }
 { type: 'notify_presence', id, device_id, foreground: true, room }
 ```
@@ -50,7 +59,7 @@ The eight-category allowlist is input_needed, credential_needed, task_finished, 
 
 Observed events are agent run start/end, terminal assistant/provider `stopReason:error`, and interactive prompts actually forwarded by the existing extension UI bridge (not notify/dismissal frames). Prompt ids are tracked until actual pi-ask completion, including answers on another owner or the desktop; an unaccepted response does not clear waiting. Resolved questions no longer suppress subsequent task completion/failure in the same run. A failed, aborted or still-input-blocked run does not also announce success; a terminal error cannot be hidden by an outstanding prompt. `agent_end` is a low-level run boundary, not a guarantee that no queued continuation exists. These hooks do not claim to classify arbitrary questions, test output or every native extension dialog.
 
-The explicit `notify_user` agent tool accepts only input_needed, credential_needed, task_finished, task_failed, tests_failed and review_ready. Use input_needed when waiting for approval or an answer, credential_needed for a real credential/sign-in blocker, review_ready for finished work awaiting review, and tests_failed only after an actual failed test/build. It takes no free-form content. credential_needed is explicit only: this transports no secret, fetches nothing from 1Password, and does not claim to detect arbitrary op, Touch ID or sign-in prompts. There is no per-tool-invocation notification or regex guess from arbitrary stdout. Release/update and connection_lost are not agent tool choices.
+The explicit `notify_user` agent tool accepts only input_needed, credential_needed, task_finished, task_failed, tests_failed and review_ready. Use input_needed when waiting for approval or an answer, credential_needed for a real credential/sign-in blocker, review_ready for finished work awaiting review, and tests_failed only after an actual failed test/build. An optional `question` field is accepted only for `input_needed`; other categories reject it. The question must be the actual short question, never tool output, an approval body, credentials or an inferred conversation summary. Structured pi-ask notifications use the actual `AskQuestionWire.prompt` (or structured flow title), not the option preview/answer fields. Plain credential-capable input/editor UI stays generic. credential_needed is explicit only: this transports no secret, fetches nothing from 1Password, and does not claim to detect arbitrary op, Touch ID or sign-in prompts. There is no per-tool-invocation notification or regex guess from arbitrary stdout. Release/update and connection_lost are not agent tool choices.
 
 Connection loss comes from a relay-observed disconnect of a connection explicitly marked active by agent_start or a confirmed remote Pi Voice call. Voice state comes from the bridge session plus Pi Voice isActive(), refreshed on voice RPCs/heartbeats with a 90-second activity lease. Normal agent_end, explicit stop and orderly session shutdown clear activity. A stale duplicate connection does not alert while another active connection remains for that room. An idle disconnect does not alert. A relay outage cannot send its own push. An old voice activity lease expires rather than keeping a stopped call active indefinitely.
 
@@ -86,6 +95,6 @@ This connects using readExistingEd25519Keypair, which neither creates nor migrat
 
 ## Verification and rollout limits
 
-Unit tests use fake APNs only. Rust integration tests exercise WebSocket auth, grant rejection and disabled replies. Tests cover bilateral binding, expiry, restart durability, replay after revocation, privacy, foreground suppression, category preferences, retries/invalid tokens, scoped releases and active-only disconnect. TypeScript tests cover phone signature binding, disabled/old relay handling, bounded pending requests, lifecycle and explicit events.
+Unit tests use fake APNs only. Preview tests cover exact v1/v2 bytes, flag tampering/downgrade/null rejection, name-consent dependency, old-client generic bodies, secret-pattern refusal, actual structured question fields, SQLite migration/reopen, old-registration reset, other-category suppression and queued privacy rechecks. Rust integration tests exercise WebSocket auth, grant rejection and disabled replies. Tests cover bilateral binding, expiry, restart durability, replay after revocation, privacy, foreground suppression, category preferences, retries/invalid tokens, scoped releases and active-only disconnect. TypeScript tests cover phone signature binding, disabled/old relay handling, bounded pending requests, lifecycle and explicit events.
 
 No live notifications, credentials, deployment, reload or restart were performed by this worker. Main still owns signed-device integration review, APNs credential setup, private persistent storage, ship-script integration and a real TestFlight phone test for every category, foreground suppression, notification taps, token rotation, revocation, expiry and Focus/permission denial. Real-device evidence is required before calling this delivered.

@@ -30,6 +30,7 @@ fn grant() -> (SigningKey, SigningKey, Grant) {
         environment: "production".into(),
         categories: CATEGORIES.iter().map(|s| s.to_string()).collect(),
         show_pane_name: false,
+        show_question_preview: None,
         expires_at: now() + 86400,
         signature: String::new(),
         pi_signature: String::new(),
@@ -519,5 +520,149 @@ fn apns_error_mapping_never_retries_permanent_rejections() {
     }
     for s in [400, 401, 403, 404] {
         assert_eq!(Apns::classify(s, ""), Outcome::Reject);
+    }
+}
+
+
+#[test]
+fn grant_domains_bind_preview_presence_and_reject_null() {
+    let (pi, phone, mut g) = grant();
+    let v1 = format!("remote-pi-notify-device-v1\n{}", json!([g.peer,g.phone,g.device_id,g.token,g.environment,g.categories,false,g.expires_at]));
+    assert_eq!(g.bytes(), v1.as_bytes());
+    for preview in [false, true] {
+        g.show_pane_name = true;
+        g.show_question_preview = Some(preview);
+        let expected = format!("remote-pi-notify-device-v2\n{}", json!([g.peer,g.phone,g.device_id,g.token,g.environment,g.categories,true,preview,g.expires_at]));
+        assert_eq!(g.bytes(), expected.as_bytes());
+        let signed = sign(&pi, &phone, g.clone());
+        assert!(signed.valid(&g.peer, now()));
+        let mut tampered = signed.clone();
+        tampered.show_question_preview = Some(!preview);
+        assert!(!tampered.valid(&g.peer, now()));
+        tampered.show_question_preview = None;
+        assert!(!tampered.valid(&g.peer, now()));
+    }
+    let mut raw = json!(g);
+    raw["show_question_preview"] = Value::Null;
+    assert!(serde_json::from_value::<Grant>(raw).is_err());
+    g.show_pane_name = false;
+    assert!(!sign(&pi, &phone, g.clone()).valid(&g.peer, now()));
+}
+
+#[test]
+fn preview_sanitizer_is_bounded_and_refuses_secret_patterns() {
+    for question in ["password is synthetic", "pass\u{200b}word abc", "API_KEY=synthetic", "token: synthetic", "OTP 123456", "-----BEGIN PRIVATE KEY-----", "sk-synthetic-only", "ghp_syntheticonly", "Bearer abc", "abcdefghijklmnopqrstuvwxyz", "sign in here", "use 9876"] {
+        assert!(sanitize_question(question).is_none(), "unsafe synthetic fixture");
+    }
+    assert_eq!(sanitize_question("  Which\0 file?\u{202e}  ").as_deref(), Some("Which file?"));
+    assert_eq!(sanitize_question(&"word ".repeat(80)).unwrap().chars().count(), 180);
+    assert_eq!(readable_label("/Users/test/project@Workspace›Chosen pane").as_deref(), Some("Chosen pane"));
+}
+
+#[tokio::test]
+async fn preview_consent_is_opt_in_rechecked_and_not_persisted_as_content() {
+    let f = Arc::new(Fake::default());
+    let n = service(f.clone());
+    let (pi, phone, g) = grant();
+    let mut g = sign(&pi, &phone, g);
+    assert_eq!(register(&n, &g)["ok"], true);
+    let question = "Which report should I use?";
+    n.event_with_preview(&g.peer, "room-one", "old-client", "input_needed", Some("Pane"), Some(question)).unwrap();
+    wait(&f, 1).await;
+    let old = f.delivered.lock().unwrap()[0].clone();
+    assert!(old.question.is_none());
+    assert_eq!(old.payload()["aps"]["alert"]["body"], "A pane needs your input");
+    g.show_pane_name = true;
+    g.show_question_preview = Some(true);
+    g.expires_at += 1;
+    g = sign(&pi, &phone, g);
+    assert_eq!(register(&n, &g)["ok"], true);
+    // Independent rooms avoid rate-limit collisions in this synthetic fixture.
+    n.control(&g.peer,"room-two",&json!({"type":"notification_event","kind":"input_needed","event_id":"preview","pane_name":"/private/test/Readable pane","question":question}));
+    wait(&f, 2).await;
+    let visible = f.delivered.lock().unwrap()[1].clone();
+    assert_eq!(visible.payload()["aps"]["alert"]["title"], "Remote Pi · Readable pane");
+    assert_eq!(visible.payload()["aps"]["alert"]["body"], question);
+    assert!(n.current(&visible));
+    for kind in ["credential_needed", "review_ready", "tests_failed", "task_failed", "task_finished"] {
+        n.event_with_preview(&g.peer, "other-room", kind, kind, Some("Pane"), Some(question)).unwrap();
+    }
+    wait(&f, 7).await;
+    assert!(f.delivered.lock().unwrap().iter().filter(|d|d.kind != "input_needed").all(|d|d.question.is_none()));
+    g.show_question_preview = Some(false);
+    g.expires_at += 1;
+    g = sign(&pi, &phone, g);
+    assert_eq!(register(&n, &g)["ok"], true);
+    assert!(!n.current(&visible)); // queued retries must stop after opt-out
+    g.show_question_preview = Some(true);
+    g.expires_at += 1;
+    g = sign(&pi, &phone, g);
+    assert_eq!(register(&n, &g)["ok"], true);
+    g.show_question_preview = None; // a renewed old client resets preview false
+    g.expires_at += 1;
+    g = sign(&pi, &phone, g);
+    assert_eq!(register(&n, &g)["ok"], true);
+    assert!(!n.current(&visible));
+    let s = n.state.lock().unwrap();
+    let preview: bool = s.db.query_row("SELECT show_preview FROM notification_devices",[],|r|r.get(0)).unwrap();
+    assert!(!preview);
+    for table in ["notification_devices","notification_events","notification_grants","notification_rate"] {
+        let mut stmt = s.db.prepare(&format!("SELECT * FROM {table}")).unwrap();
+        let count = stmt.column_count();
+        let rows = stmt.query_map([],|r| (0..count).map(|i|r.get::<_,rusqlite::types::Value>(i)).collect::<Result<Vec<_>,_>>()).unwrap();
+        for row in rows { assert!(!format!("{:?}", row.unwrap()).contains(question)); }
+    }
+}
+
+#[tokio::test]
+async fn queued_preview_is_dropped_after_opt_out_before_send() {
+    #[derive(Default)]
+    struct Gated {
+        entered: tokio::sync::Notify,
+        release: tokio::sync::Notify,
+        calls: std::sync::atomic::AtomicUsize,
+    }
+    impl PushTransport for Gated {
+        fn send<'a>(&'a self, _d: &'a Delivery) -> Pin<Box<dyn Future<Output = Outcome> + Send + 'a>> {
+            Box::pin(async move {
+                self.calls.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+                self.entered.notify_one();
+                self.release.notified().await;
+                Outcome::Sent
+            })
+        }
+    }
+    let f = Arc::new(Gated::default());
+    let n = Notifications::open(":memory:", Some(f.clone()), Default::default()).unwrap();
+    let (pi, phone, mut g) = grant();
+    g.show_pane_name = true;
+    g.show_question_preview = Some(true);
+    g = sign(&pi, &phone, g);
+    assert_eq!(register(&n, &g)["ok"], true);
+    n.event_with_preview(&g.peer,"first-room","first","input_needed",Some("Pane"),Some("Which file?")).unwrap();
+    tokio::time::timeout(Duration::from_secs(2),f.entered.notified()).await.unwrap();
+    n.event_with_preview(&g.peer,"queued-room","second","input_needed",Some("Pane"),Some("Which report?")).unwrap();
+    g.show_question_preview = Some(false);
+    g.expires_at += 1;
+    g = sign(&pi, &phone, g);
+    assert_eq!(register(&n, &g)["ok"], true);
+    f.release.notify_one();
+    tokio::time::sleep(Duration::from_millis(50)).await;
+    assert_eq!(f.calls.load(std::sync::atomic::Ordering::SeqCst),1);
+}
+
+#[tokio::test]
+async fn old_sqlite_devices_migrate_with_preview_disabled() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("notifications.db");
+    {
+        let db = Connection::open(&path).unwrap();
+        db.execute_batch("CREATE TABLE notification_devices(peer TEXT NOT NULL,phone TEXT NOT NULL,device TEXT NOT NULL,token TEXT NOT NULL,environment TEXT NOT NULL,categories TEXT NOT NULL,show_name INTEGER NOT NULL,expires INTEGER NOT NULL,room TEXT NOT NULL,PRIMARY KEY(peer,phone,device));
+        INSERT INTO notification_devices VALUES('synthetic-peer','synthetic-phone','d','synthetic-token','sandbox','[]',1,9999999999,'room');").unwrap();
+    }
+    for _ in 0..2 {
+        let n = Notifications::open(path.to_str().unwrap(), None, Default::default()).unwrap();
+        let s = n.state.lock().unwrap();
+        assert!(!s.db.query_row("SELECT show_preview FROM notification_devices",[],|r|r.get::<_,bool>(0)).unwrap());
     }
 }

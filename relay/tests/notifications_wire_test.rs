@@ -84,6 +84,7 @@ async fn ws_authenticated_key_does_not_authorize_arbitrary_target_grant() {
         environment: "production".into(),
         categories: vec!["input_needed".into()],
         show_pane_name: false,
+        show_question_preview: None,
         expires_at: now() + 86400,
         signature: String::new(),
         pi_signature: String::new(),

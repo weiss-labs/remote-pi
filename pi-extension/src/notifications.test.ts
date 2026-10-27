@@ -1,6 +1,6 @@
 import { EventEmitter } from "node:events";
 import { describe, it, expect, vi } from "vitest";
-import { NotificationBridge, grantBytes, notificationControl, type NotificationClientMessage, notificationCategories } from "./notifications.js";
+import { NotificationBridge, grantBytes, notificationControl, type NotificationClientMessage, notificationCategories, sanitizeQuestion, readablePaneName, questionForPrompt } from "./notifications.js";
 import { generateEd25519Keypair, ed25519Sign, ed25519Verify } from "./pairing/crypto.js";
 import type { RelayClient } from "./transport/relay_client.js";
 
@@ -28,6 +28,46 @@ function setup() {
 }
 const settle = async () => { await new Promise(resolve => setTimeout(resolve, 0)); };
 
+describe("private input previews", () => {
+  it.each([false,true])("uses the exact v2 array for present preview=%s and rejects tampering",async preview=>{
+    const s=setup();s.msg.show_pane_name=true;s.msg.show_question_preview=preview;
+    s.msg.signature=Buffer.from(ed25519Sign(s.phone.secretKey,grantBytes(s.peer,s.phoneId,s.msg))).toString("base64");
+    expect(Buffer.from(grantBytes(s.peer,s.phoneId,s.msg)).toString()).toBe("remote-pi-notify-device-v2\n"+JSON.stringify([s.peer,s.phoneId,s.msg.device_id,s.msg.token,s.msg.environment,s.msg.categories,true,preview,s.msg.expires_at]));
+    expect((await s.bridge.handle(s.phoneId,s.msg)).ok).toBe(true);
+    expect((s.relay.frames[0].grant as Record<string,unknown>).show_question_preview).toBe(preview);
+    expect((await s.bridge.handle(s.phoneId,{...s.msg,show_question_preview:!preview})).error).toBe("invalid_grant");
+    const {show_question_preview:_,...downgraded}=s.msg;expect((await s.bridge.handle(s.phoneId,downgraded)).error).toBe("invalid_grant");
+  });
+  it("requires pane-name consent and refuses malformed flag presence",async()=>{
+    const s=setup();
+    for(const value of [true,null,"true",undefined]){
+      const msg={...s.msg,show_question_preview:value} as typeof s.msg;
+      msg.signature=Buffer.from(ed25519Sign(s.phone.secretKey,grantBytes(s.peer,s.phoneId,msg))).toString("base64");
+      expect((await s.bridge.handle(s.phoneId,msg)).error).toBe("invalid_grant");
+    }
+  });
+  it.each(["password is synthetic","pass\u200bword abc","API_KEY=synthetic","token: synthetic","OTP 123456","-----BEGIN PRIVATE KEY-----","sk-synthetic-only","ghp_syntheticonly","Bearer abc","please use abcdefghijklmnopqrstuvwxyz","sign in here","Please use 9876"])("refuses sensitive pattern %s",question=>expect(sanitizeQuestion(question)).toBeUndefined());
+  it("strips controls, bounds text, uses leaf pane names and takes actual AskQuestionWire.prompt",()=>{
+    expect(sanitizeQuestion("  Which\u0000 file?\u202e  ")).toBe("Which file?");
+    expect(sanitizeQuestion("word ".repeat(80))?.length).toBe(180);
+    expect(readablePaneName("/Users/test/project@Workspace›Selected pane")).toBe("Selected pane");
+    expect(questionForPrompt({type:"extension_ui_request",id:"ask",method:"select",title:"Flow title",options:["not the question"],ask:{flow_id:"flow",tool_call_id:null,source:"tool",title:"Workflow",questions:[{id:"q",label:"Label",prompt:"Which report should I use?",type:"single",required:true,options:[]}]}})).toBe("Which report should I use?");
+    expect(questionForPrompt({type:"extension_ui_request",id:"input",method:"input",title:"Unknown input",placeholder:"NEVER SHARE"})).toBeUndefined();
+  });
+  it("forwards only a sanitized input question and drops question values for every other category",async()=>{
+    const s=setup();await s.bridge.emit("input_needed",undefined,false,"Which file should I open?");
+    expect(s.relay.frames[0].question).toBe("Which file should I open?");
+    for(const kind of ["credential_needed","review_ready","task_finished","task_failed","tests_failed"] as const) await s.bridge.emit(kind,undefined,false,"DO NOT SHARE");
+    expect(s.relay.frames.slice(1).every(f=>!("question" in f))).toBe(true);
+    const sensitive=setup();sensitive.bridge.promptOpened("ask","password is synthetic");await settle();expect(sensitive.relay.frames[0].question).toBeUndefined();
+  });
+  it("notify_user(question) is explicit input_needed only, with safe errors",async()=>{
+    const s=setup();let execute:((id:string,args:{category:string;question?:string})=>Promise<unknown>)|undefined;
+    s.bridge.registerTool({registerCommand:()=>{},registerTool:(t:{execute:typeof execute})=>{execute=t.execute;}} as unknown as import("@earendil-works/pi-coding-agent").ExtensionAPI);
+    await execute!("a",{category:"input_needed",question:"Which direction should I take?"});expect(s.relay.frames[0].question).toBe("Which direction should I take?");
+    await expect(execute!("b",{category:"credential_needed",question:"synthetic-sensitive"})).rejects.toThrow("only permitted for input_needed");expect(s.relay.frames).toHaveLength(1);
+  });
+});
 describe("notification pairing grants", () => {
   it("derives authority from paired phone, forwards bilateral signatures and original request id", async () => {
     const s=setup(); const reply=await s.bridge.handle(s.phoneId,s.msg);
