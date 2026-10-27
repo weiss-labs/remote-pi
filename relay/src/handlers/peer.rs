@@ -56,9 +56,17 @@ async fn handle_peer(socket: WebSocket, peer_addr: SocketAddr, state: AppState) 
     };
 
     // ── 2. Send challenge ─────────────────────────────────────────────────
+    let control_only = serde_json::from_str::<serde_json::Value>(&hello_text)
+        .ok()
+        .is_some_and(|h| h["control_only"] == true);
     let (nonce, nonce_b64) = gen_nonce();
+    // Advertise support before auth so a control client fails closed on an
+    // old relay rather than accidentally creating a phantom room.
+    let challenge = if control_only {
+        serde_json::json!({"type":"challenge", "nonce":nonce_b64,"control_only":true}).to_string()
+    } else { challenge_line(&nonce_b64) };
     if sink
-        .send(Message::Text(challenge_line(&nonce_b64)))
+        .send(Message::Text(challenge))
         .await
         .is_err()
     {
@@ -83,9 +91,6 @@ async fn handle_peer(socket: WebSocket, peer_addr: SocketAddr, state: AppState) 
     // One-shot notification admin controls use the same Ed25519 handshake,
     // but never register a routable room or publish presence. Otherwise each
     // release/revoke CLI invocation leaves an offline phantom pane on phones.
-    let control_only = serde_json::from_str::<serde_json::Value>(&hello_text)
-        .ok()
-        .is_some_and(|h| h["control_only"] == true);
     if control_only {
         for _ in 0..20 {
             let item = time::timeout(Duration::from_secs(30), stream.next()).await;

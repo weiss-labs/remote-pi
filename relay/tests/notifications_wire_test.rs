@@ -23,6 +23,7 @@ async fn notification_cli_does_not_create_a_room() {
         .unwrap();
     let challenge: Value =
         serde_json::from_str(control.next().await.unwrap().unwrap().to_text().unwrap()).unwrap();
+    assert_eq!(challenge["control_only"], true);
     let nonce = B64.decode(challenge["nonce"].as_str().unwrap()).unwrap();
     control
         .send(Message::text(
