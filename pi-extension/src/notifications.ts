@@ -4,7 +4,7 @@ import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { ed25519Sign, ed25519Verify, type Ed25519Keypair } from "./pairing/crypto.js";
 import type { RelayClient } from "./transport/relay_client.js";
 
-export const notificationCategories = ["input_needed", "task_finished", "task_failed", "tests_failed", "review_ready", "update_available", "connection_lost"] as const;
+export const notificationCategories = ["input_needed", "credential_needed", "task_finished", "task_failed", "tests_failed", "review_ready", "update_available", "connection_lost"] as const;
 export type NotificationCategory = typeof notificationCategories[number];
 export type AgentNotificationCategory = Exclude<NotificationCategory, "update_available" | "connection_lost">;
 export type NotificationClientMessage =
@@ -69,7 +69,7 @@ export class NotificationBridge {
       const peer = Buffer.from(identity.publicKey).toString("base64");
       const now = Math.floor(Date.now() / 1000);
       if (!/^[a-fA-F0-9]{64,200}$/.test(msg.token) || !["sandbox", "production"].includes(msg.environment) ||
-          !Array.isArray(msg.categories) || msg.categories.length > 7 || !msg.categories.every(c => notificationCategories.includes(c)) ||
+          !Array.isArray(msg.categories) || msg.categories.length > notificationCategories.length || !msg.categories.every(c => notificationCategories.includes(c)) ||
           new Set(msg.categories).size !== msg.categories.length || typeof msg.show_pane_name !== "boolean" ||
           !Number.isSafeInteger(msg.expires_at) || msg.expires_at <= now || msg.expires_at > now + 30 * 86400 || typeof msg.signature !== "string") return fail("invalid_grant");
       const bytes = grantBytes(peer, phone, msg);
@@ -100,7 +100,7 @@ export class NotificationBridge {
   }
   /** No arbitrary text, prompts, stdout, tool arguments, or labels enter push payloads. */
   async emit(kind: AgentNotificationCategory, eventId?: string): Promise<NotificationReply> {
-    if (kind === "input_needed") this.waiting = true;
+    if (kind === "input_needed" || kind === "credential_needed") this.waiting = true;
     if (kind === "task_failed") this.failed = true;
     const stamp = Date.now();
     if (stamp - (this.last.get(kind) ?? 0) < 30000) return { type: "notification_registration", in_reply_to: "", ok: true };
@@ -128,8 +128,8 @@ export class NotificationBridge {
   }
   stop(): void { this.active = false; void this.control({ type: "notification_activity", active: false }); }
   registerTool(pi: ExtensionAPI): void {
-    const parameters = Type.Object({ category: Type.Union([Type.Literal("input_needed"), Type.Literal("review_ready"), Type.Literal("tests_failed"), Type.Literal("task_failed"), Type.Literal("task_finished")]) });
-    pi.registerTool({ name: "notify_user", label: "Notify paired phone", description: "Signal a real input/approval blocker (highest importance), completed task, terminal task failure, verified failed tests, or work ready for review. Use input_needed before waiting for a human. Never call for routine tool activity. Only a generic category leaves the machine. Success means relay accepted the event, not phone delivery; permissions and Focus may suppress it.", parameters,
+    const parameters = Type.Object({ category: Type.Union([Type.Literal("input_needed"), Type.Literal("credential_needed"), Type.Literal("review_ready"), Type.Literal("tests_failed"), Type.Literal("task_failed"), Type.Literal("task_finished")]) });
+    pi.registerTool({ name: "notify_user", label: "Notify paired phone", description: "Signal a real input/approval or credential/sign-in blocker (highest importance), completed task, terminal task failure, verified failed tests, or work ready for review. Use input_needed before waiting for a human, or credential_needed when a credential/sign-in is required. This never transports credentials or infers arbitrary system prompts. Never call for routine tool activity. Only a generic category leaves the machine. Success means relay accepted the event, not phone delivery; permissions and Focus may suppress it.", parameters,
       execute: async (_id, args) => {
         const reply = await this.emit(args.category);
         if (!reply.ok) throw new Error(`Notification unavailable: ${reply.error ?? "unknown"}`);

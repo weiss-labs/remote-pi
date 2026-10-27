@@ -1,6 +1,6 @@
 import { EventEmitter } from "node:events";
 import { describe, it, expect, vi } from "vitest";
-import { NotificationBridge, grantBytes, notificationControl, type NotificationClientMessage } from "./notifications.js";
+import { NotificationBridge, grantBytes, notificationControl, type NotificationClientMessage, notificationCategories } from "./notifications.js";
 import { generateEd25519Keypair, ed25519Sign, ed25519Verify } from "./pairing/crypto.js";
 import type { RelayClient } from "./transport/relay_client.js";
 
@@ -37,6 +37,12 @@ describe("notification pairing grants", () => {
     expect(ed25519Verify(s.identity.publicKey,grantBytes(s.peer,s.phoneId,s.msg),Buffer.from(grant.pi_signature,"base64"))).toBe(true);
     expect(grantBytes(s.peer,s.phoneId,s.msg).toString()).toBe("remote-pi-notify-device-v1\n"+JSON.stringify([s.peer,s.phoneId,"device-1",s.msg.token,"production",s.msg.categories,false,s.msg.expires_at]));
   });
+  it("accepts all eight categories and binds credential_needed into the phone signature", async () => {
+    const s=setup();s.msg.categories=[...notificationCategories];s.msg.signature=Buffer.from(ed25519Sign(s.phone.secretKey,grantBytes(s.peer,s.phoneId,s.msg))).toString("base64");
+    expect(notificationCategories).toHaveLength(8);expect((await s.bridge.handle(s.phoneId,s.msg)).ok).toBe(true);
+    expect((await s.bridge.handle(s.phoneId,{...s.msg,categories:s.msg.categories.filter(c=>c!=="credential_needed")})).error).toBe("invalid_grant");
+    expect((await s.bridge.handle(s.phoneId,{...s.msg,categories:[...s.msg.categories,"input_needed"]})).error).toBe("invalid_grant");
+  });
   it("does not let relay key possession, stale pairing, or body target select a recipient", async () => {
     const s=setup();s.unpair();expect((await s.bridge.handle(s.phoneId,s.msg)).error).toBe("not_paired");expect(s.relay.frames).toHaveLength(0);
     const other=setup();expect((await other.bridge.handle(s.phoneId,s.msg)).error).toBe("not_paired");
@@ -67,7 +73,7 @@ describe("notification event lifecycle", () => {
     const s=setup();s.bridge.start();s.bridge.end();s.bridge.end();await settle();
     expect(s.relay.frames.filter(f=>f.type==="notification_event").map(f=>f.kind)).toEqual(["task_finished"]);
   });
-  it.each(["input_needed","task_failed"] as const)("does not announce success while %s", async kind => {
+  it.each(["input_needed","credential_needed","task_failed"] as const)("does not announce success while %s", async kind => {
     const s=setup();s.bridge.start();await s.bridge.emit(kind);s.bridge.end();await settle();
     expect(s.relay.frames.filter(f=>f.type==="notification_event").map(f=>f.kind)).toEqual([kind]);
   });

@@ -65,6 +65,8 @@ fn service(fake: Arc<Fake>) -> Arc<Notifications> {
 fn grant_requires_bilateral_signatures_bound_to_every_field() {
     let (pi, phone, g) = grant();
     let g = sign(&pi, &phone, g);
+    assert_eq!(g.categories.len(), 8);
+    assert!(g.categories.iter().any(|c| c == "credential_needed"));
     assert!(g.valid(&g.peer, now()));
     assert!(!g.valid(
         &B64.encode(SigningKey::from_bytes(&[3; 32]).verifying_key().to_bytes()),
@@ -346,6 +348,55 @@ async fn stale_room_connection_disconnect_does_not_notify_while_another_is_activ
     n.disconnected_connection(&g.peer, "room-one", 11);
     wait(&f, 1).await;
     assert_eq!(f.delivered.lock().unwrap()[0].kind, "connection_lost");
+}
+#[tokio::test]
+async fn credential_needed_uses_high_priority_independent_of_a_slow_ordinary_push() {
+    #[derive(Default)]
+    struct PriorityFake {
+        normal_started: tokio::sync::Notify,
+        sent: Mutex<Vec<Delivery>>,
+    }
+    impl PushTransport for PriorityFake {
+        fn send<'a>(
+            &'a self,
+            d: &'a Delivery,
+        ) -> Pin<Box<dyn Future<Output = Outcome> + Send + 'a>> {
+            Box::pin(async move {
+                if d.kind == "task_finished" {
+                    self.normal_started.notify_one();
+                    tokio::time::sleep(Duration::from_millis(250)).await;
+                }
+                self.sent.lock().unwrap().push(d.clone());
+                Outcome::Sent
+            })
+        }
+    }
+    let f = Arc::new(PriorityFake::default());
+    let n = Notifications::open(":memory:", Some(f.clone()), Default::default()).unwrap();
+    let (pi, phone, g) = grant();
+    let g = sign(&pi, &phone, g);
+    assert_eq!(register(&n, &g)["ok"], true);
+    n.event(&g.peer, "room-one", "normal", "task_finished")
+        .unwrap();
+    f.normal_started.notified().await;
+    n.event(&g.peer, "room-one", "credential", "credential_needed")
+        .unwrap();
+    for _ in 0..100 {
+        if !f.sent.lock().unwrap().is_empty() {
+            break;
+        }
+        tokio::time::sleep(Duration::from_millis(5)).await;
+    }
+    let sent = f.sent.lock().unwrap();
+    assert_eq!(sent[0].kind, "credential_needed");
+    let payload = sent[0].payload();
+    assert_eq!(
+        payload["aps"]["alert"]["body"],
+        "A pane needs a credential or sign-in"
+    );
+    assert_eq!(payload["aps"]["interruption-level"], "time-sensitive");
+    assert_eq!(payload["remote_pi"]["room"], "room-one");
+    assert!(!payload.to_string().contains(&g.token));
 }
 #[test]
 fn apns_error_mapping_never_retries_permanent_rejections() {

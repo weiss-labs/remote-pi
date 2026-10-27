@@ -19,8 +19,9 @@ use tokio::sync::mpsc;
 #[path = "notifications_tests.rs"]
 mod tests;
 
-pub const CATEGORIES: [&str; 7] = [
+pub const CATEGORIES: [&str; 8] = [
     "input_needed",
+    "credential_needed",
     "task_finished",
     "task_failed",
     "tests_failed",
@@ -95,7 +96,7 @@ impl Grant {
             && (64..=200).contains(&self.token.len())
             && self.token.bytes().all(|b| b.is_ascii_hexdigit())
             && matches!(self.environment.as_str(), "production" | "sandbox")
-            && self.categories.len() <= 7
+            && self.categories.len() <= CATEGORIES.len()
             && self
                 .categories
                 .iter()
@@ -124,6 +125,7 @@ impl Delivery {
     pub fn payload(&self) -> Value {
         let body = match self.kind.as_str() {
             "input_needed" => "A pane needs your input",
+            "credential_needed" => "A pane needs a credential or sign-in",
             "task_finished" => "A task has finished",
             "task_failed" => "A task needs attention",
             "tests_failed" => "Tests need attention",
@@ -131,7 +133,7 @@ impl Delivery {
             "update_available" => "A TestFlight update is available",
             _ => "An active pane disconnected",
         };
-        json!({"aps":{"alert":{"title":self.pane_name.as_ref().map(|n|format!("Remote Pi · {n}")).unwrap_or_else(||"Remote Pi".into()),"body":body},"sound":"default","thread-id":format!("{}:{}",self.peer,self.room),"interruption-level":if self.kind=="input_needed" {"time-sensitive"}else{"active"}},"remote_pi":{"v":1,"peer":self.peer,"room":self.room,"event_id":self.event_id,"kind":self.kind}})
+        json!({"aps":{"alert":{"title":self.pane_name.as_ref().map(|n|format!("Remote Pi · {n}")).unwrap_or_else(||"Remote Pi".into()),"body":body},"sound":"default","thread-id":format!("{}:{}",self.peer,self.room),"interruption-level":if matches!(self.kind.as_str(), "input_needed" | "credential_needed") {"time-sensitive"}else{"active"}},"remote_pi":{"v":1,"peer":self.peer,"room":self.room,"event_id":self.event_id,"kind":self.kind}})
     }
 }
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
@@ -714,7 +716,7 @@ impl Notifications {
                     None
                 },
             };
-            let q = if kind == "input_needed" {
+            let q = if matches!(kind, "input_needed" | "credential_needed") {
                 &self.high
             } else {
                 &self.normal
