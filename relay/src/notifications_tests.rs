@@ -260,7 +260,7 @@ async fn foreground_and_category_preferences_suppress_without_content() {
     let d = f.delivered.lock().unwrap();
     let payload = d[0].payload();
     assert_eq!(payload["aps"]["alert"]["body"], "A pane needs your input");
-    assert_eq!(payload["aps"]["interruption-level"], "time-sensitive");
+    assert_eq!(payload["aps"]["interruption-level"], "active");
     assert_eq!(payload["remote_pi"]["room"], "room-two");
     let text = payload.to_string();
     assert!(!text.contains(&g.token));
@@ -486,7 +486,7 @@ async fn credential_needed_uses_high_priority_independent_of_a_slow_ordinary_pus
         payload["aps"]["alert"]["body"],
         "A pane needs a credential or sign-in"
     );
-    assert_eq!(payload["aps"]["interruption-level"], "time-sensitive");
+    assert_eq!(payload["aps"]["interruption-level"], "active");
     assert_eq!(payload["remote_pi"]["room"], "room-one");
     assert!(!payload.to_string().contains(&g.token));
 }

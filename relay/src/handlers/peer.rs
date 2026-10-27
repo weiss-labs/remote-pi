@@ -80,6 +80,39 @@ async fn handle_peer(socket: WebSocket, peer_addr: SocketAddr, state: AppState) 
     let peer_id = B64.encode(vk.to_bytes());
     let peer_short = peer_id[peer_id.len().saturating_sub(8)..].to_string();
 
+    // One-shot notification admin controls use the same Ed25519 handshake,
+    // but never register a routable room or publish presence. Otherwise each
+    // release/revoke CLI invocation leaves an offline phantom pane on phones.
+    let control_only = serde_json::from_str::<serde_json::Value>(&hello_text)
+        .ok()
+        .is_some_and(|h| h["control_only"] == true);
+    if control_only {
+        for _ in 0..20 {
+            let item = time::timeout(Duration::from_secs(30), stream.next()).await;
+            let text = match item {
+                Ok(Some(Ok(Message::Text(t)))) if t.len() <= 8192 => t,
+                Ok(Some(Ok(Message::Ping(_) | Message::Pong(_)))) => continue,
+                _ => break,
+            };
+            let Ok(frame) = serde_json::from_str::<serde_json::Value>(&text) else {
+                break;
+            };
+            let reply = if matches!(
+                frame["type"].as_str(),
+                Some("notification_release" | "revoke_notification_phone")
+            ) {
+                state.notifications.control(&peer_id, "__control__", &frame)
+            } else {
+                serde_json::json!({"type":"notification_registration", "in_reply_to":frame["id"].as_str().filter(|s|s.len()<=128).unwrap_or(""), "ok":false,"error":"control_only"})
+            };
+            if sink.send(Message::Text(reply.to_string())).await.is_err() {
+                break;
+            }
+        }
+        let _ = sink.send(Message::Close(None)).await;
+        return;
+    }
+
     // Extract room_id and room_meta from hello (auth handled separately above).
     let room_meta = {
         let hello: serde_json::Value =

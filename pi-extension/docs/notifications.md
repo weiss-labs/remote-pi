@@ -44,7 +44,7 @@ Push custom data is `remote_pi:{v:1,peer,room,event_id,kind}`. `peer` is the can
 
 ## Categories and event production
 
-`input_needed` and `credential_needed` have highest importance, a dedicated bounded queue independent of ordinary retry backoff, APNs priority 10 and `time-sensitive` interruption level. iOS permissions, entitlements, Focus and user settings still control presentation. It cannot bypass those controls.
+`input_needed` and `credential_needed` have highest importance, a dedicated bounded queue independent of ordinary retry backoff, APNs priority 10 and standard `active` iOS presentation. There is no Time Sensitive entitlement; priority here means server dispatch priority, not a Focus override. iOS permissions, entitlements, Focus and user settings still control presentation. It cannot bypass those controls.
 
 The eight-category allowlist is input_needed, credential_needed, task_finished, task_failed, tests_failed, review_ready, update_available and connection_lost. Defaults are phone-owned: input_needed, credential_needed, task_finished and task_failed ON; tests_failed, review_ready, update_available and connection_lost opt-in. Registration sends the complete desired category array, including an empty array to disable all.
 

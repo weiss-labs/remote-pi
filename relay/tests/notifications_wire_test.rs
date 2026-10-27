@@ -7,6 +7,69 @@ use serde_json::{Value, json};
 use tokio_tungstenite::tungstenite::Message;
 
 #[tokio::test]
+async fn notification_cli_does_not_create_a_room() {
+    let port = common::start_relay().await;
+    let pi = SigningKey::from_bytes(&[37; 32]);
+    let peer = B64.encode(pi.verifying_key().to_bytes());
+    let (mut control, _) = tokio_tungstenite::connect_async(format!("ws://127.0.0.1:{port}"))
+        .await
+        .unwrap();
+    control
+        .send(Message::text(
+            json!({"type":"hello","pubkey":peer,"room_id":"__control__","control_only":true})
+                .to_string(),
+        ))
+        .await
+        .unwrap();
+    let challenge: Value =
+        serde_json::from_str(control.next().await.unwrap().unwrap().to_text().unwrap()).unwrap();
+    let nonce = B64.decode(challenge["nonce"].as_str().unwrap()).unwrap();
+    control
+        .send(Message::text(
+            json!({"type":"auth","sig":B64.encode(pi.sign(&nonce).to_bytes())}).to_string(),
+        ))
+        .await
+        .unwrap();
+    control
+        .send(Message::text(
+            json!({"type":"notification_release","id":"release","release_id":"synthetic"})
+                .to_string(),
+        ))
+        .await
+        .unwrap();
+    let reply: Value =
+        serde_json::from_str(control.next().await.unwrap().unwrap().to_text().unwrap()).unwrap();
+    assert_eq!(reply["type"], "notification_registration");
+    assert_eq!(reply["error"], "release_not_authorized");
+    // Controls do not gain ordinary room routing permissions.
+    control
+        .send(Message::text(
+            json!({"type":"notification_event","id":"wrong","kind":"input_needed"}).to_string(),
+        ))
+        .await
+        .unwrap();
+    let reply: Value =
+        serde_json::from_str(control.next().await.unwrap().unwrap().to_text().unwrap()).unwrap();
+    assert_eq!(reply["error"], "control_only");
+    let (mut observer, _) = common::connect_and_auth(port).await;
+    observer
+        .send(Message::text(
+            json!({"type":"rooms_check","peers":[peer]}).to_string(),
+        ))
+        .await
+        .unwrap();
+    let reply = tokio::time::timeout(std::time::Duration::from_secs(2), observer.next())
+        .await
+        .unwrap()
+        .unwrap()
+        .unwrap();
+    let reply: Value = serde_json::from_str(reply.to_text().unwrap()).unwrap();
+    assert_eq!(reply["rooms"], json!([]));
+    control.close(None).await.unwrap();
+    observer.close(None).await.unwrap();
+}
+
+#[tokio::test]
 async fn ws_authenticated_key_does_not_authorize_arbitrary_target_grant() {
     let port = common::start_relay().await;
     let pi = SigningKey::from_bytes(&[7; 32]);

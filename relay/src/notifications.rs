@@ -139,7 +139,7 @@ impl Delivery {
             "update_available" => "A TestFlight update is available",
             _ => "An active pane disconnected",
         };
-        json!({"aps":{"alert":{"title":self.pane_name.as_ref().map(|n|format!("Remote Pi · {n}")).unwrap_or_else(||"Remote Pi".into()),"body":body},"sound":"default","thread-id":format!("{}:{}",self.peer,self.room),"interruption-level":if matches!(self.kind.as_str(), "input_needed" | "credential_needed") {"time-sensitive"}else{"active"}},"remote_pi":{"v":1,"peer":self.peer,"room":self.room,"event_id":self.event_id,"kind":self.kind}})
+        json!({"aps":{"alert":{"title":self.pane_name.as_ref().map(|n|format!("Remote Pi · {n}")).unwrap_or_else(||"Remote Pi".into()),"body":body},"sound":"default","thread-id":format!("{}:{}",self.peer,self.room),"interruption-level":"active"},"remote_pi":{"v":1,"peer":self.peer,"room":self.room,"event_id":self.event_id,"kind":self.kind}})
     }
 }
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
