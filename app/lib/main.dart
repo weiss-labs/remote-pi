@@ -78,6 +78,14 @@ class _RemotePiAppState extends State<RemotePiApp> with WidgetsBindingObserver {
     final target = _pendingTaps.removeAt(0);
     try {
       if (!await _notifications.acceptTap(target) || !mounted) return;
+      final knownRoom = await _notifications.isKnownRoom(target);
+      if (!mounted) return;
+      if (!knownRoom) {
+        // A stale push never selects or creates a guessed session.
+        injector.get<SessionSelection>().clear();
+        _router.go('/home');
+        return;
+      }
       final storage = injector.get<PairingStorage>();
       final peers = await storage.listPeers();
       final peer = peers

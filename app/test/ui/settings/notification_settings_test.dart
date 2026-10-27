@@ -52,6 +52,8 @@ class FakeNotifications extends Notifications {
   Future<void> visibleTarget(String? peer, String? room) async {}
   @override
   Future<bool> acceptTap(NotificationTarget target) async => false;
+  @override
+  Future<bool> isKnownRoom(NotificationTarget target) async => false;
 }
 
 void main() {

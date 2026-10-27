@@ -267,7 +267,7 @@ class NotificationService extends Notifications {
       final reply = await pending.future.timeout(replyTimeout);
       _status = reply.ok
           ? (enabled ? 'Ready for this paired Mac' : 'Off for this paired Mac')
-          : reply.error == 'apns_unconfigured'
+          : {'apns_disabled', 'apns_unconfigured'}.contains(reply.error)
           ? 'Push service is not configured yet'
           : 'Registration declined. Retry after reconnecting.';
       if (!reply.ok) _scheduleRetry();
@@ -312,6 +312,27 @@ class NotificationService extends Notifications {
     }
     await store.write(key: 'notifications.seen', value: _seen.join('\n'));
     return true;
+  }
+
+  @override
+  Future<bool> isKnownRoom(NotificationTarget target) async {
+    if (target.room.isEmpty) return false;
+    final peers = await pairing.listPeers();
+    final peer = peers
+        .where((p) => toStandardB64(p.remoteEpk) == toStandardB64(target.peer))
+        .firstOrNull;
+    if (peer == null) return false;
+    // The paired QR room and relay-announced/cached rooms are authoritative.
+    if (peer.roomId == target.room ||
+        connection
+            .roomsFor(peer.remoteEpk)
+            .any((room) => room.roomId == target.room)) {
+      return true;
+    }
+    // Read storage directly: a cold tap can arrive before ConnectionManager
+    // finishes its asynchronous room-cache hydration.
+    final rooms = await pairing.loadRooms(peer.remoteEpk);
+    return rooms.any((room) => room.roomId == target.room);
   }
 
   @override

@@ -16,4 +16,5 @@ abstract class Notifications extends Service {
   Future<void> openSettings();
   Future<void> visibleTarget(String? peer, String? room);
   Future<bool> acceptTap(NotificationTarget target);
+  Future<bool> isKnownRoom(NotificationTarget target);
 }

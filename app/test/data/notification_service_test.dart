@@ -22,10 +22,13 @@ const peer = PeerRecord(
 
 class Storage extends PairingStorage {
   List<PeerRecord> peers = [peer];
+  List<PersistedRoom> rooms = [];
+  Completer<List<PersistedRoom>>? hydration;
   @override
   Future<List<PeerRecord>> listPeers() async => peers;
   @override
-  Future<List<PersistedRoom>> loadRooms(String epk) async => [];
+  Future<List<PersistedRoom>> loadRooms(String epk) async =>
+      hydration == null ? rooms : hydration!.future;
 }
 
 class Platform extends NotificationPlatform {
@@ -66,6 +69,7 @@ class Channel implements IChannel {
   final messages = StreamController<ServerMessage>.broadcast(sync: true);
   final sent = <ClientMessage>[];
   bool ack = true;
+  String? error;
   @override
   Stream<ServerMessage> get serverMessages => messages.stream;
   @override
@@ -76,7 +80,8 @@ class Channel implements IChannel {
         messages.add(
           NotificationRegistration(
             inReplyTo: message.toJson()['id'] as String,
-            ok: true,
+            ok: error == null,
+            error: error,
           ),
         );
       }
@@ -418,6 +423,75 @@ void main() {
       false,
     );
   });
+  test(
+    'only paired known rooms open; unknown and missing rooms use Home fallback',
+    () async {
+      expect(
+        await service.isKnownRoom(
+          const NotificationTarget('cGVlcg==', 'room-a', 'known'),
+        ),
+        true,
+      );
+      expect(
+        await service.isKnownRoom(
+          const NotificationTarget('cGVlcg==', 'invented', 'unknown'),
+        ),
+        false,
+      );
+      expect(
+        await service.isKnownRoom(
+          const NotificationTarget('ZXZpbA==', 'room-a', 'unpaired'),
+        ),
+        false,
+      );
+      final missing = NotificationTarget.parse({
+        'v': 1,
+        'peer': peer.remoteEpk,
+        'event_id': 'missing',
+        'kind': 'credential_needed',
+      });
+      expect(missing, isNotNull);
+      expect(await service.isKnownRoom(missing!), false);
+      expect(connection.activePeer, isNull);
+      expect(storage.rooms, isEmpty);
+    },
+  );
+  test(
+    'cold room validation awaits persisted hydration before choosing fallback',
+    () async {
+      storage.hydration = Completer<List<PersistedRoom>>();
+      var completed = false;
+      final known = service
+          .isKnownRoom(const NotificationTarget('cGVlcg==', 'cached', 'cold'))
+          .then((value) {
+            completed = true;
+            return value;
+          });
+      await settle();
+      expect(completed, false);
+      storage.hydration!.complete([
+        const PersistedRoom(roomId: 'cached', startedAt: 1),
+      ]);
+      expect(await known, true);
+      expect(
+        await service.isKnownRoom(
+          const NotificationTarget('cGVlcg==', 'stale', 'cold-stale'),
+        ),
+        false,
+      );
+      expect(connection.roomsFor(peer.remoteEpk), isEmpty);
+    },
+  );
+  test(
+    'apns_disabled is unavailable, never a successful registration',
+    () async {
+      channel.error = 'apns_disabled';
+      await service.start();
+      await connection.connectTo(peer);
+      await settle();
+      expect(service.status, 'Push service is not configured yet');
+    },
+  );
   test('unpaired connection never receives a registration', () async {
     await service.start();
     storage.peers = [];

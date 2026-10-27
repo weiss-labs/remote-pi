@@ -69,13 +69,14 @@ class NotificationTarget {
         !notificationCategories.containsKey(value['kind'])) {
       return null;
     }
-    final peer = value['peer'], room = value['room'], event = value['event_id'];
+    final peer = value['peer'],
+        room = value['room'] ?? '',
+        event = value['event_id'];
     if (peer is! String ||
         room is! String ||
         event is! String ||
         peer.isEmpty ||
         peer.length > 128 ||
-        room.isEmpty ||
         room.length > 256 ||
         event.isEmpty ||
         event.length > 256) {

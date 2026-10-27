@@ -22,7 +22,7 @@ The prefix ends with one actual newline, immediately followed by compact JSON of
 [canonicalPiBase64, canonicalOwnerBase64, device_id, token, environment, categories, show_pane_name, expires_at]
 ```
 
-Grants expire seven days after registration. Expiry is persisted monotonically so disable/re-enable in one second cannot replay a revoked grant. The backend must validate both the phone signature and its own paired-Pi countersignature, as implemented by the backend worker. Disabled or OS-denied permission sends `notify_unregister {id, device_id}`. Both operations wait for `notification_registration {in_reply_to, ok, error?}`. A successful socket write is not success. Timeout, rejection and reconnect remain observable and retry. No credentials means no successful registration claim.
+Grants expire seven days after registration. Expiry is persisted monotonically so disable/re-enable in one second cannot replay a revoked grant. The backend must validate both the phone signature and its own paired-Pi countersignature, as implemented by the backend worker. Disabled or OS-denied permission sends `notify_unregister {id, device_id}`. Both operations wait for `notification_registration {in_reply_to, ok, error?}`. A successful socket write is not success. Timeout, rejection and reconnect remain observable and retry. `apns_disabled` (and legacy `apns_unconfigured`) displays an unavailable-service state, never successful registration. No credentials means no successful registration claim.
 
 The eighth category is `credential_needed`. It uses the same signed category array and validated generic tap path. The app does not detect credential failures, collect passwords, unlock desktop 1Password or transport secrets. Actual credential detection and high-priority delivery are backend responsibilities; support for the category alone does not establish automatic detector coverage.
 
@@ -30,7 +30,7 @@ The app intentionally does not send phone-global `notify_presence`. The native n
 
 ## Taps
 
-`remote_pi` must contain `v:1`, a recognized `kind`, `peer`, `room`, and `event_id`. Native code queues cold taps until Dart subscribes. Dart waits for router boot, verifies the peer against current pairing storage, deduplicates, selects that peer/room and opens the normal chat. Any payload route or action is ignored. Phone opens a fresh chat; tablet selects its existing detail pane. Revoked/unpaired targets are refused.
+`remote_pi` must contain `v:1`, a recognized `kind`, `peer`, and `event_id`. Native code queues cold taps until Dart subscribes. Dart waits for router boot, verifies the peer against current pairing storage, and deduplicates. The room must match the paired QR room or an actual relay-announced/cached room for that peer. Validation directly awaits persisted room hydration on cold start. Unknown, stale or missing rooms safely clear selection and go to Home without creating a session; known rooms open the normal chat. Any payload route or action is ignored. Phone opens a fresh chat; tablet selects its existing detail pane. Revoked/unpaired targets are refused.
 
 ## Signing and release
 
