@@ -134,9 +134,15 @@ export class NotificationBridge {
     void this.emit("input_needed", id, true, question);
   }
   promptResolved(id: string): void { this.unresolvedPrompts.delete(id); }
+  /** A structured private credential request: generic push, tracked so task_finished is not suppressed once it resolves. */
+  credentialOpened(id: string): void {
+    if (this.unresolvedPrompts.size < 64) this.unresolvedPrompts.add(id);
+    else this.waiting = true;
+    void this.emit("credential_needed", id, true);
+  }
   async emit(kind: AgentNotificationCategory, eventId?: string, trackedPrompt = false, question?: string): Promise<NotificationReply> {
     if (!trackedPrompt && (kind === "input_needed" || kind === "credential_needed")) this.waiting = true;
-    if (kind === "credential_needed") this.deps.credentialNotice?.();
+    if (kind === "credential_needed" && !trackedPrompt) this.deps.credentialNotice?.();
     if (kind === "task_failed") this.failed = true;
     const stamp = Date.now();
     if (stamp - (this.last.get(kind) ?? 0) < 30000) return { type: "notification_registration", in_reply_to: "", ok: true };

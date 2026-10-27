@@ -1,5 +1,5 @@
 /** A deliberately narrow observer. Never executes op, changes a tool or retains output. */
-export const CREDENTIAL_INSTRUCTIONS = "This pane needs a credential or sign-in. On the affected Mac, unlock or sign in to 1Password and approve the request, then retry the blocked step from this pane. The phone cannot unlock desktop 1Password. Do not paste passwords, tokens or secret values into chat.";
+export const CREDENTIAL_INSTRUCTIONS = "This pane needs a credential or sign-in. Desktop 1Password cannot be unlocked from the phone. If one scoped credential (API key, token, one service password) is all that is blocked, the pane should call request_credential naming the exact 1Password vault, item and field so it can be supplied privately from the phone; otherwise approve it on the affected Mac and retry. Never paste passwords, tokens or secret values into chat.";
 
 const OP = new Set(["op", "/opt/homebrew/bin/op", "/usr/local/bin/op", "/usr/bin/op"]);
 const VERBS = new Set(["read", "inject", "item", "document", "vault", "account", "whoami", "signin"]);

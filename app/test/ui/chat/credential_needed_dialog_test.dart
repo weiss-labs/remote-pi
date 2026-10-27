@@ -6,37 +6,41 @@ import 'package:flutter_test/flutter_test.dart';
 
 void main() {
   testWidgets(
-    'credential guidance is actionable, Mac-local and never secret input',
+    'generic credential guidance names the private path, never collects a secret, and can ask the pane',
     (tester) async {
+      var asked = 0;
       await tester.pumpWidget(
         MaterialApp(
           theme: buildDarkTheme(),
-          home: const Scaffold(body: CredentialNeededDialog()),
+          home: Scaffold(
+            body: CredentialNeededDialog(onAskPane: () async => asked++),
+          ),
         ),
       );
-      expect(find.text('Desktop authorization required'), findsOneWidget);
+      expect(find.text('Credential needed'), findsOneWidget);
+      expect(find.textContaining('exact 1Password item'), findsOneWidget);
       expect(
-        find.textContaining('Read the requesting pane’s notice'),
+        find.textContaining('never asks for your 1Password account password'),
         findsOneWidget,
       );
-      expect(find.textContaining('does not unlock your Mac'), findsOneWidget);
-      expect(find.textContaining('Do not paste passwords'), findsOneWidget);
+      expect(find.textContaining('Do not paste secrets'), findsOneWidget);
       expect(
-        find.textContaining(
-          'unattended credentials scoped to that integration',
-        ),
-        findsOneWidget,
+        find.textContaining('Desktop authorization required'),
+        findsNothing,
       );
-      expect(
-        find.textContaining('does not transfer passwords'),
-        findsOneWidget,
-      );
-      expect(find.textContaining('does not unblock the task'), findsOneWidget);
       expect(find.byType(TextField), findsNothing);
       expect(
         tester.getSize(find.widgetWithText(TextButton, 'Back to pane')).height,
         greaterThanOrEqualTo(44),
       );
+      await tester.tap(find.text('Ask pane for exact item'));
+      await tester.pump();
+      expect(asked, 1);
+      expect(
+        CredentialNeededDialog.askPaneMessage,
+        contains('request_credential'),
+      );
+      expect(CredentialNeededDialog.askPaneMessage, isNot(contains('op://')));
       final target = NotificationTarget.parse({
         'v': 1,
         'peer': 'paired',

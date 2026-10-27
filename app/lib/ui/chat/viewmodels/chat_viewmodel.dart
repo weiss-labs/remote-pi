@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:app/domain/contracts/artifact_preview.dart';
 
+import 'package:app/data/credentials/credential_request_controller.dart';
 import 'package:app/data/local/records/message_record.dart';
 import 'package:app/data/local/records/runtime_record.dart';
 import 'package:app/data/preferences/preferences.dart';
@@ -14,6 +15,7 @@ import 'package:app/pairing/storage.dart';
 import 'package:app/protocol/protocol.dart';
 import 'package:app/ui/chat/states/chat_state.dart';
 import 'package:app/ui/core/viewmodel/viewmodel.dart';
+import 'package:cryptography/cryptography.dart' show SimpleKeyPair;
 
 /// Plan/31 — ChatViewModel is now a thin composer over the local SSOT.
 ///
@@ -72,6 +74,11 @@ class ChatViewModel extends ViewModel<ChatState> {
   String? _peerOfflineReason;
   ConnectionStatus? _lastStatus;
 
+  /// Private credential handoff for THIS chat session. Lives with the
+  /// ViewModel so a session switch tears it down (pending request dropped).
+  /// Null when no Owner key is available (tests without identity).
+  late final CredentialRequestController? credentials;
+
   ChatViewModel(
     this._read,
     this._sync,
@@ -79,7 +86,21 @@ class ChatViewModel extends ViewModel<ChatState> {
     this._prefs,
     this._storage, {
     this.artifacts,
+    Future<SimpleKeyPair> Function()? ownerKey,
   }) : super(const ChatReady(messages: [])) {
+    credentials = ownerKey == null
+        ? null
+        : CredentialRequestController(
+            frames: _sync.credentialStream,
+            channel: () => _conn.channel,
+            ownerKey: ownerKey,
+            expectedMacKey: () => _activePeer?.remoteEpk ?? '',
+            expectedRoom: () => _activeRoomId,
+            routedPeer: () => _conn.activePeer?.remoteEpk ?? '',
+            routedRoom: () => _conn.activeRoomId,
+            invalidateOn: [_conn.statusStream, _conn.roomsStream],
+            resumeSignal: _sync.appResumed,
+          );
     // Plan/32f — do NOT seed _streaming/_working from the shared SyncService
     // here: it may still be bound to the PREVIOUS chat (this VM is recreated
     // on session switch, before _bootstrap rebinds via activate). Seeding now
@@ -192,6 +213,9 @@ class ChatViewModel extends ViewModel<ChatState> {
     // Bind the writer + watch the DB for this (peer, room).
     await _sync.activate(epk, roomId);
     if (_disposed) return;
+    // Pending credential state is recovered actively: the broadcast stream
+    // may have carried the replay before this VM listened.
+    unawaited(credentials?.query() ?? Future.value());
     // Plan/32f — now that the writer owns THIS session (activate reset the
     // turn state on a switch, or kept it when re-entering the same session),
     // seed the in-memory streaming/working from it. Doing this here instead of
@@ -252,6 +276,7 @@ class ChatViewModel extends ViewModel<ChatState> {
         _conn.switchRoom(_activeRoomId);
       }
       _sync.requestSync();
+      unawaited(credentials?.query() ?? Future.value());
     }
     _recompute();
   }
@@ -398,6 +423,7 @@ class ChatViewModel extends ViewModel<ChatState> {
     _queuedSub?.cancel();
     _eventSub?.cancel();
     _uiReqSub?.cancel();
+    credentials?.dispose();
     _roomsSub?.cancel();
     _statusSub?.cancel();
     super.dispose();

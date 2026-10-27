@@ -878,6 +878,19 @@ sealed class ServerMessage {
       // the SDK's extension_ui_request RPC contract; optional `ask` envelope
       // carries pi-ask's full question so the app renders multi/preview/notes.
       'extension_ui_request' => ExtensionUiRequest.fromJson(json),
+      // Private credential handoff: signed request, close notice, result ack.
+      'credential_request' => CredentialRequest.fromJson(json),
+      'credential_closed' => CredentialClosed(
+        id: json['id'] as String? ?? '',
+        reason: json['reason'] as String? ?? 'none',
+        inReplyTo: json['in_reply_to'] as String?,
+      ),
+      'credential_result' => CredentialResult(
+        inReplyTo: json['in_reply_to'] as String? ?? '',
+        id: json['id'] as String? ?? '',
+        ok: json['ok'] == true,
+        error: json['error'] as String?,
+      ),
       // forward-compat: unknown types are not fatal — callers catch and log
       _ => throw UnsupportedTypeException(type ?? ''),
     };
@@ -1933,4 +1946,132 @@ class VoiceRpcResult extends ServerMessage {
     required this.status,
     required this.body,
   });
+}
+
+// --- Private credential handoff (Mac ↔ phone, relay sees ciphertext only) ---
+
+/// A signed request from the paired Mac for ONE scoped credential. Shown only
+/// after the signature verifies against the paired Mac key, room and session.
+/// Carries metadata only; the secret never travels in this direction.
+class CredentialRequest extends ServerMessage {
+  final String id,
+      macKey,
+      room,
+      session,
+      label,
+      reference,
+      purpose,
+      macEpk,
+      sig;
+  final int expiresAt;
+  const CredentialRequest({
+    required this.id,
+    required this.macKey,
+    required this.room,
+    required this.session,
+    required this.expiresAt,
+    required this.label,
+    required this.reference,
+    required this.purpose,
+    required this.macEpk,
+    required this.sig,
+  });
+  factory CredentialRequest.fromJson(Map<String, dynamic> j) =>
+      CredentialRequest(
+        id: j['id'] as String,
+        macKey: j['mac_key'] as String,
+        room: j['room'] as String,
+        session: j['session'] as String,
+        expiresAt: (j['expires_at'] as num).toInt(),
+        label: j['label'] as String,
+        reference: j['reference'] as String,
+        purpose: j['purpose'] as String,
+        macEpk: j['mac_epk'] as String,
+        sig: j['sig'] as String,
+      );
+
+  /// Signed canonical fields, in wire order (shared with pi-extension).
+  List<Object> get canonicalFields => [
+    macKey,
+    room,
+    session,
+    id,
+    expiresAt,
+    label,
+    reference,
+    purpose,
+    macEpk,
+  ];
+  @override
+  bool operator ==(Object other) =>
+      other is CredentialRequest && other.id == id && other.sig == sig;
+  @override
+  int get hashCode => Object.hash(id, sig);
+}
+
+class CredentialClosed extends ServerMessage {
+  final String id, reason;
+
+  /// Set when this is the authoritative answer to a [CredentialQuery].
+  final String? inReplyTo;
+  const CredentialClosed({
+    required this.id,
+    required this.reason,
+    this.inReplyTo,
+  });
+}
+
+class CredentialResult extends ServerMessage {
+  final String inReplyTo, id;
+  final bool ok;
+  final String? error;
+  const CredentialResult({
+    required this.inReplyTo,
+    required this.id,
+    required this.ok,
+    this.error,
+  });
+}
+
+/// Ciphertext answer. Never holds or logs the plaintext.
+class CredentialResponse extends ClientMessage {
+  final String id, requestId, phoneKey, phoneEpk, nonce, ciphertext, sig;
+  CredentialResponse({
+    required this.id,
+    required this.requestId,
+    required this.phoneKey,
+    required this.phoneEpk,
+    required this.nonce,
+    required this.ciphertext,
+    required this.sig,
+  });
+  @override
+  Map<String, dynamic> toJson() => {
+    'type': 'credential_response',
+    'id': id,
+    'request_id': requestId,
+    'phone_key': phoneKey,
+    'phone_epk': phoneEpk,
+    'nonce': nonce,
+    'ciphertext': ciphertext,
+    'sig': sig,
+  };
+}
+
+class CredentialCancel extends ClientMessage {
+  final String id, requestId;
+  CredentialCancel({required this.id, required this.requestId});
+  @override
+  Map<String, dynamic> toJson() => {
+    'type': 'credential_cancel',
+    'id': id,
+    'request_id': requestId,
+  };
+}
+
+class CredentialQuery extends ClientMessage {
+  final String id;
+  CredentialQuery({required this.id});
+  @override
+  Map<String, dynamic> toJson() => {'type': 'credential_query', 'id': id};
 }

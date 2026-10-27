@@ -175,6 +175,7 @@ export type ExtensionUiResponseWire =
 
 export type ClientMessage =
   | import("../artifacts.js").ArtifactClientMessage
+  | import("../credentials/bridge.js").CredentialClientMessage
   | import("../actions/commands.js").CommandClientMessage
   | import("../notifications.js").NotificationClientMessage
   | { type: "pair_request"; id: string; token: string; device_name: string }
@@ -268,6 +269,7 @@ export type SessionHistoryEvent =
 
 export type ServerMessage =
   | import("../actions/commands.js").CommandServerMessage
+  | import("../credentials/bridge.js").CredentialServerMessage
   | import("../notifications.js").NotificationReply
   | import("../artifacts.js").ArtifactServerMessage
 

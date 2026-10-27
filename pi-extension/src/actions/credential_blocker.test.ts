@@ -26,7 +26,7 @@ describe("narrow observed op credential blocker",()=>{
   it("works with older SDK result shape and never mutates or retains tool input/output",()=>{
     const event=failed();const old={...event,structuredContent:undefined};const before=JSON.stringify(old);
     Object.freeze(old);Object.freeze(old.input);Object.freeze(old.content);expect(isOpAuthorizationTimeout(old)).toBe(true);expect(JSON.stringify(old)).toBe(before);
-    expect(CREDENTIAL_INSTRUCTIONS).toContain("phone cannot unlock desktop");expect(CREDENTIAL_INSTRUCTIONS).toContain("Do not paste");expect(CREDENTIAL_INSTRUCTIONS).not.toContain("op://");
+    expect(CREDENTIAL_INSTRUCTIONS).toContain("cannot be unlocked from the phone");expect(CREDENTIAL_INSTRUCTIONS).toContain("Never paste");expect(CREDENTIAL_INSTRUCTIONS).toContain("request_credential");expect(CREDENTIAL_INSTRUCTIONS).not.toContain("op://");
   });
   it("bounds inspection and does not guess from a far-away or malformed output",()=>{
     expect(isOpAuthorizationTimeout(failed(undefined,"x".repeat(9000)+"\n[ERROR] authorization timeout"))).toBe(false);

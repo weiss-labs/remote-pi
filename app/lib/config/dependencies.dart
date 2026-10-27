@@ -182,6 +182,7 @@ Future<void> setupDependencies() async {
       _injector.get<Preferences>(),
       _injector.get<PairingStorage>(),
       artifacts: _injector.get<ArtifactPreview>(),
+      ownerKey: _injector.get<OwnerIdentityBridge>().requireKeyPair,
     ),
   );
   _injector.addViewModel<HomeViewModel>(

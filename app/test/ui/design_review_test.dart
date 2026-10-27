@@ -5,6 +5,7 @@ import '../support/system_font.dart';
 import 'dart:io';
 import 'dart:ui' as ui;
 
+import 'package:app/data/credentials/credential_request_controller.dart';
 import 'package:app/data/preferences/preferences.dart';
 import 'package:app/data/voice/speech_service.dart';
 import 'package:app/domain/session_state.dart';
@@ -152,6 +153,8 @@ class _Speech implements SpeechService {
 class _Chat extends ChangeNotifier implements ChatViewModel {
   _Chat(this.provider);
   final String provider;
+  @override
+  CredentialRequestController? get credentials => null;
   @override
   PeerRecord get activePeer => _peer;
   @override

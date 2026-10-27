@@ -25,6 +25,11 @@ import 'package:web_socket_channel/web_socket_channel.dart';
 
 import '../../pairing/pair_request_flow.dart';
 
+/// Frame types that must carry their source room: artifact bytes and the
+/// private credential handoff control frames.
+bool requiresSourceRoom(String type) =>
+    type.startsWith('artifact_') || type.startsWith('credential_');
+
 class WsTransportError implements Exception {
   final String message;
   const WsTransportError(this.message);
@@ -109,17 +114,18 @@ class WsTransport implements PeerTransport, IControlLink, INotificationRoutes {
                   RoutedNotificationReply(
                     peer: _normalizeToStandard(frame['peer'] as String),
                     room: senderRoom,
-                    reply: ServerMessage.fromJson(
-                      inner,
-                    ) as NotificationRegistration,
+                    reply:
+                        ServerMessage.fromJson(inner)
+                            as NotificationRegistration,
                   ),
                 );
               }
               return;
             }
-            // File bytes require an explicit source room, never legacy routing.
+            // File bytes and credential control replies require an explicit
+            // source room, never legacy routing.
             if (inner is Map<String, dynamic> &&
-                (inner['type'] as String? ?? '').startsWith('artifact_') &&
+                requiresSourceRoom(inner['type'] as String? ?? '') &&
                 senderRoom == null) {
               return;
             }

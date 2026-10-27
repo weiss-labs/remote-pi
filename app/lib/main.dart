@@ -109,13 +109,21 @@ class _RemotePiAppState extends State<RemotePiApp> with WidgetsBindingObserver {
 
   Future<void> _showCredentialInstructions(NotificationTarget target) async {
     if (target.kind != 'credential_needed') return;
+    // A structured request_credential push carries the request id as its
+    // event id; the chat's private form handles it (replayed on session
+    // sync). Only the generic blocker gets the instructions dialog.
+    if (!target.eventId.endsWith('-credential_needed')) return;
     await WidgetsBinding.instance.endOfFrame;
     if (!mounted) return;
     final dialogContext = _router.routerDelegate.navigatorKey.currentContext;
     if (dialogContext == null || !dialogContext.mounted) return;
     await showDialog<void>(
       context: dialogContext,
-      builder: (_) => const CredentialNeededDialog(),
+      builder: (_) => CredentialNeededDialog(
+        onAskPane: () => injector.get<SyncService>().sendMessage(
+          CredentialNeededDialog.askPaneMessage,
+        ),
+      ),
     );
   }
 
@@ -155,7 +163,10 @@ class _RemotePiAppState extends State<RemotePiApp> with WidgetsBindingObserver {
   void didChangeAppLifecycleState(AppLifecycleState state) {
     final meshSync = injector.get<MeshSyncService>();
     _updateVisibleTarget();
-    if (state == AppLifecycleState.resumed) unawaited(_notifications.refresh());
+    if (state == AppLifecycleState.resumed) {
+      unawaited(_notifications.refresh());
+      injector.get<SyncService>().noteAppResumed();
+    }
     switch (state) {
       case AppLifecycleState.resumed:
         meshSync.startPolling();

@@ -16,6 +16,7 @@ import 'package:app/ui/chat/widgets/message_bubble.dart';
 import 'package:app/ui/chat/widgets/pane_status.dart';
 import 'package:app/ui/chat/widgets/streaming_bubble.dart';
 import 'package:app/ui/chat/widgets/tool_request_card.dart';
+import 'package:app/ui/chat/widgets/credential_request_sheet.dart';
 import 'package:app/ui/chat/widgets/extension_ui_sheet.dart';
 import 'package:app_settings/app_settings.dart';
 import 'package:flutter/material.dart';
@@ -95,22 +96,50 @@ class ChatPage extends StatelessWidget {
     // end.
     final ready = state is ChatReady ? state : null;
     final uiRequest = ready?.pendingUiRequest;
-    if (uiRequest == null) return scaffold;
-    return Stack(
-      children: [
-        scaffold,
-        Positioned.fill(
-          // Keyed by request id: a new flow must get a fresh State — question
-          // ids repeat across flows (e.g. "goal"), so reusing the State would
-          // leak old selections/custom text into the new modal.
-          child: ExtensionUiSheet(
-            key: ValueKey(uiRequest.id),
-            request: uiRequest,
-            error: ready?.pendingUiError,
-            onRespond: vm.respondExtensionUi,
-          ),
-        ),
-      ],
+    final base = uiRequest == null
+        ? scaffold
+        : Stack(
+            children: [
+              scaffold,
+              Positioned.fill(
+                // Keyed by request id: a new flow must get a fresh State —
+                // question ids repeat across flows (e.g. "goal"), so reusing
+                // the State would leak old selections/custom text into the
+                // new modal.
+                child: ExtensionUiSheet(
+                  key: ValueKey(uiRequest.id),
+                  request: uiRequest,
+                  error: ready?.pendingUiError,
+                  onRespond: vm.respondExtensionUi,
+                ),
+              ),
+            ],
+          );
+    // Private credential handoff: a verified pending request overlays the
+    // chat with the compact masked form. Same reactive pattern as ask_user.
+    final credentials = vm.credentials;
+    if (credentials == null) return base;
+    return ListenableBuilder(
+      listenable: credentials,
+      builder: (context, _) {
+        final pending = credentials.pending;
+        if (pending == null) return base;
+        return Stack(
+          children: [
+            base,
+            Positioned.fill(
+              child: CredentialRequestSheet(
+                key: ValueKey('credential-${pending.id}'),
+                request: pending,
+                error: credentials.error,
+                submitting: credentials.submitting,
+                onSubmit: credentials.submit,
+                onCancel: credentials.cancel,
+              ),
+            ),
+          ],
+        );
+      },
     );
   }
 

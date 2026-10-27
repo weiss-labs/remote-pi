@@ -121,6 +121,8 @@ const _artifacts = new ArtifactBridge({
 });
 import { NativeCommands } from "./actions/commands.js";
 import { CREDENTIAL_INSTRUCTIONS, isOpAuthorizationTimeout } from "./actions/credential_blocker.js";
+import { CredentialBridge } from "./credentials/bridge.js";
+import { registerCredentialTool } from "./credentials/tool.js";
 let _lastCredentialNotice: number | null = null;
 function _announceCredentialNeeded(): void {
   const now = Date.now();
@@ -139,6 +141,16 @@ const _notifications = new NotificationBridge({
   callActive: () => _voiceBridge.isActive(),
   credentialNotice: _announceCredentialNeeded,
   paired: async (phone) => (await _findKnownPeer(phone)) !== null,
+});
+// Private credential handoff: signed request out, ciphertext back, value to a
+// private 0600 file. The relay only ever carries ciphertext for this path.
+const _credentials = new CredentialBridge({
+  identity: () => _cachedEd25519,
+  room: () => _myRoomId,
+  authorize: async (phone, sender) => _activePeers.get(phone) === sender && (await _findKnownPeer(phone)) !== null && _activePeers.get(phone) === sender,
+  broadcast: (msg) => _broadcastToActive(msg),
+  opened: (id) => _notifications.credentialOpened(id),
+  resolved: (id) => _notifications.promptResolved(id),
 });
 function _broadcastWithNotifications(msg: ServerMessage): void {
   if (msg.type === "extension_ui_request" && msg.method !== "notify") {
@@ -2219,6 +2231,7 @@ const extension: ExtensionFactory = (pi: ExtensionAPI): void => {
   // tool always sees the current state.
   registerAgentTools(pi, () => _meshNode?.peer() ?? null);
   _notifications.registerTool(pi);
+  registerCredentialTool(pi, _credentials);
   _registerReceivedImageRenderer(pi);
 
   // Received-image preview entries are for local TUI display only. Pi's custom
@@ -2326,6 +2339,11 @@ const extension: ExtensionFactory = (pi: ExtensionAPI): void => {
   // arguments/results are rewritten, persisted or copied into the notice.
   pi.on("tool_result", (event) => {
     if (isOpAuthorizationTimeout(event)) void _notifications.emit("credential_needed");
+    // Transcript hygiene for the private credential path: a live supplied
+    // literal that leaks into tool content OR details is replaced before
+    // persistence and provider use. Best effort only; not a boundary against
+    // hostile code. Tool arguments are never mutated.
+    return _credentials.redactToolResult(event) as { content?: typeof event.content; details?: unknown } | undefined;
   });
 
   pi.on("tool_execution_end", (event) => {
@@ -2334,7 +2352,7 @@ const extension: ExtensionFactory = (pi: ExtensionAPI): void => {
     // a session_sync replays for this tool. Raw `String(event.result)` turned
     // a content-array/object into "[object Object]" and the success branch sent
     // the object unstringified — both diverging from re-sync.
-    const text = _stringifyToolResult(event.result);
+    const text = _credentials.redact(_stringifyToolResult(event.result));
     const msg: ServerMessage = event.isError
       ? { type: "tool_result", tool_call_id: event.toolCallId, error: text }
       : { type: "tool_result", tool_call_id: event.toolCallId, result: text };
@@ -2466,9 +2484,10 @@ const extension: ExtensionFactory = (pi: ExtensionAPI): void => {
   // "stale after session replacement" crash when the app taps Compact after a
   // New session. Fires on startup/new/fork/reload/resume; the ctx is always
   // bound to the current session.
-  pi.on("session_tree", () => { _artifacts.reset(); });
+  pi.on("session_tree", () => { _artifacts.reset(); _credentials.start(); });
   pi.on("session_start", (_event, ctx) => {
     _artifacts.reset();
+    _credentials.start();
     _lastEventCtx = ctx;
     _commands?.resume();
     // session_shutdown disposes per-session pi-ask subscriptions. A host that
@@ -2566,6 +2585,7 @@ const extension: ExtensionFactory = (pi: ExtensionAPI): void => {
   // (e.g. shutdown lands mid-`_cmdRoot`) tears down without throwing.
   pi.on("session_shutdown", async () => {
     _artifacts.reset();
+    _credentials.stop();
     _commands?.stop();
     _notifications.stop();
     // Revoke async authority synchronously, before any teardown await. `_disposed`
@@ -4513,6 +4533,13 @@ export function _routeClientMessageFrom(
     void _artifacts.handle(phone, sender, msg).then(reply => { if (reply && _activePeers.get(phone) === sender) sender.send(reply); }).catch(() => {});
     return;
   }
+  if (msg.type === "credential_response" || msg.type === "credential_cancel" || msg.type === "credential_query") {
+    const phone = [..._activePeers].find(([, channel]) => channel === sender)?.[0];
+    const id = typeof msg.id === "string" ? msg.id.slice(0, 128) : "";
+    if (!phone) { sender.send({ type: "credential_result", in_reply_to: id, id: "", ok: false, error: "not_paired" }); return; }
+    void _credentials.handle(phone, sender, msg).then(reply => { if (_activePeers.get(phone) === sender) sender.send(reply); }).catch(() => { try { sender.send({ type: "credential_result", in_reply_to: id, id: "", ok: false, error: "internal_error" }); } catch { /* channel gone */ } });
+    return;
+  }
   if (msg.type === "notify_register" || msg.type === "notify_unregister" || msg.type === "notify_presence") {
     const phone = [..._activePeers].find(([, channel]) => channel === sender)?.[0];
     if (!phone) { sender.send({ type: "notification_registration", in_reply_to: msg.id, ok: false, error: "not_paired" }); return; }
@@ -4832,6 +4859,10 @@ function _handleSessionSync(
   for (const req of _extensionUiBridge?.pendingRequests() ?? []) {
     sender.send(req);
   }
+  // A pending signed credential request is replayed the same way so a phone
+  // that returns from 1Password/background or opens the push sees the form.
+  const credential = _credentials.pendingWire();
+  if (credential) sender.send(credential);
 }
 
 /**

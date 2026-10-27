@@ -64,6 +64,11 @@ class SyncService extends Service {
   final StreamController<ExtensionUiRequest> _extensionUiController =
       StreamController<ExtensionUiRequest>.broadcast();
 
+  // Private credential handoff: signed requests, close notices and result
+  // acks. Transient like extension_ui_request; never persisted.
+  final StreamController<ServerMessage> _credentialController =
+      StreamController<ServerMessage>.broadcast();
+
   List<QueuedMsg> _queuedMessages = const [];
   final StreamController<List<QueuedMsg>> _queuedController =
       StreamController<List<QueuedMsg>>.broadcast();
@@ -120,6 +125,21 @@ class SyncService extends Service {
   /// a full-screen modal and replies via [respondExtensionUi].
   Stream<ExtensionUiRequest> get extensionUiRequestStream =>
       _extensionUiController.stream;
+
+  /// Private credential handoff frames ([CredentialRequest],
+  /// [CredentialClosed], [CredentialResult]) for the live session.
+  Stream<ServerMessage> get credentialStream => _credentialController.stream;
+
+  final StreamController<void> _resumedController =
+      StreamController<void>.broadcast();
+
+  /// Fires when the app returns to the foreground (main.dart). Consumers that
+  /// must actively re-query the Pi (pending credential request) listen here.
+  Stream<void> get appResumed => _resumedController.stream;
+  void noteAppResumed() {
+    if (!_resumedController.isClosed) _resumedController.add(null);
+  }
+
   List<QueuedMsg> get queuedMessages => _queuedMessages;
   String? get queuedText =>
       _queuedMessages.isEmpty ? null : _queuedMessages.first.text;
@@ -661,6 +681,11 @@ class SyncService extends Service {
         // Surface to the UI; never persist (it's a live request, not history).
         _extensionUiController.add(msg);
         break;
+      case CredentialRequest():
+      case CredentialClosed():
+      case CredentialResult():
+        _credentialController.add(msg);
+        break;
       case ArtifactReply():
       case CommandsList():
       case CommandResult():
@@ -1195,6 +1220,8 @@ class SyncService extends Service {
     _streamingController.close();
     _eventController.close();
     _extensionUiController.close();
+    _credentialController.close();
+    _resumedController.close();
     _workingController.close();
     _queuedController.close();
   }

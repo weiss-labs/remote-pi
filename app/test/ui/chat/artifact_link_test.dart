@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'package:app/data/credentials/credential_request_controller.dart';
 import 'package:app/domain/contracts/artifact_preview.dart';
 import 'package:app/ui/chat/viewmodels/chat_viewmodel.dart';
 import 'package:app/ui/chat/widgets/agent_markdown.dart';
@@ -8,6 +9,8 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:provider/provider.dart';
 
 class PreviewChat extends ChangeNotifier implements ChatViewModel {
+  @override
+  CredentialRequestController? get credentials => null;
   final result = Completer<void>();
   String? requested;
   int cancellations = 0;
