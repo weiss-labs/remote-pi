@@ -633,9 +633,13 @@ class SyncService extends Service {
           }
           break;
         }
-        _discardStreamingState();
-        _clearSteeringLabels();
-        _setWorking(false);
+        // A credential notice is advisory, not a terminal agent error.
+        // Keep real stream/working lifecycle intact until its normal end event.
+        if (code != 'credential_needed') {
+          _discardStreamingState();
+          _clearSteeringLabels();
+          _setWorking(false);
+        }
         // ignore: discarded_futures
         _upsert(
           MsgRole.assistant,

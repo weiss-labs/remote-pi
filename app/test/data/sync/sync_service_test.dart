@@ -464,6 +464,42 @@ void main() {
     },
   );
 
+  test(
+    'credential notice shows instructions without ending active stream',
+    () async {
+      final s = await setup();
+      s.ch.push(UserInput(id: 'credential-work', text: 'continue'));
+      await _settle();
+      s.ch.push(
+        AgentChunk(inReplyTo: 'credential-work', delta: 'Waiting for approval'),
+      );
+      await _settle();
+      s.ch.push(
+        ErrorMessage(
+          code: 'credential_needed',
+          message:
+              'Approve sign-in on the affected Mac. Do not paste secrets into chat.',
+        ),
+      );
+      await _settle();
+      expect(s.sync.isWorking, isTrue);
+      expect(s.sync.streaming, isNotNull);
+      expect(
+        messages(
+          s.epk,
+        ).where((m) => m.role == MsgRole.assistant).map((m) => m.text),
+        contains(
+          '⚠ credential_needed: Approve sign-in on the affected Mac. Do not paste secrets into chat.',
+        ),
+      );
+      s.ch.push(AgentDone(inReplyTo: 'credential-work'));
+      await _settle();
+      expect(s.sync.isWorking, isFalse);
+      s.conn.dispose();
+      s.sync.dispose();
+    },
+  );
+
   test('isWorking spans the whole turn (echo → agent_done)', () async {
     final s = await setup();
     expect(s.sync.isWorking, isFalse);

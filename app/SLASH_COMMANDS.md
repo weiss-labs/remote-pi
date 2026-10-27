@@ -29,7 +29,9 @@ Backend support requires a Pi runtime with its verified native command-dispatch 
 
 A valid `credential_needed` notification tap opens a read-only instructions dialog after routing to the known paired room (or safe Home fallback). It directs the user to the requesting pane on their Mac, to complete sign-in or a 1Password/Touch ID approval on that Mac, then return and resume. It explicitly says that unlocking 1Password on the phone does not unlock the Mac, and that passwords/API keys/recovery codes must not be pasted into chat. The dialog has no secret input or transmission controls.
 
-This is actionable guidance for the existing explicit credential-needed event. It is not automatic detection of arbitrary operating-system prompts and it does not implement secure credential transfer.
+The backend can also send its fixed instructions as `error{code:'credential_needed'}` while the pane is open. This app shows that advisory warning without discarding an active stream or changing the working state; only the normal agent lifecycle ends the turn.
+
+This is actionable guidance for the credential-needed event. It is not automatic detection of arbitrary operating-system prompts and it does not implement secure credential transfer.
 
 ## Local checks
 
