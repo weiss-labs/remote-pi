@@ -24,7 +24,7 @@ class PeerChannelError implements Exception {
   String toString() => 'PeerChannelError: $message';
 }
 
-class PlainPeerChannel implements IChannel, IControlLink {
+class PlainPeerChannel implements IChannel, IControlLink, INotificationRoutes {
   final PeerTransport _transport;
 
   final _controller = StreamController<ServerMessage>.broadcast();
@@ -72,8 +72,33 @@ class PlainPeerChannel implements IChannel, IControlLink {
   }
 
   @override
+  Stream<RoutedNotificationReply> get notificationReplies =>
+      _transport is INotificationRoutes
+      ? (_transport as INotificationRoutes).notificationReplies
+      : const Stream.empty();
+
+  @override
+  Future<void> sendNotificationTo(
+    ClientMessage message, {
+    required String peer,
+    required String room,
+  }) async {
+    final transport = _transport;
+    if (transport is! INotificationRoutes) {
+      throw const PeerChannelError('Notification routing unavailable');
+    }
+    await (transport as INotificationRoutes).sendNotificationTo(
+      message,
+      peer: peer,
+      room: room,
+    );
+  }
+
+  @override
   Future<void> send(ClientMessage msg) async {
-    final bytes = Uint8List.fromList(utf8.encode(encodeClient(msg).trimRight()));
+    final bytes = Uint8List.fromList(
+      utf8.encode(encodeClient(msg).trimRight()),
+    );
     await _transport.send(bytes);
   }
 
@@ -104,7 +129,10 @@ class PlainPeerChannel implements IChannel, IControlLink {
       // Forward-compat: surface unknown server types as ErrorMessage.
       if (!_controller.isClosed) {
         _controller.add(
-          ErrorMessage(code: 'unsupported_type', message: 'unknown server type'),
+          ErrorMessage(
+            code: 'unsupported_type',
+            message: 'unknown server type',
+          ),
         );
       }
     } catch (_) {

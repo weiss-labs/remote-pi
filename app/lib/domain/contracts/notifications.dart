@@ -6,6 +6,7 @@ abstract class Notifications extends Service {
   NotificationPreferences get preferences;
   String get permission;
   String get status;
+  Map<String, String> get peerSyncStates => const {};
   bool get supported;
   Stream<void> get changes;
   Stream<NotificationTarget> get taps;

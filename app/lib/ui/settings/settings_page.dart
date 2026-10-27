@@ -124,6 +124,18 @@ class _NotificationsSection extends StatelessWidget {
           available ? vm.enableNotifications : null,
           subtitle: service?.status ?? 'Available on iOS',
         ),
+        if (service != null)
+          for (final sync in service.peerSyncStates.values)
+            Padding(
+              padding: const EdgeInsets.fromLTRB(18, 2, 18, 4),
+              child: Text(
+                sync,
+                style: context.typo.mono.copyWith(
+                  color: colors.muted,
+                  fontSize: 11,
+                ),
+              ),
+            ),
         if (service?.permission == 'denied')
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 18),
@@ -158,7 +170,7 @@ class _NotificationsSection extends StatelessWidget {
         Padding(
           padding: const EdgeInsets.fromLTRB(18, 8, 18, 18),
           child: Text(
-            'Messages and tool details stay private. Focus and iOS permissions may silence alerts. Settings sync when each paired Mac connects.',
+            'Messages and tool details stay private. Focus and iOS permissions may silence alerts. Settings sync through live paired panes. Offline Macs remain pending until confirmed.',
             style: context.typo.mono.copyWith(
               color: colors.muted,
               fontSize: 11,

@@ -13,6 +13,7 @@ import 'package:app/pairing/owner_identity_bridge.dart';
 import 'package:app/pairing/storage.dart';
 import 'package:app/routing/adaptive.dart';
 import 'package:app/routing/app_router.dart';
+import 'package:app/routing/notification_routes.dart';
 import 'package:app/ui/core/themes/themes.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
@@ -45,86 +46,65 @@ class _RemotePiAppState extends State<RemotePiApp> with WidgetsBindingObserver {
     injector.get<MeshSyncService>(),
   );
 
-  StreamSubscription<NotificationTarget>? _tapSub;
-  final List<NotificationTarget> _pendingTaps = [];
-  bool _openingTap = false;
+  late final NotificationRoutes _notificationRoutes;
   Notifications get _notifications => injector.get<Notifications>();
 
   @override
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
-    _tapSub = _notifications.taps.listen((target) {
-      _pendingTaps.add(target);
-      _routeChanged();
-    });
-    _router.routeInformationProvider.addListener(_routeChanged);
+    _notificationRoutes = NotificationRoutes(
+      router: _router,
+      taps: _notifications.taps,
+      open: _openTap,
+      routeChanged: _updateVisibleTarget,
+    );
     injector.get<SessionSelection>().addListener(_updateVisibleTarget);
     unawaited(_notifications.start());
   }
 
-  void _routeChanged() {
-    _updateVisibleTarget();
-    final path = _router.routeInformationProvider.value.uri.path;
-    if (!{'/home', '/chat', '/settings'}.contains(path) ||
-        _pendingTaps.isEmpty ||
-        _openingTap) {
+  Future<void> _openTap(NotificationTarget target) async {
+    if (!await _notifications.acceptTap(target) || !mounted) return;
+    final knownRoom = await _notifications.isKnownRoom(target);
+    if (!mounted) return;
+    if (!knownRoom) {
+      // A stale push never selects or creates a guessed session.
+      injector.get<SessionSelection>().clear();
+      _router.go('/home');
+      await _showCredentialInstructions(target);
       return;
     }
-    unawaited(_openTap());
-  }
-
-  Future<void> _openTap() async {
-    _openingTap = true;
-    final target = _pendingTaps.removeAt(0);
-    try {
-      if (!await _notifications.acceptTap(target) || !mounted) return;
-      final knownRoom = await _notifications.isKnownRoom(target);
-      if (!mounted) return;
-      if (!knownRoom) {
-        // A stale push never selects or creates a guessed session.
-        injector.get<SessionSelection>().clear();
-        _router.go('/home');
-        await _showCredentialInstructions(target);
-        return;
-      }
-      final storage = injector.get<PairingStorage>();
-      final peers = await storage.listPeers();
-      final peer = peers
-          .where(
-            (p) => toStandardB64(p.remoteEpk) == toStandardB64(target.peer),
-          )
-          .firstOrNull;
-      if (peer == null || !mounted) return;
-      await injector.get<Preferences>().setSelectedRoom(
-        epk: peer.remoteEpk,
-        roomId: target.room,
+    final storage = injector.get<PairingStorage>();
+    final peers = await storage.listPeers();
+    final peer = peers
+        .where((p) => toStandardB64(p.remoteEpk) == toStandardB64(target.peer))
+        .firstOrNull;
+    if (peer == null || !mounted) return;
+    await injector.get<Preferences>().setSelectedRoom(
+      epk: peer.remoteEpk,
+      roomId: target.room,
+    );
+    final conn = injector.get<ConnectionManager>();
+    conn.switchRoom(target.room);
+    unawaited(conn.switchTo(peer.copyWith(roomId: target.room)));
+    injector.get<SessionSelection>().select(
+      peer.remoteEpk,
+      target.room,
+      'Pane',
+      peer.nickname ?? peer.sessionName,
+    );
+    _router.go('/home');
+    await WidgetsBinding.instance.endOfFrame;
+    if (!mounted) return;
+    final view = WidgetsBinding.instance.platformDispatcher.views.first;
+    if (view.physicalSize.shortestSide / view.devicePixelRatio <
+        kTabletBreakpoint) {
+      _router.push(
+        '/chat',
+        extra: {'title': 'Pane', 'device': peer.nickname ?? peer.sessionName},
       );
-      final conn = injector.get<ConnectionManager>();
-      conn.switchRoom(target.room);
-      unawaited(conn.switchTo(peer.copyWith(roomId: target.room)));
-      injector.get<SessionSelection>().select(
-        peer.remoteEpk,
-        target.room,
-        'Pane',
-        peer.nickname ?? peer.sessionName,
-      );
-      _router.go('/home');
-      await WidgetsBinding.instance.endOfFrame;
-      if (!mounted) return;
-      final view = WidgetsBinding.instance.platformDispatcher.views.first;
-      if (view.physicalSize.shortestSide / view.devicePixelRatio <
-          kTabletBreakpoint) {
-        _router.push(
-          '/chat',
-          extra: {'title': 'Pane', 'device': peer.nickname ?? peer.sessionName},
-        );
-      }
-      await _showCredentialInstructions(target);
-    } finally {
-      _openingTap = false;
-      if (mounted) _routeChanged();
     }
+    await _showCredentialInstructions(target);
   }
 
   Future<void> _showCredentialInstructions(NotificationTarget target) async {
@@ -140,7 +120,7 @@ class _RemotePiAppState extends State<RemotePiApp> with WidgetsBindingObserver {
   }
 
   void _updateVisibleTarget() {
-    final path = _router.routeInformationProvider.value.uri.path;
+    final path = currentNotificationPath(_router);
     final selected = injector.get<SessionSelection>().current;
     final view = WidgetsBinding.instance.platformDispatcher.views.first;
     final wide =
@@ -160,8 +140,7 @@ class _RemotePiAppState extends State<RemotePiApp> with WidgetsBindingObserver {
   @override
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
-    _tapSub?.cancel();
-    _router.routeInformationProvider.removeListener(_routeChanged);
+    _notificationRoutes.dispose();
     injector.get<SessionSelection>().removeListener(_updateVisibleTarget);
     disposeDependencies();
     super.dispose();

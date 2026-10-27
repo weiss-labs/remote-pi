@@ -33,11 +33,12 @@ class WsTransportError implements Exception {
   String toString() => 'WsTransportError: $message';
 }
 
-class WsTransport implements PeerTransport, IControlLink {
+class WsTransport implements PeerTransport, IControlLink, INotificationRoutes {
   final WebSocketChannel _ws;
   final _queue = _MsgQueue();
-  final _controlController =
-      StreamController<ControlInbound>.broadcast();
+  final _notificationReplies =
+      StreamController<RoutedNotificationReply>.broadcast();
+  final _controlController = StreamController<ControlInbound>.broadcast();
 
   WsTransport._(this._ws);
 
@@ -92,6 +93,30 @@ class WsTransport implements PeerTransport, IControlLink {
           if (frame.containsKey('peer') && frame.containsKey('ct')) {
             final bytes = _b64Decode(frame['ct'] as String);
             final senderRoom = frame['room'] as String?;
+            // Notification ACKs are source-bound and consumed separately from
+            // chat. They may come from another paired Mac/live room.
+            Object? inner;
+            try {
+              inner = jsonDecode(utf8.decode(bytes));
+            } on FormatException {
+              /* Preserve the existing opaque transport path. */
+            }
+            if (inner is Map<String, dynamic> &&
+                inner['type'] == 'notification_registration') {
+              if (senderRoom != null &&
+                  !transport._notificationReplies.isClosed) {
+                transport._notificationReplies.add(
+                  RoutedNotificationReply(
+                    peer: _normalizeToStandard(frame['peer'] as String),
+                    room: senderRoom,
+                    reply:
+                        ServerMessage.fromJson(inner)
+                            as NotificationRegistration,
+                  ),
+                );
+              }
+              return;
+            }
             // Plan-18 follow-up — DEMUX inbound by sender room.
             // SessionRepository is singleton; without this guard,
             // AgentChunks for a chat the user just left bleed into
@@ -131,16 +156,23 @@ class WsTransport implements PeerTransport, IControlLink {
         }
       },
       onError: (e) {
-        if (!challengeCompleter.isCompleted) challengeCompleter.completeError(e);
+        if (!challengeCompleter.isCompleted) {
+          challengeCompleter.completeError(e);
+        }
         transport._queue.error(e);
       },
       onDone: () {
         if (!challengeCompleter.isCompleted) {
-          challengeCompleter.completeError(const WsTransportError('WS closed during auth'));
+          challengeCompleter.completeError(
+            const WsTransportError('WS closed during auth'),
+          );
         }
         transport._queue.close();
         if (!transport._controlController.isClosed) {
           transport._controlController.close();
+        }
+        if (!transport._notificationReplies.isClosed) {
+          transport._notificationReplies.close();
         }
       },
     );
@@ -151,11 +183,13 @@ class WsTransport implements PeerTransport, IControlLink {
       // on the canonical 'main' room. Pi-side hellos include their own
       // room_id (one per cwd) AND room_meta; that's not our concern here.
       final pub = await ed25519Key.extractPublicKey();
-      ws.sink.add(jsonEncode({
-        'type': 'hello',
-        'pubkey': base64.encode(pub.bytes),
-        'room_id': 'main',
-      }));
+      ws.sink.add(
+        jsonEncode({
+          'type': 'hello',
+          'pubkey': base64.encode(pub.bytes),
+          'room_id': 'main',
+        }),
+      );
 
       // 2. Challenge
       final ch = await challengeCompleter.future;
@@ -166,10 +200,9 @@ class WsTransport implements PeerTransport, IControlLink {
 
       // 3. Auth
       final sig = await Ed25519().sign(nonce, keyPair: ed25519Key);
-      ws.sink.add(jsonEncode({
-        'type': 'auth',
-        'sig': base64.encode(sig.bytes),
-      }));
+      ws.sink.add(
+        jsonEncode({'type': 'auth', 'sig': base64.encode(sig.bytes)}),
+      );
       authDone = true;
 
       transport._peerPubkey = _normalizeToStandard(peerPubkey);
@@ -202,11 +235,40 @@ class WsTransport implements PeerTransport, IControlLink {
 
   @override
   Future<void> send(Uint8List data) async {
-    _ws.sink.add(jsonEncode({
-      'peer': _peerPubkey,
-      'room': _activeRoom,
-      'ct': base64.encode(data),
-    }));
+    _ws.sink.add(
+      jsonEncode({
+        'peer': _peerPubkey,
+        'room': _activeRoom,
+        'ct': base64.encode(data),
+      }),
+    );
+  }
+
+  @override
+  Stream<RoutedNotificationReply> get notificationReplies =>
+      _notificationReplies.stream;
+
+  @override
+  Future<void> sendNotificationTo(
+    ClientMessage message, {
+    required String peer,
+    required String room,
+  }) async {
+    if (message is! NotifyRegister && message is! NotifyUnregister) {
+      throw const WsTransportError(
+        'Only notification registration may use fanout',
+      );
+    }
+    if (room.isEmpty) {
+      throw const WsTransportError('A live paired room is required');
+    }
+    _ws.sink.add(
+      jsonEncode({
+        'peer': _normalizeToStandard(peer),
+        'room': room,
+        'ct': base64.encode(utf8.encode(jsonEncode(message.toJson()))),
+      }),
+    );
   }
 
   @override
@@ -229,6 +291,7 @@ class WsTransport implements PeerTransport, IControlLink {
     await _sub?.cancel();
     await _ws.sink.close();
     _queue.close();
+    if (!_notificationReplies.isClosed) await _notificationReplies.close();
     if (!_controlController.isClosed) await _controlController.close();
   }
 }
@@ -265,7 +328,9 @@ class _MsgQueue {
   }
 
   Future<Uint8List> next() {
-    if (_closed) return Future.error(const WsTransportError('transport closed'));
+    if (_closed) {
+      return Future.error(const WsTransportError('transport closed'));
+    }
     if (_buf.isNotEmpty) return Future.value(_buf.removeAt(0));
     final c = Completer<Uint8List>();
     _waiters.add(c);

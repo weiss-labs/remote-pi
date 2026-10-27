@@ -1,7 +1,6 @@
 import 'dart:async';
 import 'dart:convert';
 import 'dart:math';
-
 import 'package:cryptography/cryptography.dart';
 import 'notification_grant.dart';
 import 'package:flutter/services.dart';
@@ -14,13 +13,19 @@ import 'package:app/data/transport/epk_encoding.dart';
 import 'package:app/pairing/storage.dart';
 import 'package:app/protocol/protocol.dart';
 
+class _PendingRegistration {
+  final String peer, room;
+  final Completer<NotificationRegistration> result;
+  _PendingRegistration(this.peer, this.room, this.result);
+}
+
 class NotificationService extends Notifications {
   final NotificationPlatform platform;
   final FlutterSecureStorage store;
   final ConnectionManager connection;
   final PairingStorage pairing;
   final Future<SimpleKeyPair> Function() ownerKey;
-  final Duration replyTimeout, retryDelay;
+  final Duration replyTimeout, retryDelay, renewalInterval;
   @override
   final bool supported;
   NotificationService({
@@ -32,6 +37,7 @@ class NotificationService extends Notifications {
     required this.ownerKey,
     this.replyTimeout = const Duration(seconds: 20),
     this.retryDelay = const Duration(seconds: 30),
+    this.renewalInterval = const Duration(hours: 12),
   });
   NotificationPreferences _preferences = const NotificationPreferences();
   String _permission = 'unknown',
@@ -42,22 +48,28 @@ class NotificationService extends Notifications {
   final _changes = StreamController<void>.broadcast();
   final _taps = StreamController<NotificationTarget>.broadcast();
   final Set<String> _seen = {};
+  final Map<String, _PendingRegistration> _pending = {};
+  final Map<String, String> _synced = {};
+  final Map<String, String> _macStates = {};
   StreamSubscription<ConnectionStatus>? _connectionSub;
-  StreamSubscription<ServerMessage>? _replySub;
-  Timer? _retry;
+  StreamSubscription<Map<String, List<RoomInfo>>>? _roomsSub;
+  StreamSubscription<dynamic>? _replySub;
+  Timer? _retry, _renewal;
   IChannel? _channel;
-  bool _started = false, _disposed = false, _busy = false, _dirty = false;
-  bool _ready = false;
-  Completer<NotificationRegistration>? _pending;
-  String? _pendingId;
-  int _counter = 0;
-  int _lastGrantExpiry = 0;
+  bool _started = false,
+      _disposed = false,
+      _busy = false,
+      _dirty = false,
+      _ready = false;
+  int _counter = 0, _revision = 0, _lastGrantExpiry = 0;
   @override
   NotificationPreferences get preferences => _preferences;
   @override
   String get permission => _permission;
   @override
   String get status => supported ? _status : 'Available on iOS';
+  @override
+  Map<String, String> get peerSyncStates => Map.unmodifiable(_macStates);
   @override
   Stream<void> get changes => _changes.stream;
   @override
@@ -86,9 +98,9 @@ class NotificationService extends Notifications {
     final raw = await store.read(key: 'notifications.preferences');
     if (raw != null) {
       try {
-        final decoded = jsonDecode(raw);
-        if (decoded is Map<String, dynamic>) {
-          _preferences = NotificationPreferences.fromJson(decoded);
+        final value = jsonDecode(raw);
+        if (value is Map<String, dynamic>) {
+          _preferences = NotificationPreferences.fromJson(value);
         }
       } on FormatException {
         _status = 'Preferences reset';
@@ -114,9 +126,15 @@ class NotificationService extends Notifications {
     });
     _ready = true;
     _connectionSub = connection.statusStream.listen((_) => _bind());
+    _roomsSub = connection.roomsStream.listen((_) => unawaited(_register()));
+    _renewal = Timer.periodic(renewalInterval, (_) {
+      _synced.clear();
+      _revision++;
+      unawaited(_register());
+    });
     _bind();
-    // status never requests authorization. Only the explicit UI action does.
-    await refresh();
+    // Cold taps must not wait for network registration ACKs.
+    unawaited(refresh());
     for (final value in await platform.takeTaps()) {
       final target = NotificationTarget.parse(value);
       if (target != null) _taps.add(target);
@@ -128,21 +146,50 @@ class NotificationService extends Notifications {
     if (identical(channel, _channel)) return;
     _replySub?.cancel();
     _channel = channel;
-    _pending?.complete(
-      const NotificationRegistration(
-        inReplyTo: '',
-        ok: false,
-        error: 'connection_changed',
-      ),
-    );
-    _pending = null;
-    _replySub = channel?.serverMessages.listen((message) {
-      if (message is NotificationRegistration &&
-          message.inReplyTo == _pendingId) {
-        _pending?.complete(message);
-        _pending = null;
+    _synced.clear();
+    _revision++;
+    for (final pending in _pending.values) {
+      if (!pending.result.isCompleted) {
+        pending.result.complete(
+          const NotificationRegistration(
+            inReplyTo: '',
+            ok: false,
+            error: 'connection_changed',
+          ),
+        );
       }
-    });
+    }
+    _pending.clear();
+    if (channel is INotificationRoutes) {
+      _replySub = (channel as INotificationRoutes).notificationReplies.listen((
+        envelope,
+      ) {
+        final pending = _pending[envelope.reply.inReplyTo];
+        if (pending == null ||
+            pending.peer != toStandardB64(envelope.peer) ||
+            pending.room != envelope.room) {
+          return;
+        }
+        _pending.remove(envelope.reply.inReplyTo);
+        if (!pending.result.isCompleted) {
+          pending.result.complete(envelope.reply);
+        }
+      });
+    } else {
+      // Compatibility for simple in-memory channels. Production uses source-bound routes.
+      _replySub = channel?.serverMessages.listen((message) {
+        if (message is! NotificationRegistration) return;
+        final pending = _pending[message.inReplyTo];
+        if (pending == null ||
+            pending.peer !=
+                toStandardB64(connection.activePeer?.remoteEpk ?? '') ||
+            pending.room != connection.activeRoomId) {
+          return;
+        }
+        _pending.remove(message.inReplyTo);
+        if (!pending.result.isCompleted) pending.result.complete(message);
+      });
+    }
     unawaited(_register());
   }
 
@@ -151,9 +198,17 @@ class NotificationService extends Notifications {
     if (!supported || _disposed || !_ready) return;
     try {
       final value = await platform.status();
-      _permission = value['permission'] as String? ?? 'notDetermined';
-      _token = value['token'] as String? ?? '';
-      _environment = value['environment'] as String? ?? '';
+      final permission = value['permission'] as String? ?? 'notDetermined';
+      final token = value['token'] as String? ?? '';
+      final environment = value['environment'] as String? ?? '';
+      if (permission != _permission ||
+          token != _token ||
+          environment != _environment) {
+        _revision++;
+      }
+      _permission = permission;
+      _token = token;
+      _environment = environment;
       await store.write(key: 'notifications.permission', value: _permission);
       await _register();
     } on PlatformException {
@@ -177,12 +232,85 @@ class NotificationService extends Notifications {
   @override
   Future<void> update(NotificationPreferences value) async {
     _preferences = value;
+    _revision++;
     await store.write(
       key: 'notifications.preferences',
       value: jsonEncode(value.toJson()),
     );
     _emit();
     await _register();
+  }
+
+  String? _liveRoom(PeerRecord peer, IChannel channel) {
+    final rooms = connection
+        .roomsFor(peer.remoteEpk)
+        .where((r) => connection.isRoomLive(peer.remoteEpk, r.roomId))
+        .toList();
+    if (rooms.isNotEmpty) {
+      return rooms
+              .where((r) => r.roomId == connection.activeRoomId)
+              .firstOrNull
+              ?.roomId ??
+          rooms.first.roomId;
+    }
+    // Legacy fake channels cannot advertise rooms. Never guess on production routing.
+    if (channel is! INotificationRoutes &&
+        toStandardB64(connection.activePeer?.remoteEpk ?? '') ==
+            toStandardB64(peer.remoteEpk)) {
+      return connection.activeRoomId;
+    }
+    return null;
+  }
+
+  Future<ClientMessage> _message(String peer, bool enabled) async {
+    final id = 'notify-${DateTime.now().microsecondsSinceEpoch}-${_counter++}';
+    if (!enabled) return NotifyUnregister(id: id, deviceId: _deviceId);
+    final now = DateTime.now().millisecondsSinceEpoch ~/ 1000;
+    final expiry = max(now + 29 * 86400, _lastGrantExpiry + 1);
+    if (expiry > now + 30 * 86400) {
+      throw const FormatException('Grant expiry exceeds allowed clock window');
+    }
+    _lastGrantExpiry = expiry;
+    await store.write(key: 'notifications.grant_expiry', value: '$expiry');
+    return signNotificationGrant(
+      peer,
+      await ownerKey(),
+      NotifyRegister(
+        id: id,
+        deviceId: _deviceId,
+        token: _token,
+        environment: _environment,
+        categories: _preferences.categories.toList(),
+        showPaneName: _preferences.showPaneName,
+        expiresAt: expiry,
+        signature: '',
+      ),
+    );
+  }
+
+  Future<NotificationRegistration> _send(
+    IChannel channel,
+    String peer,
+    String room,
+    ClientMessage message,
+  ) async {
+    final id = message.toJson()['id'] as String;
+    final result = Completer<NotificationRegistration>();
+    _pending[id] = _PendingRegistration(peer, room, result);
+    try {
+      if (channel is INotificationRoutes) {
+        await (channel as INotificationRoutes).sendNotificationTo(
+          message,
+          peer: peer,
+          room: room,
+        );
+      } else {
+        await channel.send(message);
+      }
+      return await result.future.timeout(replyTimeout);
+    } finally {
+      _pending.remove(id);
+    }
   }
 
   Future<void> _register() async {
@@ -192,105 +320,117 @@ class NotificationService extends Notifications {
       return;
     }
     _retry?.cancel();
+    _busy = true;
+    final revision = _revision;
     final enabled =
         _preferences.enabled &&
-        (_permission == 'authorized' || _permission == 'provisional');
-    if (enabled &&
-        (_token.isEmpty || !{'production', 'sandbox'}.contains(_environment))) {
-      _status = !_preferences.enabled
-          ? 'Off'
-          : _permission == 'denied'
-          ? 'Permission denied. Open iOS Settings.'
-          : 'Waiting for iOS push token';
-      _emit();
-      return;
-    }
-    final channel = _channel;
-    final peer = connection.activePeer;
-    if (channel == null || peer == null) {
-      _status = 'Waiting for paired connection';
-      _emit();
-      return;
-    }
-    _busy = true;
+        {'authorized', 'provisional'}.contains(_permission);
+    final fingerprint = jsonEncode([
+      enabled,
+      _token,
+      _environment,
+      _preferences.toJson(),
+    ]);
+    var needsRetry = false;
     try {
       final peers = await pairing.listPeers();
-      if (!peers.any(
-            (p) => toStandardB64(p.remoteEpk) == toStandardB64(peer.remoteEpk),
-          ) ||
-          !identical(channel, _channel)) {
-        return;
-      }
-      _status = 'Saving notification settings…';
-      _emit();
-      final id =
-          'notify-${DateTime.now().microsecondsSinceEpoch}-${_counter++}';
-      final ClientMessage message;
-      if (enabled) {
-        _lastGrantExpiry = max(
-          DateTime.now().millisecondsSinceEpoch ~/ 1000 + 7 * 86400,
-          _lastGrantExpiry + 1,
-        );
-        await store.write(
-          key: 'notifications.grant_expiry',
-          value: '$_lastGrantExpiry',
-        );
-        message = await signNotificationGrant(
-          toStandardB64(peer.remoteEpk),
-          await ownerKey(),
-          NotifyRegister(
-            id: id,
-            deviceId: _deviceId,
-            token: _token,
-            environment: _environment,
-            categories: _preferences.categories.toList(),
-            showPaneName: _preferences.showPaneName,
-            expiresAt: _lastGrantExpiry,
-            signature: '',
-          ),
-        );
-      } else {
-        message = NotifyUnregister(id: id, deviceId: _deviceId);
-      }
-      if (_disposed ||
-          !identical(channel, _channel) ||
-          !(await pairing.listPeers()).any(
-            (p) => toStandardB64(p.remoteEpk) == toStandardB64(peer.remoteEpk),
+      final keys = peers.map((p) => toStandardB64(p.remoteEpk)).toSet();
+      _macStates.removeWhere((key, _) => !keys.contains(key));
+      _synced.removeWhere((key, _) => !keys.contains(key));
+      for (final peer in peers) {
+        if (_disposed || revision != _revision) {
+          _dirty = true;
+          break;
+        }
+        final key = toStandardB64(peer.remoteEpk);
+        final label = peer.nickname ?? peer.sessionName;
+        if (_synced[key] == fingerprint) continue;
+        final channel = _channel;
+        final room = channel == null ? null : _liveRoom(peer, channel);
+        if (channel == null || room == null) {
+          _macStates[key] = '$label: pending, no live pane';
+          needsRetry = true;
+          continue;
+        }
+        if (enabled &&
+            (_token.isEmpty ||
+                !{'production', 'sandbox'}.contains(_environment))) {
+          _macStates[key] = '$label: waiting for iOS push token';
+          needsRetry = true;
+          continue;
+        }
+        _macStates[key] = '$label: saving…';
+        _status = 'Saving notification settings…';
+        _emit();
+        try {
+          final message = await _message(key, enabled);
+          if (_disposed ||
+              revision != _revision ||
+              !identical(channel, _channel)) {
+            _dirty = true;
+            break;
+          }
+          if (!(await pairing.listPeers()).any(
+            (p) => toStandardB64(p.remoteEpk) == key,
           )) {
-        return;
+            continue;
+          }
+          if (_liveRoom(peer, channel) != room) {
+            needsRetry = true;
+            _macStates[key] = '$label: pending, pane changed';
+            continue;
+          }
+          final reply = await _send(channel, key, room, message);
+          if (reply.ok) {
+            _synced[key] = fingerprint;
+            _macStates[key] = '$label: ${enabled ? 'ready' : 'off'}';
+          } else {
+            needsRetry = true;
+            _macStates[key] =
+                '$label: ${{'apns_disabled', 'apns_unconfigured'}.contains(reply.error) ? 'push service not configured' : 'pending, registration declined'}';
+          }
+        } on TimeoutException {
+          needsRetry = true;
+          _macStates[key] = '$label: pending, no confirmation';
+        } on Exception {
+          needsRetry = true;
+          _macStates[key] = '$label: pending, connection unavailable';
+        } on StateError {
+          needsRetry = true;
+          _macStates[key] = '$label: pending, connection unavailable';
+        }
+        _emit();
       }
-      final pending = Completer<NotificationRegistration>();
-      _pending = pending;
-      _pendingId = id;
-      // Attach the waiter before send, including synchronous fake channels.
-      await channel.send(message);
-      final reply = await pending.future.timeout(replyTimeout);
-      _status = reply.ok
-          ? (enabled ? 'Ready for this paired Mac' : 'Off for this paired Mac')
-          : {'apns_disabled', 'apns_unconfigured'}.contains(reply.error)
-          ? 'Push service is not configured yet'
-          : 'Registration declined. Retry after reconnecting.';
-      if (!reply.ok) _scheduleRetry();
-    } on TimeoutException {
-      _status = 'No confirmation yet. Retrying…';
-      _scheduleRetry();
+      final remaining = keys.where((key) => _synced[key] != fingerprint).length;
+      if (keys.isEmpty) {
+        _status = enabled ? 'Pair a Mac to receive notifications' : 'Off';
+      } else if (remaining == 0) {
+        _status = keys.length == 1
+            ? (enabled
+                  ? 'Ready for this paired Mac'
+                  : 'Off for this paired Mac')
+            : '${enabled ? 'Ready' : 'Off'} on all ${keys.length} paired Macs';
+      } else if (_macStates.values.any(
+        (value) => value.contains('push service not configured'),
+      )) {
+        _status = 'Push service is not configured yet';
+      } else {
+        _status =
+            'Pending on $remaining paired ${remaining == 1 ? 'Mac' : 'Macs'}. Offline Macs keep their previous settings until confirmed.';
+      }
     } on Exception {
-      _status = 'Connection unavailable. Retrying…';
-      _scheduleRetry();
+      needsRetry = true;
+      _status = 'Notification settings pending. Retrying…';
     } finally {
-      _pending = null;
-      _pendingId = null;
       _busy = false;
       _emit();
       if (_dirty) {
         _dirty = false;
         unawaited(_register());
+      } else if (needsRetry && !_disposed) {
+        _retry = Timer(retryDelay, () => unawaited(_register()));
       }
     }
-  }
-
-  void _scheduleRetry() {
-    if (!_disposed) _retry = Timer(retryDelay, () => unawaited(_register()));
   }
 
   @override
@@ -350,8 +490,22 @@ class NotificationService extends Notifications {
   @override
   void dispose() {
     _disposed = true;
+    for (final pending in _pending.values) {
+      if (!pending.result.isCompleted) {
+        pending.result.complete(
+          const NotificationRegistration(
+            inReplyTo: '',
+            ok: false,
+            error: 'disposed',
+          ),
+        );
+      }
+    }
+    _pending.clear();
     _retry?.cancel();
     _connectionSub?.cancel();
+    _roomsSub?.cancel();
+    _renewal?.cancel();
     _replySub?.cancel();
     _changes.close();
     _taps.close();
