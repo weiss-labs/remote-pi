@@ -12,6 +12,7 @@ OUT=/tmp/rp-tf-$NUM; rm -rf "$OUT"; mkdir -p "$OUT"
 flutter build ios --release --no-codesign --build-number "$NUM"
 xcodebuild -workspace ios/Runner.xcworkspace -scheme Runner -configuration Release -destination 'generic/platform=iOS' -archivePath "$OUT/a.xcarchive" archive -quiet
 xcodebuild -exportArchive -archivePath "$OUT/a.xcarchive" -exportPath "$OUT/export" -exportOptionsPlist ExportOptions.testflight.plist -quiet
+python3 ../scripts/audit-ios-fonts.py "$OUT/export/Remote Pi WL.ipa"
 xcrun altool --upload-app -f "$OUT/export/Remote Pi WL.ipa" -t ios --apiKey "$KID" --apiIssuer "$ISS"
 node ../scripts/testflight-release.mjs "$NUM"
 # Processing and tester assignment above must succeed before announcing it.
