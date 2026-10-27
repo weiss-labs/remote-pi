@@ -90,8 +90,51 @@ void main() {
       final envelope = await reply.timeout(const Duration(seconds: 3));
       expect(envelope.peer, 'Yg==');
       expect(envelope.room, 'live-b');
-      // Registration ACK never enters normal chat receive; the next chat frame does.
+      // A second Mac may have the SAME deterministic room ID. Its ACK stays
+      // routed with provenance, but its ordinary history/chunks cannot enter chat.
+      final sameRoomAck = transport.notificationReplies.first;
+      socket.add(
+        jsonEncode({
+          'peer': 'Yg==',
+          'room': 'chat-a',
+          'ct': base64Encode(
+            utf8.encode(
+              jsonEncode({
+                'type': 'notification_registration',
+                'in_reply_to': 'other-mac-same-room',
+                'ok': true,
+              }),
+            ),
+          ),
+        }),
+      );
+      final sameRoomEnvelope = await sameRoomAck.timeout(
+        const Duration(seconds: 3),
+      );
+      expect(sameRoomEnvelope.peer, 'Yg==');
+      expect(sameRoomEnvelope.room, 'chat-a');
+      // Registration ACK never enters normal chat receive. Neither do foreign
+      // ordinary frames, even with the same room or a legacy omitted room.
       final chat = transport.receive();
+      socket.add(
+        jsonEncode({
+          'peer': 'Yg==',
+          'room': 'chat-a',
+          'ct': base64Encode(
+            utf8.encode(
+              '{"type":"agent_chunk","in_reply_to":"foreign","delta":"wrong Mac"}',
+            ),
+          ),
+        }),
+      );
+      socket.add(
+        jsonEncode({
+          'peer': 'Yg==',
+          'ct': base64Encode(
+            utf8.encode('{"type":"session_history","messages":[]}'),
+          ),
+        }),
+      );
       socket.add(
         jsonEncode({
           'peer': 'YQ==',

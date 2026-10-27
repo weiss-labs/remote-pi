@@ -117,6 +117,16 @@ class WsTransport implements PeerTransport, IControlLink, INotificationRoutes {
               }
               return;
             }
+            // Fanout can attach this phone to other Macs whose deterministic
+            // room IDs match the active chat. Ordinary traffic must match BOTH
+            // canonical source peer and room; only routed ACKs bypass this.
+            if (_normalizeToStandard(frame['peer'] as String) !=
+                transport._peerPubkey) {
+              debugPrint(
+                '[ws-in] bytes=${rawStr.length} kind=envelope DROPPED (peer-mismatch)',
+              );
+              return;
+            }
             // Plan-18 follow-up — DEMUX inbound by sender room.
             // SessionRepository is singleton; without this guard,
             // AgentChunks for a chat the user just left bleed into
