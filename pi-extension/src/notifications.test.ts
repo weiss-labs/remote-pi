@@ -69,6 +69,19 @@ describe("notification pairing grants", () => {
   });
 });
 describe("notification event lifecycle", () => {
+  it("notifies generic native UI waits without exposing titles and resumes completion after answer", async () => {
+    const s=setup();
+    const handlers=new Map<string,(e: {kind?:string;title?:string})=>void>();
+    s.bridge.registerTool({on:(name:string,fn:any)=>handlers.set(name,fn),registerCommand:()=>{},registerTool:()=>{}} as any);
+    s.bridge.start();
+    handlers.get("ui_prompt_start")!({kind:"confirm",title:"DO NOT SHARE THIS TITLE"});
+    await settle();
+    expect(s.relay.frames.some(f=>f.kind==="input_needed")).toBe(true);
+    expect(JSON.stringify(s.relay.frames)).not.toContain("DO NOT SHARE");
+    handlers.get("ui_prompt_end")!({kind:"confirm"});
+    s.bridge.end();await settle();
+    expect(s.relay.frames.some(f=>f.kind==="task_finished")).toBe(true);
+  });
   it("emits one completion on agent run end, never per tool invocation", async () => {
     const s=setup();s.bridge.start();s.bridge.end();s.bridge.end();await settle();
     expect(s.relay.frames.filter(f=>f.type==="notification_event").map(f=>f.kind)).toEqual(["task_finished"]);

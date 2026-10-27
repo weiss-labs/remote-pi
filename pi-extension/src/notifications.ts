@@ -138,6 +138,31 @@ export class NotificationBridge {
   pauseTransport(): void { void this.control({ type: "notification_activity", active: false }); }
   stop(): void { this.active = false; this.waiting = false; this.unresolvedPrompts.clear(); this.pauseTransport(); }
   registerTool(pi: ExtensionAPI): void {
+    // Pi 1.4 exposes generic blocking UI lifecycle events. They are input
+    // requests, not proof of a credential prompt: never inspect titles or
+    // forward their contents. Older hosts simply never emit these events.
+    const prompts = new Map<string, { id: string; depth: number }>();
+    const on = pi.on as unknown as (event: string, handler: (event: {kind?: unknown}) => void) => unknown;
+    if (typeof on === "function") {
+      on.call(pi, "ui_prompt_start", (event) => {
+        const kind = typeof event.kind === "string" ? event.kind : "ui";
+        const current = prompts.get(kind);
+        if (current) { current.depth++; return; }
+        const prompt = { id: `native-${randomUUID()}`, depth: 1 };
+        prompts.set(kind, prompt);
+        this.promptOpened(prompt.id);
+      });
+      on.call(pi, "ui_prompt_end", (event) => {
+        const kind = typeof event.kind === "string" ? event.kind : "ui";
+        const current = prompts.get(kind);
+        if (!current || --current.depth > 0) return;
+        prompts.delete(kind);
+        this.promptResolved(current.id);
+      });
+      const clearPrompts = () => { for (const p of prompts.values()) this.promptResolved(p.id); prompts.clear(); };
+      on.call(pi, "session_start", clearPrompts);
+      on.call(pi, "session_shutdown", clearPrompts);
+    }
     pi.registerCommand("credential-needed", {
       description: "Show generic credential/sign-in blocker instructions and notify the paired phone (no secrets or arguments)",
       handler: async (args, ctx) => {
