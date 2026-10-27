@@ -82,6 +82,7 @@ void main() {
     );
     await tester.pumpAndSettle();
     expect(notifications.prompts, 0);
+    expect(find.textContaining('not a Focus override'), findsOneWidget);
     final allow = find.widgetWithText(SwitchListTile, 'Allow notifications');
     await tester.ensureVisible(allow);
     await tester.pumpAndSettle();
@@ -107,7 +108,7 @@ void main() {
       true,
     );
     expect(
-      find.text('High priority. A pane needs sign-in or credentials.'),
+      find.text('Priority delivery. A pane needs sign-in or credentials.'),
       findsOneWidget,
     );
     await tester.tap(credential);

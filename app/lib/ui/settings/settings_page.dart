@@ -156,8 +156,8 @@ class _NotificationsSection extends StatelessWidget {
               subtitle:
                   highPriorityNotificationCategories.contains(category.key)
                   ? (category.key == 'credential_needed'
-                        ? 'High priority. A pane needs sign-in or credentials.'
-                        : 'High priority. Questions and approvals that need you.')
+                        ? 'Priority delivery. A pane needs sign-in or credentials.'
+                        : 'Priority delivery. Questions and approvals that need you.')
                   : null,
             ),
           toggle(
@@ -170,7 +170,7 @@ class _NotificationsSection extends StatelessWidget {
         Padding(
           padding: const EdgeInsets.fromLTRB(18, 8, 18, 18),
           child: Text(
-            'Messages and tool details stay private. Focus and iOS permissions may silence alerts. Settings sync through live paired panes. Offline Macs remain pending until confirmed.',
+            'Messages and tool details stay private. Priority means server queue order, not a Focus override. Alerts use standard iOS presentation; Focus and permissions may silence them. Settings sync through live paired panes. Offline Macs remain pending until confirmed.',
             style: context.typo.mono.copyWith(
               color: colors.muted,
               fontSize: 11,
