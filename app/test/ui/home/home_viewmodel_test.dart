@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:typed_data';
 
 import 'package:app/data/preferences/preferences.dart';
+import 'package:app/data/share/share_inbox.dart';
 import 'package:app/data/transport/channel.dart';
 import 'package:app/data/transport/connection_manager.dart';
 import 'package:app/data/transport/peer_channel.dart';
@@ -148,6 +149,7 @@ ConnectionManager _conn({_FakeStorage? storage}) {
 }
 
 void main() {
+  plan74SharedPanesTests();
   group('HomeViewModel', () {
     test(
       'isRoomWorking follows the relay meta.working broadcast for ANY room — '
@@ -539,5 +541,63 @@ void main() {
 
       vm.dispose();
     });
+  });
+}
+
+// Plan/74 — the Share extension lists panes exactly as Home groups them.
+class _RecordingInbox implements ShareInbox {
+  List<SharedPane> published = const [];
+  @override
+  Future<void> publishPanes(List<SharedPane> panes) async => published = panes;
+  @override
+  Future<List<SharedItem>> takeQueued() async => const [];
+  @override
+  Future<void> complete(String id) async {}
+}
+
+void plan74SharedPanesTests() {
+  test('sharedPanes publishes Herdr workspace/tab/pane rows on every Home update', () async {
+    final ch = _ControllableChannel();
+    final storage = _FakeStorage([_peerA]);
+    final conn = ConnectionManager(
+      factory: (_, _) async => ch,
+      storage: storage,
+      emitDebounce: Duration.zero,
+    );
+    final prefs = Preferences(_FakeSecureStorage());
+    final inbox = _RecordingInbox();
+    final vm = HomeViewModel(storage, prefs, conn, inbox);
+    await conn.connectTo(_peerA);
+    await Future<void>.delayed(const Duration(milliseconds: 10));
+    ch.pushControl(
+      const RoomAnnounced(peer: 'epk_A', roomId: 'r1', name: 'ZachOS›Agents›main', startedAt: 1),
+    );
+    ch.pushControl(
+      const RoomAnnounced(peer: 'epk_A', roomId: 'r2', name: 'ZachOS›2›review', startedAt: 2),
+    );
+    ch.pushControl(
+      const RoomAnnounced(peer: 'epk_A', roomId: 'r3', name: 'plain_pane', startedAt: 3),
+    );
+    await Future<void>.delayed(const Duration(milliseconds: 20));
+
+    final rows = vm.sharedPanes();
+    expect(rows.map((r) => r.room).toSet(), {'r1', 'r2', 'r3'});
+    final main = rows.singleWhere((r) => r.room == 'r1');
+    expect(main.workspace, 'ZachOS');
+    expect(main.tab, 'Agents');
+    expect(main.pane, 'main');
+    expect(main.device, 'Pi A');
+    expect(main.peer, 'epk_A');
+    // Numeric Herdr tab names are skipped, like Home.
+    expect(rows.singleWhere((r) => r.room == 'r2').tab, isNull);
+    final plain = rows.singleWhere((r) => r.room == 'r3');
+    expect(plain.workspace, 'Other');
+    expect(plain.pane, 'plain pane');
+    // Every state emit republished the snapshot to the App Group.
+    expect(inbox.published.map((r) => r.room), rows.map((r) => r.room));
+    expect(inbox.published.first.toJson().keys, containsAll(['peer', 'room', 'workspace', 'pane', 'device', 'online']));
+    vm.dispose();
+    conn.dispose();
+    await ch.close();
   });
 }

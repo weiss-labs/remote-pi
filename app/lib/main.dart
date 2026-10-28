@@ -7,7 +7,10 @@ import 'package:app/config/dependencies.dart';
 import 'package:app/data/local/boxes.dart';
 import 'package:app/data/mesh/mesh_sync_service.dart';
 import 'package:app/data/preferences/preferences.dart';
+import 'package:app/data/share/share_inbox.dart';
 import 'package:app/data/sync/sync_service.dart';
+import 'package:app/domain/contracts/file_transfer.dart';
+import 'package:app/protocol/uuid7.dart';
 import 'package:app/data/transport/connection_manager.dart';
 import 'package:app/pairing/owner_identity_bridge.dart';
 import 'package:app/pairing/storage.dart';
@@ -61,6 +64,131 @@ class _RemotePiAppState extends State<RemotePiApp> with WidgetsBindingObserver {
     );
     injector.get<SessionSelection>().addListener(_updateVisibleTarget);
     unawaited(_notifications.start());
+    // Plan/74 — items queued by the Share extension while we were closed.
+    unawaited(_drainShareInbox());
+  }
+
+  // ---------------------------------------------------------------------------
+  // Plan/74 — Share-sheet queue. Each item is sent to exactly the pane picked
+  // in the extension; nothing is ever re-routed to the current chat.
+  // ---------------------------------------------------------------------------
+  final _messenger = GlobalKey<ScaffoldMessengerState>();
+  bool _shareDraining = false;
+
+  Future<void> _drainShareInbox() async {
+    if (_shareDraining || !mounted) return;
+    _shareDraining = true;
+    try {
+      final inbox = injector.get<ShareInbox>();
+      for (final item in await inbox.takeQueued()) {
+        if (!mounted) return;
+        final error = await _sendShared(item);
+        await inbox.complete(item.id);
+        _toast(
+          error == null
+              ? 'Sent ${item.file.name} to ${item.label}.'
+              : '${item.file.name}: $error',
+        );
+      }
+    } finally {
+      _shareDraining = false;
+    }
+  }
+
+  void _toast(String text) {
+    final messenger = _messenger.currentState;
+    if (messenger == null) return;
+    messenger.hideCurrentSnackBar();
+    messenger.showSnackBar(
+      SnackBar(
+        content: Text(text),
+        duration: const Duration(seconds: 5),
+        behavior: SnackBarBehavior.floating,
+      ),
+    );
+  }
+
+  /// Null on success, otherwise the user-facing reason the item was dropped.
+  Future<String?> _sendShared(SharedItem item) async {
+    if (!await _waitUntil(
+      () => {
+        '/home',
+        '/chat',
+        '/settings',
+      }.contains(currentNotificationPath(_router)),
+      const Duration(seconds: 15),
+    )) {
+      return 'Remote Pi was not ready. Share it again.';
+    }
+    final peers = await injector.get<PairingStorage>().listPeers();
+    final peer = peers
+        .where((p) => toStandardB64(p.remoteEpk) == toStandardB64(item.peer))
+        .firstOrNull;
+    if (peer == null || !mounted) return 'That Mac is no longer paired.';
+    await _openPane(peer, item.room);
+    final conn = injector.get<ConnectionManager>();
+    if (!await _waitUntil(
+      () =>
+          conn.channel != null &&
+          conn.activePeer?.remoteEpk == peer.remoteEpk &&
+          conn.activeRoomId == item.room &&
+          conn.isRoomLive(peer.remoteEpk, item.room),
+      const Duration(seconds: 20),
+    )) {
+      return 'That pane is offline. Share it again when it is back.';
+    }
+    try {
+      await injector.get<FileTransfer>().send(
+        item.file,
+        messageId: 'cli_${uuid7()}',
+        peer: peer.remoteEpk,
+        room: item.room,
+        steer: conn.isRoomWorking(peer.remoteEpk, item.room),
+      );
+      return null;
+    } on FileTransferFailure catch (e) {
+      return e.message;
+    }
+  }
+
+  Future<bool> _waitUntil(bool Function() ready, Duration limit) async {
+    final deadline = DateTime.now().add(limit);
+    while (mounted) {
+      if (ready()) return true;
+      if (DateTime.now().isAfter(deadline)) return false;
+      await Future<void>.delayed(const Duration(milliseconds: 250));
+    }
+    return false;
+  }
+
+  /// Select + connect + show the chat for (peer, room). Shared by notification
+  /// taps and the Share-sheet queue.
+  Future<void> _openPane(PeerRecord peer, String room) async {
+    await injector.get<Preferences>().setSelectedRoom(
+      epk: peer.remoteEpk,
+      roomId: room,
+    );
+    if (!mounted) return;
+    final conn = injector.get<ConnectionManager>();
+    conn.switchRoom(room);
+    unawaited(conn.switchTo(peer.copyWith(roomId: room)));
+    injector.get<SessionSelection>().select(
+      peer.remoteEpk,
+      room,
+      'Pane',
+      peer.nickname ?? peer.sessionName,
+    );
+    _router.go('/home');
+    await WidgetsBinding.instance.endOfFrame;
+    if (!mounted) return;
+    final view = WidgetsBinding.instance.platformDispatcher.views.first;
+    if (view.physicalSize.shortestSide / view.devicePixelRatio <
+        kTabletBreakpoint) {
+      _router.push(
+        '/chat',
+        extra: {'title': 'Pane', 'device': peer.nickname ?? peer.sessionName},
+      );
+    }
   }
 
   Future<void> _openTap(NotificationTarget target) async {
@@ -80,30 +208,8 @@ class _RemotePiAppState extends State<RemotePiApp> with WidgetsBindingObserver {
         .where((p) => toStandardB64(p.remoteEpk) == toStandardB64(target.peer))
         .firstOrNull;
     if (peer == null || !mounted) return;
-    await injector.get<Preferences>().setSelectedRoom(
-      epk: peer.remoteEpk,
-      roomId: target.room,
-    );
-    final conn = injector.get<ConnectionManager>();
-    conn.switchRoom(target.room);
-    unawaited(conn.switchTo(peer.copyWith(roomId: target.room)));
-    injector.get<SessionSelection>().select(
-      peer.remoteEpk,
-      target.room,
-      'Pane',
-      peer.nickname ?? peer.sessionName,
-    );
-    _router.go('/home');
-    await WidgetsBinding.instance.endOfFrame;
+    await _openPane(peer, target.room);
     if (!mounted) return;
-    final view = WidgetsBinding.instance.platformDispatcher.views.first;
-    if (view.physicalSize.shortestSide / view.devicePixelRatio <
-        kTabletBreakpoint) {
-      _router.push(
-        '/chat',
-        extra: {'title': 'Pane', 'device': peer.nickname ?? peer.sessionName},
-      );
-    }
     await _showCredentialInstructions(target);
   }
 
@@ -166,6 +272,7 @@ class _RemotePiAppState extends State<RemotePiApp> with WidgetsBindingObserver {
     if (state == AppLifecycleState.resumed) {
       unawaited(_notifications.refresh());
       injector.get<SyncService>().noteAppResumed();
+      unawaited(_drainShareInbox());
     }
     switch (state) {
       case AppLifecycleState.resumed:
@@ -206,6 +313,7 @@ class _RemotePiAppState extends State<RemotePiApp> with WidgetsBindingObserver {
           // Weiss Labs: always dark, like the terminal.
           themeMode: ThemeMode.dark,
           routerConfig: _router,
+          scaffoldMessengerKey: _messenger,
           debugShowCheckedModeBanner: false,
           // Issue #114 — user-chosen text size. Applied here rather than by
           // scaling `AppTypography`'s base sizes so the many per-widget

@@ -22,6 +22,14 @@ class _FakeBackend implements ImagePickerBackend {
     return path;
   }
 
+  String? videoPath;
+  @override
+  Future<String?> pickVideo(ImageSourceKind source) async {
+    pickedSource = source;
+    if (denied) throw const ImagePermissionDeniedException();
+    return videoPath;
+  }
+
   @override
   Future<Uint8List> compressBytes(
     Uint8List bytes, {

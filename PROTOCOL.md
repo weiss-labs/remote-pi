@@ -315,6 +315,38 @@ aceito nesta fatia por usar imagem comprimida (~150–400 KB). Histórico/
 
 ---
 
+## Arquivos do celular pro Mac (plan/74)
+
+Vídeos, arquivos colados e itens do Share sheet do iOS não vão inline:
+sobem em chunks (`file_*`, espelho do `artifact_*`) pra um arquivo privado
+em `~/.pi/remote/attachments/` (dir 0700, arquivo 0600, TTL 24h) e o agente
+recebe só um `user_message` com o caminho local, nome, tipo, tamanho e
+duração. Nenhum modelo "assiste" o vídeo; ler/extrair é passo explícito.
+
+```jsonc
+// app → Pi
+{ "type": "file_open", "id": "file-1", "name": "clip.mov", "mime": "video/quicktime",
+  "size": 1234567, "sha256": "<hex>", "duration_ms": 4200, "text": "legenda opcional",
+  "streaming_behavior": "steer" }
+{ "type": "file_chunk", "id": "file-2", "transfer_id": "<uuid>", "offset": 0, "data": "<base64 ≤192KiB>" }
+{ "type": "file_close", "id": "cli_<uuid7>", "transfer_id": "<uuid>" }   // id vira o id do user_message
+{ "type": "file_cancel", "id": "file-9", "transfer_id": "<uuid>" }
+
+// Pi → app
+{ "type": "file_opened", "in_reply_to": "file-1", "transfer_id": "<uuid>" }
+{ "type": "file_ack", "in_reply_to": "file-2", "transfer_id": "<uuid>", "offset": 196608 }
+{ "type": "file_done", "in_reply_to": "cli_<uuid7>", "transfer_id": "<uuid>", "path": "/Users/x/.pi/remote/attachments/1a2b3c4d-clip.mov" }
+{ "type": "file_error", "in_reply_to": "file-2", "code": "invalid", "message": "Attachment chunk out of order." }
+```
+
+Regras: cap 200 MiB; offsets estritamente sequenciais; hash SHA-256 do arquivo
+inteiro conferido no `file_close` antes de qualquer entrega; uma transferência
+por owner (quatro no total); 10 min ocioso, troca de sessão, owner/sender
+diferente ou cancel apagam o `.part`. O app captura canal/peer/room no início
+e nunca re-roteia. Detalhes e o Share extension em `app/ATTACHMENTS.md`.
+
+---
+
 ## Mensagem enfileirada durante turn ativo
 
 Fila curta **Pi-side, em memória**, de propriedade do Android: enquanto há turn

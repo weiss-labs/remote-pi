@@ -25,10 +25,12 @@ import 'package:web_socket_channel/web_socket_channel.dart';
 
 import '../../pairing/pair_request_flow.dart';
 
-/// Frame types that must carry their source room: artifact bytes and the
-/// private credential handoff control frames.
+/// Frame types that must carry their source room: artifact bytes, phone →
+/// Mac file attachments and the private credential handoff control frames.
 bool requiresSourceRoom(String type) =>
-    type.startsWith('artifact_') || type.startsWith('credential_');
+    type.startsWith('artifact_') ||
+    type.startsWith('file_') ||
+    type.startsWith('credential_');
 
 class WsTransportError implements Exception {
   final String message;

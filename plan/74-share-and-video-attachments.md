@@ -1,6 +1,12 @@
 # Plan 74: iPhone video, clipboard and Share-sheet attachments
 
-Status: scoped only, not started. Not in build15. Release approval is separate.
+Status: implemented on branch `share-video` (app + pi-extension; no relay change).
+Not shipped. Release approval is separate. Design and signing notes in
+`app/ATTACHMENTS.md`; wire in `PROTOCOL.md` ("Arquivos do celular pro Mac").
+Decided: video from library AND in-app recording; Share sends immediately,
+no caption step. Open before the first signed build: create App Group
+`group.ai.weisslabs.remotepi` in the developer portal and attach it to both
+bundle IDs, then `node scripts/ios-profiles.mjs`.
 Source: Zach voice request 2026-10-28 (relayed from the old remote_pi_app pane).
 "Papaya" / "remove pay" in the dictation mean Remote Pi.
 

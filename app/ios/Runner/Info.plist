@@ -38,6 +38,19 @@
 	     answers in App Store Connect. -->
 	<key>ITSAppUsesNonExemptEncryption</key>
 	<false/>
+	<!-- Plan/74: the Share extension asks the app to open after queueing an
+	     item; the app drains the App Group inbox on every foreground anyway. -->
+	<key>CFBundleURLTypes</key>
+	<array>
+		<dict>
+			<key>CFBundleURLName</key>
+			<string>ai.weisslabs.remotepi</string>
+			<key>CFBundleURLSchemes</key>
+			<array>
+				<string>remotepi</string>
+			</array>
+		</dict>
+	</array>
 	<key>CADisableMinimumFrameDurationOnPhone</key>
 	<true/>
 	<key>CFBundleDevelopmentRegion</key>

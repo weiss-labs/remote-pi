@@ -1,4 +1,5 @@
 import 'package:app/data/images/image_picker_service.dart';
+import 'package:app/domain/contracts/file_transfer.dart';
 
 /// Plan/30 — composer attachment state.
 ///
@@ -40,22 +41,32 @@ final class AttachmentPicking extends AttachmentState {
   int get hashCode => visionSupported.hashCode;
 }
 
-/// One or more images are attached and previewed in the composer.
+/// One or more images and/or files (plan/74: videos, pasted or shared files)
+/// are attached and previewed in the composer.
 final class AttachmentAttached extends AttachmentState {
-  const AttachmentAttached({required this.images, super.visionSupported})
-    : assert(images.length > 0);
+  const AttachmentAttached({
+    this.images = const [],
+    this.files = const [],
+    super.visionSupported,
+  }) : assert(images.length > 0 || files.length > 0);
 
   final List<PickedImage> images;
+  final List<PendingFile> files;
   PickedImage get image => images.first;
 
   @override
   bool operator ==(Object other) =>
       other is AttachmentAttached &&
       identical(other.images, images) &&
+      identical(other.files, files) &&
       other.visionSupported == visionSupported;
 
   @override
-  int get hashCode => Object.hash(identityHashCode(images), visionSupported);
+  int get hashCode => Object.hash(
+    identityHashCode(images),
+    identityHashCode(files),
+    visionSupported,
+  );
 }
 
 /// One-shot hints the composer asks the host page to surface (snackbar /
@@ -69,4 +80,10 @@ enum AttachHint {
 
   /// Adding this image would push the message past what the relay accepts.
   tooLarge,
+
+  /// Plan/74 — a video/file over the 200 MiB upload cap.
+  fileTooLarge,
+
+  /// Plan/74 — the pasteboard held nothing attachable (text stays text).
+  nothingToPaste,
 }

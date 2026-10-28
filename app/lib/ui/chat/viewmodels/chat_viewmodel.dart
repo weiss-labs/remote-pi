@@ -1,6 +1,9 @@
 import 'dart:async';
 
 import 'package:app/domain/contracts/artifact_preview.dart';
+import 'package:app/domain/contracts/file_transfer.dart';
+import 'package:app/protocol/uuid7.dart';
+import 'package:flutter/foundation.dart' show ValueListenable, ValueNotifier;
 
 import 'package:app/data/credentials/credential_request_controller.dart';
 import 'package:app/data/local/records/message_record.dart';
@@ -44,6 +47,36 @@ class ChatViewModel extends ViewModel<ChatState> {
 
   Future<void> cancelArtifact() async => artifacts?.cancel();
 
+  /// Plan/74 — chunked phone → Mac upload for videos and files. Null when
+  /// not wired (tests).
+  final FileTransfer? files;
+
+  /// The one in-flight upload (shared with the Share-sheet drain), for the
+  /// strip above the composer.
+  ValueListenable<FileTransferProgress?> get upload =>
+      files?.current ?? _noUpload;
+  static final _noUpload = ValueNotifier<FileTransferProgress?>(null);
+
+  /// Sends [file] to THIS chat's pane; bound to the peer/room captured now.
+  /// Throws [FileTransferFailure] with a user-facing message.
+  Future<void> sendFile(PendingFile file, {String caption = ''}) async {
+    final service = files;
+    final peer = _activePeer;
+    if (service == null || peer == null) {
+      throw const FileTransferFailure('File attachments are unavailable here.');
+    }
+    await service.send(
+      file,
+      messageId: 'cli_${uuid7()}',
+      peer: peer.remoteEpk,
+      room: _activeRoomId,
+      caption: caption,
+      steer: isWorking,
+    );
+  }
+
+  Future<void> cancelUpload() async => files?.cancel();
+
   StreamSubscription<List<MessageRecord>>? _msgsSub;
   StreamSubscription<RuntimeRecord>? _runtimeSub;
   StreamSubscription<StreamingMessage?>? _streamingSub;
@@ -86,6 +119,7 @@ class ChatViewModel extends ViewModel<ChatState> {
     this._prefs,
     this._storage, {
     this.artifacts,
+    this.files,
     Future<SimpleKeyPair> Function()? ownerKey,
   }) : super(const ChatReady(messages: [])) {
     credentials = ownerKey == null
@@ -426,6 +460,7 @@ class ChatViewModel extends ViewModel<ChatState> {
     credentials?.dispose();
     _roomsSub?.cancel();
     _statusSub?.cancel();
+    unawaited(files?.cancel());
     super.dispose();
   }
 }
