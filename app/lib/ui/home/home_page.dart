@@ -852,29 +852,36 @@ class _TreeHeader extends StatelessWidget {
   Widget build(BuildContext context) {
     final colors = context.colors;
     final top = depth == 0;
-    return Padding(
-      padding: EdgeInsets.fromLTRB(
-        20,
-        top ? 14 : 6,
-        trailing == null ? 20 : 10,
-        top ? 2 : 2,
-      ),
-      child: Row(
-        children: [
-          Expanded(
-            child: Text(
-              label,
-              style: TextStyle(
-                fontFamily: kMonoFamily,
-                fontSize: top ? 13 : 11,
-                fontWeight: top ? FontWeight.w700 : FontWeight.w500,
-                color: top ? colors.heading : colors.muted,
-              ),
+    final row = Row(
+      children: [
+        Expanded(
+          child: Text(
+            label,
+            style: TextStyle(
+              fontFamily: kMonoFamily,
+              fontSize: top ? 13 : 12,
+              fontWeight: top ? FontWeight.w700 : FontWeight.w600,
+              color: top ? colors.heading : colors.text,
             ),
           ),
-          ?trailing,
-        ],
-      ),
+        ),
+        ?trailing,
+      ],
+    );
+    if (top) {
+      return Padding(
+        padding: EdgeInsets.fromLTRB(20, 14, trailing == null ? 20 : 10, 2),
+        child: row,
+      );
+    }
+    // Weiss Labs: tab headings are a full-width gray strip, like the chat's
+    // running-tool rows, so switching tabs inside a workspace is easy to see.
+    return Container(
+      width: double.infinity,
+      margin: const EdgeInsets.only(top: 6, bottom: 2),
+      padding: EdgeInsets.fromLTRB(20, 5, trailing == null ? 20 : 10, 5),
+      color: colors.toolPendingBg,
+      child: row,
     );
   }
 }
