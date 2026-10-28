@@ -23,8 +23,12 @@ export function sanitizeQuestion(value: unknown): string | undefined {
 }
 export function readablePaneName(value: unknown): string | undefined {
   if (typeof value !== "string" || value.length > 4096) return undefined;
-  const leaf = value.replace(/[\p{Cc}\p{Cf}]/gu, "").split(/[\\/@›]/).filter(Boolean).pop()?.trim();
-  return leaf ? Array.from(leaf).slice(0, 64).join("") : undefined;
+  // Drop any folder path or mesh address prefix, then show the Herdr
+  // "Workspace›Tab›Pane" path as "Workspace → Pane", skipping numeric tabs.
+  const tail = value.replace(/[\p{Cc}\p{Cf}]/gu, "").split(/[\\/@]/).filter((s) => s.trim()).pop() ?? "";
+  const parts = tail.split("›").map((p) => p.replace(/_/g, " ").trim()).filter(Boolean);
+  const path = parts.filter((p, i) => i === parts.length - 1 || !/^\d+$/.test(p)).join(" → ");
+  return path ? Array.from(path).slice(0, 120).join("") : undefined;
 }
 
 export const notificationCategories = ["input_needed", "credential_needed", "task_finished", "task_failed", "tests_failed", "review_ready", "update_available", "connection_lost"] as const;

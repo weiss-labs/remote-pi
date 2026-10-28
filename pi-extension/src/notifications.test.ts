@@ -50,7 +50,8 @@ describe("private input previews", () => {
   it("strips controls, bounds text, uses leaf pane names and takes actual AskQuestionWire.prompt",()=>{
     expect(sanitizeQuestion("  Which\u0000 file?\u202e  ")).toBe("Which file?");
     expect(sanitizeQuestion("word ".repeat(80))?.length).toBe(180);
-    expect(readablePaneName("/Users/test/project@Workspace›Selected pane")).toBe("Selected pane");
+    expect(readablePaneName("/Users/test/project@Workspace›Selected pane")).toBe("Workspace → Selected pane");
+    expect(readablePaneName("Michael_Nussen›2›main")).toBe("Michael Nussen → main");
     expect(questionForPrompt({type:"extension_ui_request",id:"ask",method:"select",title:"Flow title",options:["not the question"],ask:{flow_id:"flow",tool_call_id:null,source:"tool",title:"Workflow",questions:[{id:"q",label:"Label",prompt:"Which report should I use?",type:"single",required:true,options:[]}]}})).toBe("Which report should I use?");
     expect(questionForPrompt({type:"extension_ui_request",id:"input",method:"input",title:"Unknown input",placeholder:"NEVER SHARE"})).toBeUndefined();
   });

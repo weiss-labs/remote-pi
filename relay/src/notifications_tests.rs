@@ -426,7 +426,7 @@ async fn pane_name_is_opt_in_and_queued_work_rechecks_revocation() {
     let d = f.delivered.lock().unwrap()[1].clone();
     assert_eq!(
         d.payload()["aps"]["alert"]["title"],
-        "Remote Pi · Chosen label"
+        "Chosen label"
     );
     n.control(
         &g.peer,
@@ -556,7 +556,9 @@ fn preview_sanitizer_is_bounded_and_refuses_secret_patterns() {
     }
     assert_eq!(sanitize_question("  Which\0 file?\u{202e}  ").as_deref(), Some("Which file?"));
     assert_eq!(sanitize_question(&"word ".repeat(80)).unwrap().chars().count(), 180);
-    assert_eq!(readable_label("/Users/test/project@Workspace›Chosen pane").as_deref(), Some("Chosen pane"));
+    assert_eq!(readable_label("/Users/test/project@Workspace›Chosen pane").as_deref(), Some("Workspace → Chosen pane"));
+    assert_eq!(readable_label("Michael_Nussen›2›main").as_deref(), Some("Michael Nussen → main"));
+    assert_eq!(readable_label("ZachOS›ZachOS_Pi_Agent›Main").as_deref(), Some("ZachOS → ZachOS Pi Agent → Main"));
 }
 
 #[tokio::test]
@@ -581,7 +583,7 @@ async fn preview_consent_is_opt_in_rechecked_and_not_persisted_as_content() {
     n.control(&g.peer,"room-two",&json!({"type":"notification_event","kind":"input_needed","event_id":"preview","pane_name":"/private/test/Readable pane","question":question}));
     wait(&f, 2).await;
     let visible = f.delivered.lock().unwrap()[1].clone();
-    assert_eq!(visible.payload()["aps"]["alert"]["title"], "Remote Pi · Readable pane");
+    assert_eq!(visible.payload()["aps"]["alert"]["title"], "Readable pane");
     assert_eq!(visible.payload()["aps"]["alert"]["body"], question);
     assert!(n.current(&visible));
     for kind in ["credential_needed", "review_ready", "tests_failed", "task_failed", "task_finished"] {

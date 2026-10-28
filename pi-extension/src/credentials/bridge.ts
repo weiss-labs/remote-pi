@@ -217,8 +217,8 @@ export class CredentialBridge {
       throw new Refused("write_failed");
     }
   }
-  private forget(s: Stored): void { clearTimeout(s.timer); this.stored.delete(s.path); void unlink(s.path).catch(() => {}); }
-  private async forgetPath(path: string): Promise<void> { const s = this.stored.get(path); if (s) this.forget(s); else await unlink(path).catch(() => {}); }
+  private forget(s: Stored): Promise<void> { clearTimeout(s.timer); this.stored.delete(s.path); return unlink(s.path).catch(() => {}); }
+  private async forgetPath(path: string): Promise<void> { const s = this.stored.get(path); await (s ? this.forget(s) : unlink(path).catch(() => {})); }
   /** Deletes stale `cred-*` files from earlier processes. Never reads them. */
   async sweep(): Promise<void> {
     let entries: Dirent[];

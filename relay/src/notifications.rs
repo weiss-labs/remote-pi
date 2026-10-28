@@ -116,15 +116,22 @@ fn readable_label(s: &str) -> Option<String> {
         return None;
     }
     let clean: String = s.chars().filter(|c| preview_char(*c)).collect();
-    let leaf = clean
-        .rsplit(['/', '\\', '@', '›'])
-        .find(|s| !s.trim().is_empty())?
-        .trim();
-    if leaf.is_empty() {
-        None
-    } else {
-        Some(leaf.chars().take(64).collect())
-    }
+    // Drop any folder path or mesh address prefix, then show the Herdr
+    // "Workspace›Tab›Pane" path as "Workspace → Pane", skipping numeric tabs.
+    let tail = clean.rsplit(['/', '\\', '@']).find(|s| !s.trim().is_empty())?;
+    let parts: Vec<String> = tail
+        .split('›')
+        .map(|p| p.replace('_', " ").trim().to_string())
+        .filter(|p| !p.is_empty())
+        .collect();
+    let last = parts.len().checked_sub(1)?;
+    let path: Vec<&str> = parts
+        .iter()
+        .enumerate()
+        .filter(|(i, p)| *i == last || !p.chars().all(|c| c.is_ascii_digit()))
+        .map(|(_, p)| p.as_str())
+        .collect();
+    Some(path.join(" → ").chars().take(120).collect())
 }
 fn key(s: &str) -> Option<VerifyingKey> {
     let b: [u8; 32] = B64.decode(s).ok()?.try_into().ok()?;
@@ -253,7 +260,7 @@ impl Delivery {
         } else {
             body
         };
-        json!({"aps":{"alert":{"title":self.pane_name.as_ref().map(|n|format!("Remote Pi · {n}")).unwrap_or_else(||"Remote Pi".into()),"body":body},"sound":"default","thread-id":format!("{}:{}",self.peer,self.room),"interruption-level":"active"},"remote_pi":{"v":1,"peer":self.peer,"room":self.room,"event_id":self.event_id,"kind":self.kind}})
+        json!({"aps":{"alert":{"title":self.pane_name.clone().unwrap_or_else(||"Remote Pi".into()),"body":body},"sound":"default","thread-id":format!("{}:{}",self.peer,self.room),"interruption-level":"active"},"remote_pi":{"v":1,"peer":self.peer,"room":self.room,"event_id":self.event_id,"kind":self.kind}})
     }
 }
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
