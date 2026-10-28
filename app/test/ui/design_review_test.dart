@@ -8,6 +8,7 @@ import 'dart:ui' as ui;
 import 'package:app/data/credentials/credential_request_controller.dart';
 import 'package:app/data/preferences/preferences.dart';
 import 'package:app/data/voice/speech_service.dart';
+import 'package:app/domain/contracts/file_transfer.dart';
 import 'package:app/domain/session_state.dart';
 import 'package:app/pairing/storage.dart';
 import 'package:app/protocol/protocol.dart';
@@ -24,6 +25,7 @@ import 'package:app/ui/home/states/home_state.dart';
 import 'package:app/ui/home/viewmodels/home_viewmodel.dart';
 import 'package:app/ui/update/states/update_banner_state.dart';
 import 'package:app/ui/update/viewmodels/update_banner_viewmodel.dart';
+import 'package:flutter/foundation.dart' show ValueListenable, ValueNotifier;
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
 import 'package:flutter/services.dart';
@@ -155,6 +157,9 @@ class _Chat extends ChangeNotifier implements ChatViewModel {
   final String provider;
   @override
   CredentialRequestController? get credentials => null;
+  // Plan/74 — no upload in flight for the review screenshots.
+  @override
+  ValueListenable<FileTransferProgress?> get upload => ValueNotifier(null);
   @override
   PeerRecord get activePeer => _peer;
   @override

@@ -1,5 +1,9 @@
+import 'dart:async';
+
 import 'package:app/ui/chat/commands/viewmodels/commands_viewmodel.dart';
 import 'package:app/data/preferences/preferences.dart';
+import 'package:app/data/images/image_picker_service.dart' show ImageSourceKind;
+import 'package:app/domain/contracts/file_transfer.dart';
 import 'package:app/domain/session_state.dart';
 import 'package:app/pairing/storage.dart';
 import 'package:app/protocol/protocol.dart';
@@ -526,7 +530,7 @@ class ChatPage extends StatelessWidget {
         !isPeerOffline &&
         !isPresenceOffline;
 
-    return InputBar(
+    final bar = InputBar(
       commands: context.watch<CommandsViewModel?>(),
       onStartVoiceLive: onStartVoiceLive,
       disabled:
@@ -557,10 +561,57 @@ class ChatPage extends StatelessWidget {
           ? () => _openAttach(context, context.read<AttachmentViewModel>())
           : null,
       onSend: (text) {
-        final images = context.read<AttachmentViewModel>().takeImagesForSend();
-        vm.sendMessage(text, images: images);
+        final attachment = context.read<AttachmentViewModel>();
+        final images = attachment.takeImagesForSend();
+        final files = attachment.takeFilesForSend();
+        // Plan/74 — inline images (with the caption) go first; each file is
+        // its own chunked upload. The caption rides on the first message only.
+        var caption = text;
+        if (images.isNotEmpty || files.isEmpty) {
+          vm.sendMessage(text, images: images);
+          caption = '';
+        }
+        if (files.isNotEmpty) {
+          unawaited(_sendFiles(ScaffoldMessenger.of(context), vm, files, caption));
+        }
       },
     );
+    // Plan/74 — the one in-flight upload, with progress and cancel.
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        ValueListenableBuilder<FileTransferProgress?>(
+          valueListenable: vm.upload,
+          builder: (context, upload, _) => upload == null
+              ? const SizedBox.shrink()
+              : _UploadStrip(upload: upload, onCancel: vm.cancelUpload),
+        ),
+        bar,
+      ],
+    );
+  }
+
+  static Future<void> _sendFiles(
+    ScaffoldMessengerState messenger,
+    ChatViewModel vm,
+    List<PendingFile> files,
+    String caption,
+  ) async {
+    for (var i = 0; i < files.length; i++) {
+      try {
+        await vm.sendFile(files[i], caption: i == 0 ? caption : '');
+      } on FileTransferFailure catch (e) {
+        messenger.hideCurrentSnackBar();
+        messenger.showSnackBar(
+          SnackBar(
+            content: Text('${files[i].name}: ${e.message}'),
+            duration: const Duration(seconds: 5),
+            behavior: SnackBarBehavior.floating,
+          ),
+        );
+        return;
+      }
+    }
   }
 
   /// Open the Camera/Gallery sheet and drive the picker. Captures the
@@ -580,6 +631,12 @@ class ChatPage extends StatelessWidget {
         await vm.pickFromCamera();
       case AttachSource.gallery:
         await vm.pickFromGallery();
+      case AttachSource.videoCamera:
+        await vm.pickVideo(ImageSourceKind.camera);
+      case AttachSource.videoLibrary:
+        await vm.pickVideo(ImageSourceKind.gallery);
+      case AttachSource.paste:
+        await vm.pasteFromClipboard();
     }
     await Future<void>.delayed(Duration.zero); // flush the hint microtask
     await sub.cancel();
@@ -619,6 +676,24 @@ class ChatPage extends StatelessWidget {
           const SnackBar(
             content: Text(
               'Too many photos for one message. Send these first, then add more.',
+            ),
+            duration: Duration(seconds: 4),
+            behavior: SnackBarBehavior.floating,
+          ),
+        );
+      case AttachHint.fileTooLarge:
+        messenger.showSnackBar(
+          const SnackBar(
+            content: Text('Files are limited to 200 MiB. Trim it and try again.'),
+            duration: Duration(seconds: 4),
+            behavior: SnackBarBehavior.floating,
+          ),
+        );
+      case AttachHint.nothingToPaste:
+        messenger.showSnackBar(
+          const SnackBar(
+            content: Text(
+              'Nothing to attach: the clipboard has no photo, video or file.',
             ),
             duration: Duration(seconds: 4),
             behavior: SnackBarBehavior.floating,
@@ -756,6 +831,67 @@ class _EmptyState extends StatelessWidget {
               child: Text(actionLabel!),
             ),
           ],
+        ],
+      ),
+    );
+  }
+}
+
+/// Plan/74 — progress of the one in-flight file upload, with cancel.
+class _UploadStrip extends StatelessWidget {
+  const _UploadStrip({required this.upload, required this.onCancel});
+  final FileTransferProgress upload;
+  final Future<void> Function() onCancel;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.colors;
+    final pct = (upload.fraction * 100).clamp(0, 100).round();
+    return Container(
+      key: const Key('upload-strip'),
+      padding: const EdgeInsets.fromLTRB(14, 6, 6, 6),
+      decoration: BoxDecoration(
+        color: colors.surface,
+        border: Border(top: BorderSide(color: colors.border)),
+      ),
+      child: Row(
+        children: [
+          Icon(
+            upload.file.isVideo ? LucideIcons.video : LucideIcons.file,
+            size: 16,
+            color: colors.accent,
+          ),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'Sending ${upload.file.name} · $pct%',
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    fontFamily: kMonoFamily,
+                    fontSize: 12,
+                    color: colors.text,
+                  ),
+                ),
+                const SizedBox(height: 4),
+                LinearProgressIndicator(
+                  value: upload.fraction.clamp(0, 1),
+                  minHeight: 3,
+                  color: colors.accent,
+                  backgroundColor: colors.border,
+                ),
+              ],
+            ),
+          ),
+          IconButton(
+            key: const Key('upload-cancel'),
+            tooltip: 'Cancel upload',
+            icon: Icon(LucideIcons.x, size: 16, color: colors.muted),
+            onPressed: () => unawaited(onCancel()),
+          ),
         ],
       ),
     );

@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:app/ui/chat/commands/viewmodels/commands_viewmodel.dart';
 import 'package:app/ui/chat/commands/widgets/commands_panel.dart';
 import 'package:app/data/images/image_picker_service.dart';
+import 'package:app/domain/contracts/file_transfer.dart';
 import 'package:app/domain/session_state.dart';
 import 'package:app/ui/chat/attachment/states/attachment_state.dart';
 import 'package:app/ui/chat/attachment/viewmodels/attachment_viewmodel.dart';
@@ -189,6 +190,40 @@ class _InputBarState extends State<InputBar> {
     _controller.dispose();
     _focusNode.dispose();
     super.dispose();
+  }
+
+  /// Plan/74 — the native edit menu plus a "Paste File" item that turns a
+  /// copied video/file into an attachment. Falls back to the Flutter toolbar
+  /// where the system menu is unavailable (older iOS, Android, tests).
+  Widget _contextMenu(BuildContext context, EditableTextState state) {
+    if (SystemContextMenu.isSupportedByField(state)) {
+      return SystemContextMenu.editableText(
+        editableTextState: state,
+        items: [
+          ...SystemContextMenu.getDefaultItems(state),
+          IOSSystemContextMenuItemCustom(
+            title: 'Paste File',
+            onPressed: () {
+              state.hideToolbar();
+              unawaited(widget.attachment!.pasteFromClipboard());
+            },
+          ),
+        ],
+      );
+    }
+    return AdaptiveTextSelectionToolbar.buttonItems(
+      anchors: state.contextMenuAnchors,
+      buttonItems: [
+        ...state.contextMenuButtonItems,
+        ContextMenuButtonItem(
+          label: 'Paste File',
+          onPressed: () {
+            state.hideToolbar();
+            unawaited(widget.attachment!.pasteFromClipboard());
+          },
+        ),
+      ],
+    );
   }
 
   void _submit() {
@@ -467,6 +502,14 @@ class _InputBarState extends State<InputBar> {
                           image: attachState.images[i],
                           onRemove: () => widget.attachment!.removeImage(i),
                         ),
+                      // Plan/74 — videos and files: a chip, not a thumbnail
+                      // (nothing is decoded on the phone).
+                      for (var i = 0; i < attachState.files.length; i++)
+                        _FileChip(
+                          key: ValueKey('file-$i'),
+                          file: attachState.files[i],
+                          onRemove: () => widget.attachment!.removeFile(i),
+                        ),
                     ],
                   ),
                 ),
@@ -509,6 +552,12 @@ class _InputBarState extends State<InputBar> {
                       maxLines: 6,
                       keyboardType: TextInputType.multiline,
                       textInputAction: TextInputAction.newline,
+                      // Plan/74 — keep the native iOS edit menu (its Paste
+                      // already inserts copied photos via content insertion)
+                      // and add "Paste File" for copied videos/files.
+                      contextMenuBuilder: widget.attachment == null
+                          ? null
+                          : _contextMenu,
                       // Weiss Labs: paste an image from the clipboard straight
                       // into the thread (iOS keyboard content insertion).
                       contentInsertionConfiguration: widget.attachment == null
@@ -918,6 +967,80 @@ class _AttachmentPreview extends StatelessWidget {
                     color: context.colors.text,
                   ),
                 ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// Plan/74 — a video/file waiting to be uploaded: icon, name, size, "X".
+class _FileChip extends StatelessWidget {
+  const _FileChip({super.key, required this.file, required this.onRemove});
+  final PendingFile file;
+  final VoidCallback onRemove;
+
+  static String sizeLabel(int bytes) => bytes >= 1024 * 1024
+      ? '${(bytes / 1024 / 1024).toStringAsFixed(1)} MB'
+      : '${(bytes / 1024).ceil()} KB';
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.colors;
+    return Padding(
+      key: const Key('attach-file-chip'),
+      padding: const EdgeInsets.only(left: 4, bottom: 10),
+      child: Container(
+        height: 72,
+        width: 160,
+        padding: const EdgeInsets.fromLTRB(10, 8, 4, 8),
+        decoration: BoxDecoration(
+          color: colors.inputFill,
+          border: Border.all(color: colors.border),
+          borderRadius: BorderRadius.circular(10),
+        ),
+        child: Row(
+          children: [
+            Icon(
+              file.isVideo ? LucideIcons.video : LucideIcons.file,
+              size: 22,
+              color: colors.accent,
+            ),
+            const SizedBox(width: 8),
+            Expanded(
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    file.name,
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      fontFamily: kMonoFamily,
+                      fontSize: 11,
+                      color: colors.text,
+                    ),
+                  ),
+                  Text(
+                    sizeLabel(file.size),
+                    style: TextStyle(
+                      fontFamily: kMonoFamily,
+                      fontSize: 10,
+                      color: colors.muted,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            GestureDetector(
+              key: const Key('attach-file-remove'),
+              onTap: onRemove,
+              child: Padding(
+                padding: const EdgeInsets.all(4),
+                child: Icon(LucideIcons.x, size: 14, color: colors.muted),
               ),
             ),
           ],

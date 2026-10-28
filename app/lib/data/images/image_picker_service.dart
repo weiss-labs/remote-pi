@@ -1,5 +1,7 @@
+import 'dart:io';
 import 'dart:typed_data';
 
+import 'package:app/domain/contracts/file_transfer.dart';
 import 'package:flutter/services.dart' show PlatformException;
 import 'package:flutter_image_compress/flutter_image_compress.dart';
 import 'package:image_picker/image_picker.dart';
@@ -22,6 +24,34 @@ abstract class IImagePickerService {
   /// Weiss Labs: an image pasted into the composer (keyboard content
   /// insertion). Compressed like a picked photo; null if undecodable.
   Future<PickedImage?> fromBytes(Uint8List bytes, String mime);
+
+  /// Plan/74 — pick (gallery) or record (camera) a video. The file stays
+  /// where the picker put it (app-private); nothing is re-encoded. Null if
+  /// cancelled; throws [ImagePermissionDeniedException] for a denied camera.
+  Future<PendingFile?> pickVideo(ImageSourceKind source);
+}
+
+/// Plan/74 — MIME for a picked/pasted/shared file, from its extension. Only
+/// used for labelling; the Mac treats it as a hint, never as proof.
+String mimeForName(String name) {
+  final ext = name.contains('.') ? name.split('.').last.toLowerCase() : '';
+  return switch (ext) {
+    'mov' => 'video/quicktime',
+    'mp4' || 'm4v' => 'video/mp4',
+    'webm' => 'video/webm',
+    'jpg' || 'jpeg' => 'image/jpeg',
+    'png' => 'image/png',
+    'gif' => 'image/gif',
+    'webp' => 'image/webp',
+    'heic' => 'image/heic',
+    'pdf' => 'application/pdf',
+    'txt' || 'md' => 'text/plain',
+    'json' => 'application/json',
+    'zip' => 'application/zip',
+    'm4a' => 'audio/mp4',
+    'mp3' => 'audio/mpeg',
+    _ => 'application/octet-stream',
+  };
 }
 
 /// A picked + compressed image ready for preview and sending. Bytes are raw
@@ -69,6 +99,19 @@ class ImagePickerService implements IImagePickerService {
       _pickAndCompress(ImageSourceKind.gallery);
 
   @override
+  Future<PendingFile?> pickVideo(ImageSourceKind source) async {
+    final path = await _backend.pickVideo(source);
+    if (path == null) return null;
+    final name = path.split('/').last;
+    return PendingFile(
+      path: path,
+      name: name,
+      mime: mimeForName(name),
+      size: await File(path).length(),
+    );
+  }
+
+  @override
   Future<PickedImage?> fromBytes(Uint8List bytes, String mime) async {
     if (bytes.isEmpty) return null;
     final out = await _backend.compressBytes(bytes, maxSide: _maxSide, quality: _quality);
@@ -109,6 +152,9 @@ abstract class ImagePickerBackend {
   /// [ImagePermissionDeniedException] on a denied camera permission.
   Future<String?> pick(ImageSourceKind source);
 
+  /// Plan/74 — pick or record a video; returns its path, or null if cancelled.
+  Future<String?> pickVideo(ImageSourceKind source);
+
   /// Compress [path] to JPEG bounded by [maxSide]px at [quality].
   Future<Uint8List> compress(
     String path, {
@@ -131,13 +177,23 @@ class PlatformImagePickerBackend implements ImagePickerBackend {
   final ImagePicker _picker;
 
   @override
-  Future<String?> pick(ImageSourceKind source) async {
+  Future<String?> pick(ImageSourceKind source) => _guard(
+    () => _picker.pickImage(source: _source(source)),
+  );
+
+  @override
+  Future<String?> pickVideo(ImageSourceKind source) => _guard(
+    () => _picker.pickVideo(source: _source(source)),
+  );
+
+  static ImageSource _source(ImageSourceKind source) =>
+      source == ImageSourceKind.camera
+      ? ImageSource.camera
+      : ImageSource.gallery;
+
+  Future<String?> _guard(Future<XFile?> Function() pick) async {
     try {
-      final file = await _picker.pickImage(
-        source: source == ImageSourceKind.camera
-            ? ImageSource.camera
-            : ImageSource.gallery,
-      );
+      final file = await pick();
       return file?.path;
     } on PlatformException catch (e) {
       // image_picker surfaces a denied camera/photo permission as a

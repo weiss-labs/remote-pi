@@ -2,6 +2,10 @@ import 'dart:async';
 
 import 'package:app/domain/contracts/artifact_preview.dart';
 import 'package:app/data/repositories/artifact_preview_repository.dart';
+import 'package:app/data/images/pasteboard_service.dart';
+import 'package:app/data/share/share_inbox.dart';
+import 'package:app/data/repositories/file_transfer_repository.dart';
+import 'package:app/domain/contracts/file_transfer.dart';
 
 import 'package:app/config/utils/injector.dart';
 import 'package:app/data/voice_live/voice_live_controller.dart';
@@ -142,6 +146,10 @@ Future<void> setupDependencies() async {
   // Plan 30 — image picker + on-device JPEG compression. Stateless, no
   // dispose hook needed.
   _injector.addOther<IImagePickerService>(() => ImagePickerService());
+  // Plan 74 — real pasteboard items (copied videos/files) as attachments.
+  _injector.addOther<IPasteboardService>(() => PasteboardService());
+  // Plan 74 — Share-extension hand-off queue in the App Group container.
+  _injector.addOther<ShareInbox>(() => NativeShareInbox());
 
   // Plan 31 — SSOT writer + read-only repos. SyncService is the SINGLE
   // mutator of the message/index/runtime boxes; the read repos only watch.
@@ -161,6 +169,10 @@ Future<void> setupDependencies() async {
   // Repositories
   _injector.addRepository<ArtifactPreview>(
     () => ArtifactPreviewRepository(_injector.get<ConnectionManager>()),
+  );
+  // Plan 74 — chunked phone → Mac upload (videos, pasted/shared files).
+  _injector.addRepository<FileTransfer>(
+    () => FileTransferRepository(_injector.get<ConnectionManager>()),
   );
   _injector.addRepository<IActionsRepository>(
     () => ActionsRepository(_injector.get<ConnectionManager>()),
@@ -182,6 +194,7 @@ Future<void> setupDependencies() async {
       _injector.get<Preferences>(),
       _injector.get<PairingStorage>(),
       artifacts: _injector.get<ArtifactPreview>(),
+      files: _injector.get<FileTransfer>(),
       ownerKey: _injector.get<OwnerIdentityBridge>().requireKeyPair,
     ),
   );
@@ -190,6 +203,7 @@ Future<void> setupDependencies() async {
       _injector.get<PairingStorage>(),
       _injector.get<Preferences>(),
       _injector.get<ConnectionManager>(),
+      _injector.get<ShareInbox>(),
     ),
   );
   _injector.addViewModel<SettingsViewModel>(
@@ -225,6 +239,7 @@ Future<void> setupDependencies() async {
     () => AttachmentViewModel(
       _injector.get<IImagePickerService>(),
       _injector.get<IActionsRepository>(),
+      _injector.get<IPasteboardService>(),
     ),
   );
 

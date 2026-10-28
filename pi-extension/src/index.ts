@@ -114,10 +114,30 @@ import { updateFooter, type FooterState } from "./ui/footer.js";
 import { VoiceBridge, type VoiceClientMessage } from "./voice/bridge.js";
 import { NotificationBridge, notificationControl, questionForPrompt } from "./notifications.js";
 import { ArtifactBridge } from "./artifacts.js";
+import { AttachmentBridge, describe as describeAttachment } from "./attachments.js";
 
 const _artifacts = new ArtifactBridge({
   authorize: async (phone, sender) => _activePeers.get(phone) === sender && (await _findKnownPeer(phone)) !== null && _activePeers.get(phone) === sender,
   session: () => (_lastEventCtx as ExtensionContext | null)?.sessionManager ?? null,
+});
+// Plan/74 — phone → Mac file attachments. The finished private file reaches
+// the agent as an ordinary user message carrying only the local path and
+// metadata (steered when the pane is working), echoed to every owner.
+const _attachments = new AttachmentBridge({
+  authorize: async (phone, sender) => _activePeers.get(phone) === sender && (await _findKnownPeer(phone)) !== null && _activePeers.get(phone) === sender,
+  deliver: (file) => {
+    const note = describeAttachment(file);
+    const text = file.text.trim() ? `${file.text.trim()}\n\n${note}` : note;
+    const shouldSteer = file.steer || _myRoomMeta?.working === true;
+    const msg: ClientUserMessage = { type: "user_message", id: file.id, text, ...(shouldSteer ? { streaming_behavior: "steer" as const } : {}) };
+    const previousTurnId = _currentTurnId;
+    const seededTurnId = !shouldSteer || _currentTurnId === null;
+    if (seededTurnId) _currentTurnId = msg.id;
+    const wake = _wakeAgent(text, `app file attachment id=${file.id}`, "steer");
+    if (!wake.ok) { if (seededTurnId) _currentTurnId = previousTurnId; throw new Error(wake.detail); }
+    if (shouldSteer) _trackPendingSteer(msg.id, text);
+    _echoUserMessage(msg, shouldSteer);
+  },
 });
 import { NativeCommands } from "./actions/commands.js";
 import { CREDENTIAL_INSTRUCTIONS, isOpAuthorizationTimeout } from "./actions/credential_blocker.js";
@@ -1308,6 +1328,7 @@ function _attachPeerChannel(appPeerId: string, channel: PlainPeerChannel): void 
  *  `_onPeerDisconnect`, `_cmdRevoke`, and the SelfRevoke callback. */
 function _detachPeerChannel(appPeerId: string): void {
   _artifacts.detach(appPeerId);
+  void _attachments.detach(appPeerId);
   const ch = _activePeers.get(appPeerId);
   if (!ch) return;
   try { ch.detach(); } catch { /* best-effort */ }
@@ -1492,6 +1513,7 @@ async function _findKnownPeer(appPeerIdStd: string): Promise<PeerRecord | null> 
  */
 function _goIdle(byeReason?: import("./protocol/types.js").ByeReason): void {
   _artifacts.reset();
+  void _attachments.reset();
   _notifications.pauseTransport();
   _rootLifecycleGeneration += 1;
   _relayLifecycleGeneration += 1;
@@ -2484,9 +2506,10 @@ const extension: ExtensionFactory = (pi: ExtensionAPI): void => {
   // "stale after session replacement" crash when the app taps Compact after a
   // New session. Fires on startup/new/fork/reload/resume; the ctx is always
   // bound to the current session.
-  pi.on("session_tree", () => { _artifacts.reset(); _credentials.start(); });
+  pi.on("session_tree", () => { _artifacts.reset(); void _attachments.reset(); _credentials.start(); });
   pi.on("session_start", (_event, ctx) => {
     _artifacts.reset();
+    _attachments.start();
     _credentials.start();
     _lastEventCtx = ctx;
     _commands?.resume();
@@ -2585,6 +2608,7 @@ const extension: ExtensionFactory = (pi: ExtensionAPI): void => {
   // (e.g. shutdown lands mid-`_cmdRoot`) tears down without throwing.
   pi.on("session_shutdown", async () => {
     _artifacts.reset();
+    _attachments.stop();
     _credentials.stop();
     _commands?.stop();
     _notifications.stop();
@@ -4531,6 +4555,12 @@ export function _routeClientMessageFrom(
     const phone = [..._activePeers].find(([, channel]) => channel === sender)?.[0];
     if (!phone) { sender.send({ type: "artifact_error", in_reply_to: typeof msg.id === "string" ? msg.id.slice(0,128) : "", code: "unavailable", message: "An active paired pane is required." }); return; }
     void _artifacts.handle(phone, sender, msg).then(reply => { if (reply && _activePeers.get(phone) === sender) sender.send(reply); }).catch(() => {});
+    return;
+  }
+  if (msg.type === "file_open" || msg.type === "file_chunk" || msg.type === "file_close" || msg.type === "file_cancel") {
+    const phone = [..._activePeers].find(([, channel]) => channel === sender)?.[0];
+    if (!phone) { sender.send({ type: "file_error", in_reply_to: typeof msg.id === "string" ? msg.id.slice(0,128) : "", code: "not_paired", message: "An active paired pane is required." }); return; }
+    void _attachments.handle(phone, sender, msg).then(reply => { if (_activePeers.get(phone) === sender) sender.send(reply); }).catch(() => {});
     return;
   }
   if (msg.type === "credential_response" || msg.type === "credential_cancel" || msg.type === "credential_query") {

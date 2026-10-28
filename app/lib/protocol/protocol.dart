@@ -820,6 +820,10 @@ sealed class ServerMessage {
       'artifact_opened' ||
       'artifact_chunk' ||
       'artifact_error' => ArtifactReply(json),
+      'file_opened' ||
+      'file_ack' ||
+      'file_done' ||
+      'file_error' => FileReply(json),
       'commands_list' => CommandsList.fromJson(json),
       'command_result' => CommandResult(
         inReplyTo: json['in_reply_to'] as String,
@@ -997,6 +1001,21 @@ class ArtifactRequest extends ClientMessage {
 class ArtifactReply extends ServerMessage {
   final Map<String, dynamic> data;
   const ArtifactReply(this.data);
+}
+
+/// Plan/74 — phone → Mac file attachment frames (`file_open`, `file_chunk`,
+/// `file_close`, `file_cancel`). Mirrors `pi-extension/src/attachments.ts`.
+class FileRequest extends ClientMessage {
+  final String type, id;
+  final Map<String, dynamic> fields;
+  FileRequest(this.type, this.id, [this.fields = const {}]);
+  @override
+  Map<String, dynamic> toJson() => {'type': type, 'id': id, ...fields};
+}
+
+class FileReply extends ServerMessage {
+  final Map<String, dynamic> data;
+  const FileReply(this.data);
 }
 
 class NotifyRegister extends ClientMessage {

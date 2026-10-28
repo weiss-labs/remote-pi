@@ -687,6 +687,7 @@ class SyncService extends Service {
         _credentialController.add(msg);
         break;
       case ArtifactReply():
+      case FileReply():
       case CommandsList():
       case CommandResult():
       case NotificationRegistration():

@@ -175,6 +175,7 @@ export type ExtensionUiResponseWire =
 
 export type ClientMessage =
   | import("../artifacts.js").ArtifactClientMessage
+  | import("../attachments.js").FileClientMessage
   | import("../credentials/bridge.js").CredentialClientMessage
   | import("../actions/commands.js").CommandClientMessage
   | import("../notifications.js").NotificationClientMessage
@@ -272,6 +273,7 @@ export type ServerMessage =
   | import("../credentials/bridge.js").CredentialServerMessage
   | import("../notifications.js").NotificationReply
   | import("../artifacts.js").ArtifactServerMessage
+  | import("../attachments.js").FileServerMessage
 
   | VoiceServerMessage
   | {

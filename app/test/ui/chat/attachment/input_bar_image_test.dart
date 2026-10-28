@@ -7,6 +7,7 @@ import 'dart:convert';
 
 import 'package:app/data/actions/actions_repository.dart';
 import 'package:app/data/images/image_picker_service.dart';
+import 'package:app/domain/contracts/file_transfer.dart';
 import 'package:app/domain/session_state.dart';
 import 'package:app/protocol/protocol.dart';
 import 'package:app/ui/chat/attachment/viewmodels/attachment_viewmodel.dart';
@@ -28,6 +29,8 @@ class _FakePicker implements IImagePickerService {
   Future<PickedImage?> fromBytes(Uint8List bytes, String mime) async => next;
   @override
   Future<PickedImage?> pickFromGallery() async => next;
+  @override
+  Future<PendingFile?> pickVideo(ImageSourceKind source) async => null;
 }
 
 class _FakeActions implements IActionsRepository {
@@ -56,6 +59,7 @@ WireModel _m(bool vision) => WireModel(
 );
 
 void main() {
+  plan74InputBarTests();
   late _FakePicker picker;
   late _FakeActions actions;
   late AttachmentViewModel vm;
@@ -210,4 +214,67 @@ void main() {
       expect(sent!.mime, 'image/jpeg');
     },
   );
+}
+
+// Plan/74 — a queued video shows a chip (name + size + remove) and the composer
+// offers "Paste File" in its edit menu.
+class _Plan74Picker extends _FakePicker {
+  @override
+  Future<PendingFile?> pickVideo(ImageSourceKind source) async => const PendingFile(
+    path: '/tmp/clip.mov',
+    name: 'clip.mov',
+    mime: 'video/quicktime',
+    size: 2 * 1024 * 1024,
+  );
+}
+
+void plan74InputBarTests() {
+  testWidgets('a video attachment renders a chip with name and size, removable', (
+    tester,
+  ) async {
+    final vm = AttachmentViewModel(_Plan74Picker(), _FakeActions());
+    addTearDown(vm.dispose);
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: Align(
+            alignment: Alignment.bottomCenter,
+            child: InputBar(attachment: vm, onOpenAttach: () {}, onSend: (_) {}),
+          ),
+        ),
+      ),
+    );
+    await vm.pickVideo(ImageSourceKind.gallery);
+    await tester.pump();
+    expect(find.byKey(const Key('attach-file-chip')), findsOneWidget);
+    expect(find.text('clip.mov'), findsOneWidget);
+    expect(find.text('2.0 MB'), findsOneWidget);
+    expect(find.byKey(const Key('attach-preview')), findsNothing);
+    // A file alone makes the send button live.
+    expect(find.byKey(const Key('input-bar-action')), findsOneWidget);
+    await tester.tap(find.byKey(const Key('attach-file-remove')));
+    await tester.pump();
+    expect(find.byKey(const Key('attach-file-chip')), findsNothing);
+  });
+
+  testWidgets('the composer edit menu offers Paste File', (tester) async {
+    final vm = AttachmentViewModel(_Plan74Picker(), _FakeActions());
+    addTearDown(vm.dispose);
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: Align(
+            alignment: Alignment.bottomCenter,
+            child: InputBar(attachment: vm, onOpenAttach: () {}, onSend: (_) {}),
+          ),
+        ),
+      ),
+    );
+    await tester.enterText(find.byType(TextField), 'hello');
+    await tester.pump();
+    final state = tester.state<EditableTextState>(find.byType(EditableText));
+    state.showToolbar();
+    await tester.pump();
+    expect(find.text('Paste File'), findsOneWidget);
+  });
 }

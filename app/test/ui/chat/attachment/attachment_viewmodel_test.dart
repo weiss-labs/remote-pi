@@ -3,10 +3,13 @@
 
 import 'dart:async';
 import 'dart:convert';
+import 'dart:io';
 import 'dart:typed_data';
 
 import 'package:app/data/actions/actions_repository.dart';
 import 'package:app/data/images/image_picker_service.dart';
+import 'package:app/data/images/pasteboard_service.dart';
+import 'package:app/domain/contracts/file_transfer.dart';
 import 'package:app/protocol/protocol.dart';
 import 'package:app/ui/chat/attachment/states/attachment_state.dart';
 import 'package:app/ui/chat/attachment/viewmodels/attachment_viewmodel.dart';
@@ -33,6 +36,15 @@ class _FakePicker implements IImagePickerService {
   Future<PickedImage?> pickFromGallery() async {
     if (fail) throw Exception('boom');
     return next;
+  }
+
+  PendingFile? nextFile;
+  @override
+  Future<PendingFile?> pickVideo(ImageSourceKind source) async {
+    if (denyCamera && source == ImageSourceKind.camera) {
+      throw const ImagePermissionDeniedException();
+    }
+    return nextFile;
   }
 }
 
@@ -76,6 +88,7 @@ WireModel _model({required bool vision, String name = 'M'}) => WireModel(
 );
 
 void main() {
+  plan74FileTests();
   test('pickFromGallery attaches an image; removeImage clears it', () async {
     final vm = AttachmentViewModel(_FakePicker(), _FakeActions());
     await vm.pickFromGallery();
@@ -194,6 +207,114 @@ void main() {
     await Future<void>.delayed(Duration.zero);
 
     expect(vm.state.visionSupported, isFalse);
+    vm.dispose();
+  });
+}
+
+// Plan/74 — videos and pasted/shared files ride beside the inline images.
+class _FakePasteboard implements IPasteboardService {
+  List<PendingFile> items = const [];
+  @override
+  Future<bool> hasAttachments() async => items.isNotEmpty;
+  @override
+  Future<List<PendingFile>> readAttachments() async => items;
+}
+
+void plan74FileTests() {
+  const clip = PendingFile(
+    path: '/tmp/clip.mov',
+    name: 'clip.mov',
+    mime: 'video/quicktime',
+    size: 1234,
+    durationMs: 3000,
+  );
+
+  test('pickVideo attaches a file chip; images and files are taken separately', () async {
+    final picker = _FakePicker()..nextFile = clip;
+    final vm = AttachmentViewModel(picker, _FakeActions());
+    await vm.pickVideo(ImageSourceKind.gallery);
+    expect(vm.hasImage, isTrue);
+    expect(vm.hasFiles, isTrue);
+    await vm.pickFromGallery();
+    final s = vm.state as AttachmentAttached;
+    expect(s.images, hasLength(1));
+    expect(s.files, [clip]);
+
+    expect(vm.takeImagesForSend(), hasLength(1));
+    expect((vm.state as AttachmentAttached).files, [clip]);
+    expect(vm.takeFilesForSend(), [clip]);
+    expect(vm.state, isA<AttachmentEmpty>());
+    expect(vm.takeFilesForSend(), isEmpty);
+    vm.dispose();
+  });
+
+  test('removeFile drops one chip; removeImage keeps files', () async {
+    final picker = _FakePicker()..nextFile = clip;
+    final vm = AttachmentViewModel(picker, _FakeActions());
+    await vm.pickVideo(ImageSourceKind.gallery);
+    await vm.pickVideo(ImageSourceKind.camera);
+    await vm.pickFromGallery();
+    vm.removeImage();
+    expect((vm.state as AttachmentAttached).files, hasLength(2));
+    vm.removeFile(5); // out of range: no-op
+    vm.removeFile(0);
+    expect((vm.state as AttachmentAttached).files, hasLength(1));
+    vm.removeFile(0);
+    expect(vm.state, isA<AttachmentEmpty>());
+    vm.dispose();
+  });
+
+  test('a file over the 200 MiB cap and a denied camera hint, nothing attached', () async {
+    final picker = _FakePicker()
+      ..nextFile = const PendingFile(
+        path: '/tmp/huge.mov',
+        name: 'huge.mov',
+        mime: 'video/quicktime',
+        size: AttachmentViewModel.maxFileBytes + 1,
+      );
+    final vm = AttachmentViewModel(picker, _FakeActions());
+    final hints = <AttachHint>[];
+    final sub = vm.hints.listen(hints.add);
+    await vm.pickVideo(ImageSourceKind.gallery);
+    picker.denyCamera = true;
+    await vm.pickVideo(ImageSourceKind.camera);
+    await Future<void>.delayed(Duration.zero);
+    expect(vm.state, isA<AttachmentEmpty>());
+    expect(hints, [AttachHint.fileTooLarge, AttachHint.cameraPermissionDenied]);
+    await sub.cancel();
+    vm.dispose();
+  });
+
+  test('pasteFromClipboard: images become inline, files become chips, text yields a hint', () async {
+    final dir = await Directory.systemTemp.createTemp('rp-paste');
+    addTearDown(() => dir.delete(recursive: true));
+    final png = File('${dir.path}/shot.png')..writeAsBytesSync([1, 2, 3]);
+    final pasteboard = _FakePasteboard()
+      ..items = [
+        PendingFile(path: png.path, name: 'shot.png', mime: 'image/png', size: 3),
+        clip,
+      ];
+    final vm = AttachmentViewModel(_FakePicker(), _FakeActions(), pasteboard);
+    expect(await vm.pasteFromClipboard(), isTrue);
+    final s = vm.state as AttachmentAttached;
+    expect(s.images, hasLength(1));
+    expect(s.files, [clip]);
+
+    pasteboard.items = const [];
+    final hints = <AttachHint>[];
+    final sub = vm.hints.listen(hints.add);
+    expect(await vm.pasteFromClipboard(), isFalse);
+    await Future<void>.delayed(Duration.zero);
+    expect(hints, [AttachHint.nothingToPaste]);
+    expect((vm.state as AttachmentAttached).files, [clip]); // unchanged
+    await sub.cancel();
+    vm.dispose();
+  });
+
+  test('without a pasteboard bridge paste reports nothing and stays text', () async {
+    final vm = AttachmentViewModel(_FakePicker(), _FakeActions());
+    expect(await vm.pasteFromClipboard(), isFalse);
+    expect(vm.state, isA<AttachmentEmpty>());
     vm.dispose();
   });
 }

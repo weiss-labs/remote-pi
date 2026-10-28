@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:app/data/preferences/preferences.dart';
+import 'package:app/data/share/share_inbox.dart';
 import 'package:app/data/transport/connection_manager.dart';
 import 'package:app/data/transport/epk_encoding.dart';
 import 'package:app/pairing/storage.dart';
@@ -30,7 +31,11 @@ class HomeViewModel extends ViewModel<HomeState> {
   bool _relayConnected = false;
   bool _disposed = false;
 
-  HomeViewModel(this._storage, this._prefs, this._conn)
+  /// Plan/74 — where the Share extension's pane list is published. Null in
+  /// tests / on platforms without the extension.
+  final ShareInbox? _share;
+
+  HomeViewModel(this._storage, this._prefs, this._conn, [this._share])
     : super(const HomeLoading()) {
     _relayConnected = _conn.status is StatusOnline;
     _load();
@@ -46,6 +51,52 @@ class HomeViewModel extends ViewModel<HomeState> {
   void _onStorageChanged() {
     if (_disposed) return;
     _load();
+  }
+
+  @override
+  void emit(HomeState newState) {
+    super.emit(newState);
+    if (_share != null && newState is HomeList) {
+      unawaited(_share.publishPanes(sharedPanes()));
+    }
+  }
+
+  /// Plan/74 — every known pane in Home's order: workspaces as dragged,
+  /// panes by recency, pinned first. Same names the Home list shows.
+  List<SharedPane> sharedPanes() {
+    final s = state;
+    if (s is! HomeList) return const [];
+    final all = s.items(normalizeEpk: normalizeEpkForLookup);
+    final byWorkspace = <String, List<HomeItem>>{};
+    for (final it in all) {
+      final path = panePath(it);
+      (byWorkspace[path.length > 1 ? path.first : 'Other'] ??= []).add(it);
+    }
+    SharedPane row(HomeItem it, String workspace) {
+      final path = panePath(it);
+      final tab = path.length > 2
+          ? path.sublist(1, path.length - 1).join(' › ')
+          : null;
+      return SharedPane(
+        peer: it.peer.remoteEpk,
+        room: it.room.roomId,
+        workspace: workspace,
+        tab: tab != null && int.tryParse(tab) == null ? tab : null,
+        pane: path.last,
+        device: it.peer.nickname?.isNotEmpty == true
+            ? it.peer.nickname!
+            : it.peer.sessionName,
+        online: _online(it),
+      );
+    }
+
+    return [
+      for (final it in byRecency(all.where(isPinned).toList()))
+        row(it, 'Pinned'),
+      for (final ws in orderWorkspaces(byWorkspace.keys))
+        for (final it in byRecency(byWorkspace[ws]!))
+          if (!isPinned(it)) row(it, ws),
+    ];
   }
 
   /// `true` when the app's WS to the relay is alive (StatusOnline).

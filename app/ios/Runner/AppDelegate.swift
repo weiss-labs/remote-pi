@@ -6,6 +6,8 @@ import QuickLook
 @main
 @objc class AppDelegate: FlutterAppDelegate, FlutterImplicitEngineDelegate {
   private var artifacts: ArtifactViewer?
+  private var pasteboard: PasteboardBridge?
+  private var shareInbox: ShareInboxBridge?
   private var notifications: FlutterMethodChannel?
   private var pushToken: String?
   private var pendingTaps: [[String: Any]] = []
@@ -24,6 +26,8 @@ import QuickLook
   func didInitializeImplicitFlutterEngine(_ engineBridge: FlutterImplicitEngineBridge) {
     GeneratedPluginRegistrant.register(with: engineBridge.pluginRegistry)
     artifacts = ArtifactViewer(messenger: engineBridge.applicationRegistrar.messenger())
+    pasteboard = PasteboardBridge(messenger: engineBridge.applicationRegistrar.messenger())
+    shareInbox = ShareInboxBridge(messenger: engineBridge.applicationRegistrar.messenger())
     let channel = FlutterMethodChannel(
       name: "ai.weisslabs.remotepi/notifications",
       binaryMessenger: engineBridge.applicationRegistrar.messenger())
