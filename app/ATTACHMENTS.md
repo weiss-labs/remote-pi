@@ -87,11 +87,10 @@ Group. Release/Profile sign manually with "Remote Pi WL Share Direct Push";
 `ExportOptions.testflight.plist` maps the extension to "Remote Pi WL Share
 App Store Push" and `ship-testflight.sh` refuses an IPA without the appex.
 `scripts/ios-profiles.mjs` recreates and installs all four profiles after a
-capability change. The App Group itself must exist and be attached to both
-bundle IDs in the developer portal: the public App Store Connect API has no
-App Groups resource and Xcode's provisioning service does not accept the
-team API key, so this is a one-time manual step before the first signed
-build. `ios/add_share_extension.rb` is the idempotent project edit that added
+capability change. The App Group itself had to be created and attached to both
+bundle IDs outside this API (done 2026-10-28 via fastlane spaceship): the
+public App Store Connect API has no App Groups resource and Xcode's
+provisioning service does not accept the team API key. `ios/add_share_extension.rb` is the idempotent project edit that added
 the target (requires the xcodeproj gem bundled with CocoaPods).
 
 ## Not covered
