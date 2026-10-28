@@ -308,16 +308,32 @@ class HomePage extends StatelessWidget {
       ),
     );
 
+    final search = SliverToBoxAdapter(
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(20, 4, 20, 4),
+        child: PaneSearchField(query: vm.query, onChanged: vm.setQuery),
+      ),
+    );
+
     final visible = vm.visibleItems;
     if (visible.isEmpty) {
-      // Items exist, but none match this tab → per-tab empty state beneath
-      // the tabs (which stay visible so the user can switch back).
+      // Items exist, but none match this tab or search → empty state beneath
+      // the tabs and search box (both stay visible so the user can back out;
+      // same sliver positions keep the search field's focus and text).
       return SliverMainAxisGroup(
         slivers: [
           tabs,
+          search,
           SliverFillRemaining(
             hasScrollBody: false,
-            child: HomeFilterEmptyState(filter: state.filter),
+            child: vm.query.trim().isEmpty
+                ? HomeFilterEmptyState(filter: state.filter)
+                : Center(
+                    child: Text(
+                      'No panes match "${vm.query.trim()}"',
+                      style: TextStyle(color: colors.muted),
+                    ),
+                  ),
           ),
         ],
       );
@@ -421,12 +437,6 @@ class HomePage extends StatelessWidget {
       );
     }
 
-    final search = SliverToBoxAdapter(
-      child: Padding(
-        padding: const EdgeInsets.fromLTRB(20, 4, 20, 4),
-        child: PaneSearchField(query: vm.query, onChanged: vm.setQuery),
-      ),
-    );
     return SliverMainAxisGroup(
       slivers: [
         tabs,

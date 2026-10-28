@@ -175,11 +175,15 @@ class HomeViewModel extends ViewModel<HomeState> {
       HomeFilter.online => all.where(_online).toList(),
       HomeFilter.offline => all.where((i) => !_online(i)).toList(),
     };
-    final q = _query.trim().toLowerCase();
-    if (q.isEmpty) return byTab;
-    return byTab
-        .where((i) => panePath(i).join(' ').toLowerCase().contains(q))
-        .toList();
+    // Every typed word must appear somewhere in the pane's path, in any
+    // order; path separators (› → / _) are ignored so a pasted full name works.
+    final words = _query.toLowerCase().split(_searchSeparators)
+      ..removeWhere((w) => w.isEmpty);
+    if (words.isEmpty) return byTab;
+    return byTab.where((i) {
+      final path = panePath(i).join(' ').toLowerCase();
+      return words.every(path.contains);
+    }).toList();
   }
 
   // Weiss Labs: pull-to-refresh.
@@ -259,6 +263,7 @@ class HomeViewModel extends ViewModel<HomeState> {
   }
 
   // Weiss Labs: search box over the pane list.
+  static final _searchSeparators = RegExp(r'[\s›→/_>]+');
   String _query = '';
   String get query => _query;
   void setQuery(String q) {

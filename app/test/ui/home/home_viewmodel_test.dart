@@ -527,6 +527,59 @@ void main() {
       vm.dispose();
     });
 
+    test('Weiss Labs: search matches every word of a full pane name in any '
+        'order, and clearing it brings every pane back', () async {
+      final ch = _ControllableChannel();
+      final storage = _FakeStorage([_peerA]);
+      final conn = ConnectionManager(
+        factory: (_, _) async => ch,
+        storage: storage,
+        emitDebounce: Duration.zero,
+      );
+      final vm = HomeViewModel(
+        storage,
+        Preferences(_FakeSecureStorage()),
+        conn,
+      );
+      await conn.connectTo(_peerA);
+      await Future<void>.delayed(const Duration(milliseconds: 10));
+      ch.pushControl(
+        const RoomAnnounced(
+          peer: 'epk_A',
+          roomId: 'r1',
+          name: 'Michael_Nussen›2›main',
+          startedAt: 1,
+        ),
+      );
+      ch.pushControl(
+        const RoomAnnounced(
+          peer: 'epk_A',
+          roomId: 'r2',
+          name: 'ZachOS›ZachOS_Pi_Agent›remote_pi_app',
+          startedAt: 2,
+        ),
+      );
+      await Future<void>.delayed(const Duration(milliseconds: 10));
+      List<String> ids() => vm.visibleItems.map((i) => i.room.roomId).toList();
+
+      for (final q in [
+        'ZachOS › ZachOS Pi Agent › remote pi app',
+        'ZachOS → remote pi app',
+        'remote_pi_app',
+        'app remote',
+      ]) {
+        vm.setQuery(q);
+        expect(ids(), ['r2'], reason: q);
+      }
+      vm.setQuery('Michael Nussen main');
+      expect(ids(), ['r1']);
+      vm.setQuery('no such pane');
+      expect(ids(), isEmpty);
+      vm.setQuery('');
+      expect(ids(), ['r1', 'r2']);
+      vm.dispose();
+    });
+
     test('counts / visibleItems are empty-safe outside a HomeList', () {
       final storage = _FakeStorage([_peerA]);
       final prefs = Preferences(_FakeSecureStorage());
