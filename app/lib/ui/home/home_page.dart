@@ -8,6 +8,7 @@ import 'package:app/ui/home/pane_path.dart';
 import 'package:app/ui/settings/settings_sheet.dart';
 import 'package:app/ui/home/viewmodels/home_viewmodel.dart';
 import 'package:app/ui/home/widgets/widgets.dart';
+import 'package:app/ui/home/widgets/pane_search_field.dart';
 import 'package:app/ui/update/widgets/update_banner.dart';
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
@@ -423,23 +424,7 @@ class HomePage extends StatelessWidget {
     final search = SliverToBoxAdapter(
       child: Padding(
         padding: const EdgeInsets.fromLTRB(20, 4, 20, 4),
-        child: TextFormField(
-          initialValue: vm.query,
-          onChanged: vm.setQuery,
-          style: context.typo.mono,
-          decoration: InputDecoration(
-            hintText: 'Search panes',
-            hintStyle: TextStyle(color: colors.muted, fontFamily: kMonoFamily),
-            prefixIcon: Icon(LucideIcons.search, color: colors.muted, size: 18),
-            isDense: true,
-            filled: true,
-            fillColor: colors.surface,
-            border: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(8),
-              borderSide: BorderSide(color: colors.border),
-            ),
-          ),
-        ),
+        child: PaneSearchField(query: vm.query, onChanged: vm.setQuery),
       ),
     );
     return SliverMainAxisGroup(
