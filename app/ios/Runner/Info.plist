@@ -2,6 +2,9 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
+	<!-- Plan/74: remotepi://share only wakes the app; the Share queue drains on resume. No Flutter route. -->
+	<key>FlutterDeepLinkingEnabled</key>
+	<false/>
 	<key>APNSEnvironment</key>
 	<string>$(APNS_ENVIRONMENT)</string>
 	<!-- Used for QR pairing (scan the code on your Mac) and, since plan 30,

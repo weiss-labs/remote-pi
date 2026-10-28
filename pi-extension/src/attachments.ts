@@ -179,8 +179,14 @@ export class AttachmentBridge {
       requireSafe(await this.deps.authorize(owner, sender) && generation === this.generation && this.transfers.get(t.id) === t, "not_paired", "An active paired pane is required.");
       const path = join(this.dir(), `${t.id.slice(0, 8)}-${t.name}`);
       await rename(t.part, path);
-      await chmod(path, 0o600);
       t.part = path;
+      await chmod(path, 0o600);
+      // The rename/chmod yielded: a session reset or detach meanwhile makes this upload
+      // stale. The reset may already have dropped the transfer, so delete the renamed file here.
+      if (!(await this.deps.authorize(owner, sender) && generation === this.generation && this.transfers.get(t.id) === t)) {
+        await unlink(path).catch(() => {});
+        throw new Refused("not_paired", "An active paired pane is required.");
+      }
       await this.deps.deliver({ id, owner, path, name: t.name, mime: t.mime, size: t.size, duration_ms: t.duration_ms, text: t.text, steer: t.steer });
       this.transfers.delete(t.id); clearTimeout(t.timer); await t.file.close().catch(() => {});
       return { type: "file_done", in_reply_to: id, transfer_id: t.id, path };

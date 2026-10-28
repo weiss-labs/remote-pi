@@ -8,7 +8,7 @@ import { AttachmentBridge, FILE_CHUNK_SIZE, FILE_MAX_SIZE, FILE_TTL_MS, describe
 const cleanups: Array<() => Promise<unknown> | void> = [];
 afterEach(async () => { for (const clean of cleanups.splice(0).reverse()) await clean(); });
 
-async function setup(opts: { deliver?: (f: Delivered) => Promise<void> | void } = {}) {
+async function setup(opts: { deliver?: (f: Delivered) => Promise<void> | void; onAuthorize?: () => void } = {}) {
   const dir = await mkdtemp(join(tmpdir(), "rp-attachments-"));
   cleanups.push(() => rm(dir, { recursive: true, force: true }));
   const sender = {}, other = {};
@@ -17,7 +17,7 @@ async function setup(opts: { deliver?: (f: Delivered) => Promise<void> | void } 
   let now = 1_000_000;
   const bridge = new AttachmentBridge({
     dir, now: () => now,
-    authorize: async (owner, s) => owner === "owner" && s === sender && paired,
+    authorize: async (owner, s) => { opts.onAuthorize?.(); return owner === "owner" && s === sender && paired; },
     deliver: async (f) => { delivered.push(f); await opts.deliver?.(f); },
   });
   cleanups.push(() => bridge.stop());
@@ -42,6 +42,20 @@ async function setup(opts: { deliver?: (f: Delivered) => Promise<void> | void } 
 const isError = (r: FileServerMessage, code: string) => expect(r).toMatchObject({ type: "file_error", code });
 
 describe("phone → Mac attachments", () => {
+  it("a session reset while the finished file is being moved into place delivers nothing and leaves no file", async () => {
+    let calls = -1;
+    const s = await setup({ onAuthorize: () => { if (calls >= 0 && ++calls === 3) void s.bridge.reset(); } });
+    const id = await s.opened();
+    const bytes = s.video;
+    for (let offset = 0; offset < bytes.length; offset += FILE_CHUNK_SIZE) {
+      await s.bridge.handle("owner", s.sender, { type: "file_chunk", id: `c${offset}`, transfer_id: id, offset, data: bytes.subarray(offset, offset + FILE_CHUNK_SIZE).toString("base64") });
+    }
+    calls = 0; // close: 1 = request start, 2 = before rename, 3 = after rename/chmod (reset lands here)
+    isError(await s.bridge.handle("owner", s.sender, { type: "file_close", id: "msg-1", transfer_id: id }), "not_paired");
+    expect(calls).toBe(3);
+    expect(s.delivered).toEqual([]);
+    expect(await readdir(s.dir)).toEqual([]);
+  });
   it("writes a hash-verified private file and delivers path + metadata as one message", async () => {
     const s = await setup();
     const id = await s.opened();

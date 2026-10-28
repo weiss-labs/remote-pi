@@ -74,6 +74,8 @@ class _RemotePiAppState extends State<RemotePiApp> with WidgetsBindingObserver {
   // ---------------------------------------------------------------------------
   final _messenger = GlobalKey<ScaffoldMessengerState>();
   bool _shareDraining = false;
+  static const _shareNotReady =
+      'Remote Pi was not ready. It will send the next time you open the app.';
 
   Future<void> _drainShareInbox() async {
     if (_shareDraining || !mounted) return;
@@ -83,6 +85,11 @@ class _RemotePiAppState extends State<RemotePiApp> with WidgetsBindingObserver {
       for (final item in await inbox.takeQueued()) {
         if (!mounted) return;
         final error = await _sendShared(item);
+        if (error == _shareNotReady) {
+          // Keep it (and everything after it) queued for the next foreground.
+          _toast('${item.file.name}: $error');
+          return;
+        }
         await inbox.complete(item.id);
         _toast(
           error == null
@@ -118,7 +125,7 @@ class _RemotePiAppState extends State<RemotePiApp> with WidgetsBindingObserver {
       }.contains(currentNotificationPath(_router)),
       const Duration(seconds: 15),
     )) {
-      return 'Remote Pi was not ready. Share it again.';
+      return _shareNotReady;
     }
     final peers = await injector.get<PairingStorage>().listPeers();
     final peer = peers
