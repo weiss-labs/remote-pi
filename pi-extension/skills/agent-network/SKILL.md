@@ -40,8 +40,12 @@ it.** How a message reaches you depends on your runtime:
   channel push (`📨 Message from …`) may nudge you mid-session; still call
   `get_messages` for the full structured payload.
 
-- **Pi:** the runtime delivers each incoming message directly as a new turn
-  input the moment it arrives — no polling, no `get_messages`. You'll see it
+- **Pi:** the runtime injects each incoming message into your context, no
+  polling, no `get_messages`. If you are idle it starts a new turn at once. If
+  you are mid-turn it is HELD until that turn ends, then every held message is
+  delivered together as one new turn. A peer deep in a long turn therefore sees
+  your message minutes later, so the mesh is not real time and a progress note
+  can arrive after the work it describes is already finished. You'll see it
   prefixed `[agent-network] message from "<peer>" (id=…, re=…)`.
 
 Either way: no wait/sleep/poll-loop. Replies to your own sends arrive on a
