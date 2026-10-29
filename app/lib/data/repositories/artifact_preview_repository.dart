@@ -152,6 +152,7 @@ class ArtifactPreviewRepository extends ArtifactPreview {
         'image/jpeg': 'jpg',
         'image/gif': 'gif',
         'image/webp': 'webp',
+        'text/html': 'html',
       };
       if (opened['type'] != 'artifact_opened' ||
           transfer is! String ||

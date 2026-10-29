@@ -2,6 +2,7 @@ import Flutter
 import UIKit
 import UserNotifications
 import QuickLook
+import WebKit
 
 @main
 @objc class AppDelegate: FlutterAppDelegate, FlutterImplicitEngineDelegate {
@@ -124,7 +125,7 @@ private final class ArtifactViewer: NSObject, QLPreviewControllerDataSource, QLP
   private let channel: FlutterMethodChannel
   private let directory = FileManager.default.temporaryDirectory.appendingPathComponent("paired-artifacts", isDirectory: true)
   private var file: URL?
-  private var controller: QLPreviewController?
+  private var controller: UIViewController?
   private var completion: FlutterResult?
   private var expiry: Timer?
 
@@ -150,7 +151,7 @@ private final class ArtifactViewer: NSObject, QLPreviewControllerDataSource, QLP
       let args = arguments as? [String: Any],
       let typed = args["bytes"] as? FlutterStandardTypedData,
       let ext = args["extension"] as? String,
-      ["pdf", "png", "jpg", "gif", "webp"].contains(ext),
+      ["pdf", "png", "jpg", "gif", "webp", "html"].contains(ext),
       !typed.data.isEmpty, typed.data.count <= 20 * 1024 * 1024 else {
       result(FlutterError(code: "invalid_preview", message: "Invalid preview data", details: nil)); return
     }
@@ -163,6 +164,7 @@ private final class ArtifactViewer: NSObject, QLPreviewControllerDataSource, QLP
     case "jpg": valid = prefix.starts(with: [255,216,255])
     case "gif": valid = data.starts(with: Data("GIF87a".utf8)) || data.starts(with: Data("GIF89a".utf8))
     case "webp": valid = prefix.count >= 12 && String(bytes: prefix[0..<4], encoding: .ascii) == "RIFF" && String(bytes: prefix[8..<12], encoding: .ascii) == "WEBP"
+    case "html": valid = String(data: data, encoding: .utf8)?.drop(while: { $0.isWhitespace || $0 == "\u{FEFF}" }).first == "<"
     default: valid = false
     }
     guard valid else { result(FlutterError(code: "invalid_signature", message: "Invalid file signature", details: nil)); return }
@@ -180,16 +182,22 @@ private final class ArtifactViewer: NSObject, QLPreviewControllerDataSource, QLP
       try folder.setResourceValues(values)
       let url = directory.appendingPathComponent(UUID().uuidString).appendingPathExtension(ext)
       try data.write(to: url, options: [.atomic, .completeFileProtection])
-      guard QLPreviewController.canPreview(url as NSURL) else {
-        try? FileManager.default.removeItem(at: url)
-        result(FlutterError(code: "unsupported", message: "This format cannot be previewed", details: nil)); return
+      let preview: UIViewController
+      if ext == "html" {
+        preview = HTMLPreview(file: url) { [weak self] in self?.cleanup() }
+      } else {
+        guard QLPreviewController.canPreview(url as NSURL) else {
+          try? FileManager.default.removeItem(at: url)
+          result(FlutterError(code: "unsupported", message: "This format cannot be previewed", details: nil)); return
+        }
+        let quickLook = QLPreviewController()
+        quickLook.dataSource = self
+        quickLook.delegate = self
+        preview = quickLook
       }
       file = url
       completion = result
-      let preview = QLPreviewController()
       controller = preview
-      preview.dataSource = self
-      preview.delegate = self
       presenter.present(preview, animated: true) { [weak self] in
         // Cancellation can race UIKit's presentation animation.
         if self?.file != url { preview.dismiss(animated: false) }
@@ -217,5 +225,51 @@ private final class ArtifactViewer: NSObject, QLPreviewControllerDataSource, QLP
     let result = completion
     completion = nil
     result?(nil)
+  }
+}
+
+/// Weiss Labs: a paired HTML artifact (e.g. a clickable mockup) in a sandboxed web view.
+/// Scripts run so mockups stay interactive, but network requests and WebRTC are blocked, the
+/// page can read only its own file, nothing persists, and it cannot navigate elsewhere.
+private final class HTMLPreview: UINavigationController, WKNavigationDelegate {
+  private let file: URL
+  private let onClose: () -> Void
+  private let web: WKWebView
+  private static let offlineGuard = #"(()=>{for(const k of ["RTCPeerConnection","webkitRTCPeerConnection","RTCDataChannel","RTCIceTransport","RTCIceCandidate","RTCSessionDescription","RTCRtpSender","RTCRtpReceiver","RTCRtpTransceiver","WebTransport","EventSource"]){try{delete window[k]}catch(e){}}for(const p of ["contentWindow","contentDocument"]){try{Object.defineProperty(HTMLIFrameElement.prototype,p,{get(){return null},configurable:false})}catch(e){}}window.open=()=>null;})();"#
+
+  init(file: URL, onClose: @escaping () -> Void) {
+    self.file = file
+    self.onClose = onClose
+    let config = WKWebViewConfiguration()
+    config.websiteDataStore = .nonPersistent()
+    // Content rules don't cover WebRTC/WebTransport connections, so remove those APIs
+    // (and fresh-realm escapes via iframes/window.open) before any page script runs.
+    config.userContentController.addUserScript(WKUserScript(source: HTMLPreview.offlineGuard, injectionTime: .atDocumentStart, forMainFrameOnly: false))
+    web = WKWebView(frame: .zero, configuration: config)
+    let page = UIViewController()
+    page.view = web
+    page.title = "Preview"
+    super.init(rootViewController: page)
+    modalPresentationStyle = .fullScreen
+    page.navigationItem.rightBarButtonItem = UIBarButtonItem(barButtonSystemItem: .done, target: self, action: #selector(done))
+    web.navigationDelegate = self
+    let blockNetwork = #"[{"trigger":{"url-filter":".*"},"action":{"type":"block"}},{"trigger":{"url-filter":"^file:"},"action":{"type":"ignore-previous-rules"}}]"#
+    WKContentRuleListStore.default().compileContentRuleList(forIdentifier: "remotepi-offline-preview", encodedContentRuleList: blockNetwork) { [weak self] list, _ in
+      guard let self = self else { return }
+      // Fail closed: without the offline rule the page is never loaded.
+      guard let list = list else { self.web.loadHTMLString("<p style='font:17px -apple-system;padding:24px'>Preview unavailable.</p>", baseURL: nil); return }
+      self.web.configuration.userContentController.add(list)
+      self.web.loadFileURL(self.file, allowingReadAccessTo: self.file)
+    }
+  }
+  required init?(coder: NSCoder) { nil }
+
+  @objc private func done() { dismiss(animated: true) { [onClose] in onClose() } }
+
+  func webView(_ webView: WKWebView, decidePolicyFor action: WKNavigationAction, decisionHandler: @escaping (WKNavigationActionPolicy) -> Void) {
+    guard let url = action.request.url else { return decisionHandler(.cancel) }
+    var bare = URLComponents(url: url, resolvingAgainstBaseURL: false)
+    bare?.fragment = nil
+    decisionHandler(bare?.url == file || url.absoluteString == "about:blank" ? .allow : .cancel)
   }
 }

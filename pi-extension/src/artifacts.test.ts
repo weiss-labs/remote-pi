@@ -83,6 +83,8 @@ describe("assistant-linked bounded previews", () => {
     ["pixel.gif",Buffer.from("R0lGODlhAQABAIAAAAAAAP///ywAAAAAAQABAAACAUwAOw==","base64"),"image/gif"],
     ["pixel.jpg",Buffer.from([255,216,255,224,0,16,74,70,73,70,0,1]),"image/jpeg"],
     ["pixel.webp",Buffer.from("RIFFxxxxWEBPVP8 xxx"),"image/webp"],
+    ["mockup.html",Buffer.from("\uFEFF\n  <!doctype html><p>hi</p>"),"text/html"],
+    ["page.htm",Buffer.from("<html></html>"),"text/html"],
   ] as const)("requires matching image signatures for %s", async (name,data,mime) => {
     const s=await setup(),f=await s.file(name,data);assistant(s.manager,f.url);expect((await s.opened(f.url)).mime).toBe(mime);
     await writeFile(f.path,Buffer.from("not an image"));isError(await s.bridge.handle("owner",s.sender,{type:"artifact_open",id:"invalid",url:f.url}));

@@ -14,7 +14,7 @@ The app captures channel, canonical peer and room at tap, rejects stale operatio
 
 Native code accepts bytes plus an allowlisted extension, never a URL or arbitrary path. iOS Quick Look uses a random filename under an app-owned temporary directory, complete file protection and backup exclusion. Android uses native PdfRenderer and ImageView in an app-private dialog, private cache files, bounded image raster sizes and a secure window. Both clean up on dismissal and after five minutes, and remove abandoned cache files on initialization. Android GIF/WebP images are static previews. Inline image bubbles use an in-app pinch-to-zoom viewer without fetching anything.
 
-Allowed formats are PDF, PNG, JPEG, GIF and WebP. SVG, HTML, documents, archives, text, HEIC, AVIF, BMP and TIFF are unsupported. A corrupt/encrypted PDF or a format unavailable in the OS viewer fails honestly. Quick Look's WebP capability is OS-dependent.
+Allowed formats are PDF, PNG, JPEG, GIF, WebP and HTML. HTML (e.g. clickable mockups) opens on iOS in a full-screen WKWebView: scripts run, a content rule blocks every non-file request, a document-start script removes WebRTC/WebTransport and iframe/window.open realm escapes, it may read only its own file, uses a non-persistent data store, and cannot navigate away; if the rule fails to compile the page is not loaded. SVG, documents, archives, text, HEIC, AVIF, BMP and TIFF are unsupported. A corrupt/encrypted PDF or a format unavailable in the OS viewer fails honestly. Quick Look's WebP capability is OS-dependent.
 
 ## Notification grants
 

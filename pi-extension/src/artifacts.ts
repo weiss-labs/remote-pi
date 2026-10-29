@@ -51,6 +51,7 @@ function mimeFor(path: string, b: Buffer): string | null {
     case ".jpg": case ".jpeg": return b[0] === 255 && b[1] === 216 && b[2] === 255 ? "image/jpeg" : null;
     case ".gif": return ["GIF87a", "GIF89a"].includes(b.subarray(0,6).toString("ascii")) ? "image/gif" : null;
     case ".webp": return b.subarray(0,4).toString("ascii") === "RIFF" && b.subarray(8,12).toString("ascii") === "WEBP" && ["VP8 ","VP8L","VP8X"].includes(b.subarray(12,16).toString("ascii")) ? "image/webp" : null;
+    case ".html": case ".htm": return /^(\uFEFF)?\s*</.test(b.toString("utf8")) && !b.includes(0) ? "text/html" : null;
     default: return null;
   }
 }
