@@ -9,6 +9,7 @@ import 'package:app/pairing/storage.dart';
 import 'package:app/protocol/protocol.dart';
 import 'package:app/ui/core/themes/themes.dart';
 import 'package:app/ui/chat/quick_actions/widgets/quick_actions_sheet.dart';
+import 'package:app/ui/chat/quiet/quiet_widgets.dart';
 import 'package:app/ui/chat/attachment/states/attachment_state.dart';
 import 'package:app/ui/chat/attachment/viewmodels/attachment_viewmodel.dart';
 import 'package:app/ui/chat/states/chat_state.dart';
@@ -298,6 +299,11 @@ class ChatPage extends StatelessWidget {
                   ],
                 ),
               ),
+              // Plan/75 — one tap between the quiet fold and full tool cards.
+              QuietTogglePill(
+                quiet: prefs.quietMode,
+                onTap: () => prefs.setQuietMode(!prefs.quietMode),
+              ),
               // Plan/32g follow-up: ALWAYS render the info button (gating it on
               // the async PeerRecord caused an AppBar layout shift). The dialog
               // reads the PeerRecord at tap time.
@@ -464,7 +470,7 @@ class ChatPage extends StatelessWidget {
       s.length <= max ? s : '${s.substring(0, max - 1)}…';
 
   Widget _buildBody(BuildContext context, ChatState state, ChatViewModel vm) {
-    final hideToolCalls = context.watch<Preferences>().hideToolCalls;
+    final quiet = context.watch<Preferences>().quietMode;
     return switch (state) {
       // Edge case: opened /chat without a peer (e.g. peer revoked while
       // user was here). The chat is not the place to pair — render
@@ -485,20 +491,26 @@ class ChatPage extends StatelessWidget {
         onAction: () => context.go('/pair'),
       ),
       ChatReady(:final messages, :final streaming) => () {
-        final visible = hideToolCalls
-            ? messages.where((m) => m is! ToolEvent).toList()
-            : messages;
         // Empty body → the default placeholder (Pi brand icon + "Nothing
         // here"), shown whenever there's nothing to render — including while
         // reconnecting (the reconnect handshake never swaps the body).
-        if (visible.isEmpty && streaming == null) {
+        if (messages.isEmpty && streaming == null && !(quiet && vm.isWorking)) {
           return const _EmptyState(
             icon: LucideIcons.terminal,
             message: 'Nothing here',
           );
         }
+        // Plan/75 — quiet is a pure view transform over the same list; the
+        // cached transcript is untouched either way.
+        if (quiet) {
+          return QuietMessageList(
+            messages: messages,
+            streaming: streaming,
+            working: vm.isWorking,
+          );
+        }
         return _MessageList(
-          messages: visible,
+          messages: messages,
           streaming: streaming,
           onDecide: (id, decision) => vm.approveTool(id, decision),
         );
@@ -572,7 +584,9 @@ class ChatPage extends StatelessWidget {
           caption = '';
         }
         if (files.isNotEmpty) {
-          unawaited(_sendFiles(ScaffoldMessenger.of(context), vm, files, caption));
+          unawaited(
+            _sendFiles(ScaffoldMessenger.of(context), vm, files, caption),
+          );
         }
       },
     );
@@ -684,7 +698,9 @@ class ChatPage extends StatelessWidget {
       case AttachHint.fileTooLarge:
         messenger.showSnackBar(
           const SnackBar(
-            content: Text('Files are limited to 200 MiB. Trim it and try again.'),
+            content: Text(
+              'Files are limited to 200 MiB. Trim it and try again.',
+            ),
             duration: Duration(seconds: 4),
             behavior: SnackBarBehavior.floating,
           ),

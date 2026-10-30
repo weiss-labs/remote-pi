@@ -109,17 +109,19 @@ class MessageRecord {
       case MsgRole.user:
         return UserMsg(
           id: id,
+          ts: ts,
           text: text,
           status: pending ? UserMsgStatus.pending : UserMsgStatus.confirmed,
           steering: steering,
           image: image,
         );
       case MsgRole.assistant:
-        return AssistantMsg(id: id, text: text);
+        return AssistantMsg(id: id, ts: ts, text: text);
       case MsgRole.tool:
         final t = tool;
         return ToolEvent(
           id: id,
+          ts: ts,
           toolCallId: t?.toolCallId ?? id,
           tool: t?.tool ?? 'unknown',
           args: t?.args,
@@ -128,7 +130,12 @@ class MessageRecord {
           error: t?.error,
         );
       case MsgRole.compaction:
-        return CompactionMsg(id: id, summary: text, tokensBefore: tokensBefore);
+        return CompactionMsg(
+          id: id,
+          ts: ts,
+          summary: text,
+          tokensBefore: tokensBefore,
+        );
     }
   }
 }

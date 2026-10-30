@@ -111,7 +111,11 @@ class ArtifactPreviewRepository extends ArtifactPreview {
   }) async {
     if (_busy) throw const ArtifactFailure('Close the current preview first.');
     final uri = Uri.tryParse(url);
-    if (uri == null || uri.scheme != 'file' || url.length > 8192) {
+    // file:// links from assistant text, or a tool result's image block
+    // (`pi-tool-image:<id>/<n>`); the Mac authorizes both against the session.
+    if (uri == null ||
+        !{'file', 'pi-tool-image'}.contains(uri.scheme) ||
+        url.length > 8192) {
       throw const ArtifactFailure('Only linked files can use this preview.');
     }
     _channel = connection.channel;

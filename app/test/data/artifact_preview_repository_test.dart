@@ -154,6 +154,24 @@ void main() {
       },
     );
   }
+  test('tool-result image URLs reach the Mac; web URLs never do', () async {
+    final future = repository.open(
+      'pi-tool-image:call%7C1/1',
+      progress: (_) {},
+    );
+    expect(lastRequest().toJson()['url'], 'pi-tool-image:call%7C1/1');
+    opened();
+    await flush();
+    chunk();
+    await future;
+    expect(nativeCalls.where((c) => c.method == 'preview'), hasLength(1));
+    final sent = channel.sent.whereType<ArtifactRequest>().length;
+    await expectLater(
+      repository.open('https://example.com/x.png', progress: (_) {}),
+      throwsA(isA<ArtifactFailure>()),
+    );
+    expect(channel.sent.whereType<ArtifactRequest>().length, sent);
+  });
   test('two sequential chunks preserve offsets and full-file hash', () async {
     final large = List<int>.generate(192 * 1024 + 9, (i) => i % 251);
     final digest = (await Sha256().hash(

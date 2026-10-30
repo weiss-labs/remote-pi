@@ -54,49 +54,78 @@ class _FakeSecureStorage implements FlutterSecureStorage {
 
 void main() {
   group('Preferences', () {
-    test('defaults to hideToolCalls=false before load()', () {
-      final p = Preferences(_FakeSecureStorage());
-      expect(p.hideToolCalls, isFalse);
+    test('quiet mode is on by default, before and after load()', () async {
+      final store = _FakeSecureStorage();
+      final p = Preferences(store);
+      expect(p.quietMode, isTrue);
+      await p.load();
+      expect(p.quietMode, isTrue);
     });
 
-    test('load() hydrates from storage', () async {
+    test('load() hydrates quiet mode from storage', () async {
       final store = _FakeSecureStorage();
-      await store.write(key: 'prefs.hide_tool_calls', value: 'true');
+      await store.write(key: 'prefs.quiet_mode', value: 'false');
       final p = Preferences(store);
       await p.load();
-      expect(p.hideToolCalls, isTrue);
+      expect(p.quietMode, isFalse);
     });
 
-    test('setHideToolCalls writes to storage and notifies', () async {
+    test(
+      'migrates an explicit hideToolCalls=false to quiet OFF, once',
+      () async {
+        final store = _FakeSecureStorage();
+        await store.write(key: 'prefs.hide_tool_calls', value: 'false');
+        final p = Preferences(store);
+        await p.load();
+        expect(p.quietMode, isFalse);
+
+        // hideToolCalls=true (or unset) keeps the quiet default.
+        final hid = _FakeSecureStorage();
+        await hid.write(key: 'prefs.hide_tool_calls', value: 'true');
+        final q = Preferences(hid);
+        await q.load();
+        expect(q.quietMode, isTrue);
+
+        // Once quiet_mode is written it wins over the legacy key.
+        await store.write(key: 'prefs.quiet_mode', value: 'true');
+        final r = Preferences(store);
+        await r.load();
+        expect(r.quietMode, isTrue);
+      },
+    );
+
+    test('setQuietMode writes to storage and notifies (round trip)', () async {
       final store = _FakeSecureStorage();
       final p = Preferences(store);
       var notifs = 0;
       p.addListener(() => notifs++);
 
-      await p.setHideToolCalls(true);
-      expect(p.hideToolCalls, isTrue);
-      expect(await store.read(key: 'prefs.hide_tool_calls'), 'true');
+      await p.setQuietMode(false);
+      expect(p.quietMode, isFalse);
+      expect(await store.read(key: 'prefs.quiet_mode'), 'false');
       expect(notifs, 1);
 
       // No-op if value unchanged.
-      await p.setHideToolCalls(true);
+      await p.setQuietMode(false);
       expect(notifs, 1);
 
-      await p.setHideToolCalls(false);
-      expect(p.hideToolCalls, isFalse);
+      await p.setQuietMode(true);
+      expect(p.quietMode, isTrue);
+      expect(await store.read(key: 'prefs.quiet_mode'), 'true');
       expect(notifs, 2);
     });
 
-    test('relayUrl defaults to null and round-trips via setRelayUrl',
-        () async {
+    test('relayUrl defaults to null and round-trips via setRelayUrl', () async {
       final store = _FakeSecureStorage();
       final p = Preferences(store);
       expect(p.relayUrl, isNull);
 
       await p.setRelayUrl('wss://custom.example.com');
       expect(p.relayUrl, 'wss://custom.example.com');
-      expect(await store.read(key: 'prefs.relay_url'),
-          'wss://custom.example.com');
+      expect(
+        await store.read(key: 'prefs.relay_url'),
+        'wss://custom.example.com',
+      );
 
       // Reload from cold start → value survives.
       final p2 = Preferences(store);
@@ -114,29 +143,22 @@ void main() {
       expect(p.relayUrl, isNull);
     });
 
-    test(
-      'onboardingCompleted defaults to false and round-trips via '
-      'setOnboardingCompleted',
-      () async {
-        final store = _FakeSecureStorage();
-        final p = Preferences(store);
-        expect(p.onboardingCompleted, isFalse);
+    test('onboardingCompleted defaults to false and round-trips via '
+        'setOnboardingCompleted', () async {
+      final store = _FakeSecureStorage();
+      final p = Preferences(store);
+      expect(p.onboardingCompleted, isFalse);
 
-        await p.setOnboardingCompleted(true);
-        expect(p.onboardingCompleted, isTrue);
-        expect(
-          await store.read(key: 'prefs.onboarding_completed'),
-          'true',
-        );
+      await p.setOnboardingCompleted(true);
+      expect(p.onboardingCompleted, isTrue);
+      expect(await store.read(key: 'prefs.onboarding_completed'), 'true');
 
-        final p2 = Preferences(store);
-        await p2.load();
-        expect(p2.onboardingCompleted, isTrue);
-      },
-    );
+      final p2 = Preferences(store);
+      await p2.load();
+      expect(p2.onboardingCompleted, isTrue);
+    });
 
-    test('selectedRoom round-trips epk + roomId composite (plan 17)',
-        () async {
+    test('selectedRoom round-trips epk + roomId composite (plan 17)', () async {
       final store = _FakeSecureStorage();
       final p = Preferences(store);
       await p.setSelectedRoom(epk: 'abc123', roomId: 'room-xyz');
@@ -151,37 +173,34 @@ void main() {
       expect(p2.selectedRoomId, 'room-xyz');
     });
 
-    test(
-      'backward-compat: legacy value (no `:room` suffix) returns epk '
-      'and null roomId so caller defaults to "main"',
-      () async {
-        final store = _FakeSecureStorage();
-        // Pre-populate with legacy format (just the epk, no suffix).
-        await store.write(
-          key: 'prefs.selected_peer_epk',
-          value: 'legacy_epk',
-        );
-        final p = Preferences(store);
-        await p.load();
-        expect(p.selectedPeerEpk, 'legacy_epk');
-        expect(p.selectedRoomId, isNull);
-      },
-    );
-
-    // Issue #114 — in-app text size.
-    test('fontScale defaults to extraLarge and round-trips through storage', () async {
+    test('backward-compat: legacy value (no `:room` suffix) returns epk '
+        'and null roomId so caller defaults to "main"', () async {
       final store = _FakeSecureStorage();
+      // Pre-populate with legacy format (just the epk, no suffix).
+      await store.write(key: 'prefs.selected_peer_epk', value: 'legacy_epk');
       final p = Preferences(store);
       await p.load();
-      expect(p.fontScale, AppFontScale.extraLarge);
-
-      await p.setFontScale(AppFontScale.large);
-      expect(p.fontScale, AppFontScale.large);
-
-      final reloaded = Preferences(store);
-      await reloaded.load();
-      expect(reloaded.fontScale, AppFontScale.large);
+      expect(p.selectedPeerEpk, 'legacy_epk');
+      expect(p.selectedRoomId, isNull);
     });
+
+    // Issue #114 — in-app text size.
+    test(
+      'fontScale defaults to extraLarge and round-trips through storage',
+      () async {
+        final store = _FakeSecureStorage();
+        final p = Preferences(store);
+        await p.load();
+        expect(p.fontScale, AppFontScale.extraLarge);
+
+        await p.setFontScale(AppFontScale.large);
+        expect(p.fontScale, AppFontScale.large);
+
+        final reloaded = Preferences(store);
+        await reloaded.load();
+        expect(reloaded.fontScale, AppFontScale.large);
+      },
+    );
 
     test('an unknown persisted font scale falls back to extraLarge', () async {
       final store = _FakeSecureStorage();

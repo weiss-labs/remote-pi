@@ -113,7 +113,7 @@ import { runSetupWizard, type WizardUI } from "./session/setup_wizard.js";
 import { updateFooter, type FooterState } from "./ui/footer.js";
 import { VoiceBridge, type VoiceClientMessage } from "./voice/bridge.js";
 import { NotificationBridge, notificationControl, questionForPrompt } from "./notifications.js";
-import { ArtifactBridge } from "./artifacts.js";
+import { ArtifactBridge, toolImageUrl } from "./artifacts.js";
 import { AttachmentBridge, describe as describeAttachment } from "./attachments.js";
 
 const _artifacts = new ArtifactBridge({
@@ -2374,7 +2374,7 @@ const extension: ExtensionFactory = (pi: ExtensionAPI): void => {
     // a session_sync replays for this tool. Raw `String(event.result)` turned
     // a content-array/object into "[object Object]" and the success branch sent
     // the object unstringified — both diverging from re-sync.
-    const text = _credentials.redact(_stringifyToolResult(event.result));
+    const text = _credentials.redact(_stringifyToolResult(event.result, event.toolCallId));
     const msg: ServerMessage = event.isError
       ? { type: "tool_result", tool_call_id: event.toolCallId, error: text }
       : { type: "tool_result", tool_call_id: event.toolCallId, result: text };
@@ -5093,7 +5093,19 @@ function _stringifyContent(content: unknown): string {
  * (same as `_stringifyContent`); any other object → readable JSON; other
  * primitives → `String()`; null/undefined → "". Never "[object Object]".
  */
-function _stringifyToolResult(value: unknown): string {
+function _stringifyToolResult(value: unknown, toolCallId?: string): string {
+  const text = _stringifyToolResultText(value);
+  if (!toolCallId) return text;
+  // Image blocks never reach the phone inline; name each one so the phone can
+  // fetch it on demand through the authenticated artifact channel.
+  const content = Array.isArray(value) ? value : (value as { content?: unknown } | null)?.content;
+  if (!Array.isArray(content)) return text;
+  const markers = content.flatMap((c, i) =>
+    (c as { type?: string } | null)?.type === "image" ? [`[remote-pi image ${i + 1}: ${toolImageUrl(toolCallId, i)}]`] : []);
+  return markers.length ? [text, ...markers].filter(Boolean).join("\n") : text;
+}
+
+function _stringifyToolResultText(value: unknown): string {
   if (typeof value === "string") return value;
   if (Array.isArray(value)) return _stringifyContent(value);
   if (value !== null && typeof value === "object") {
@@ -5200,8 +5212,8 @@ export function _mapAgentMessagesToEvents(
       }
     } else if (m.role === "toolResult") {
       // Same helper as the live `tool_execution_end` broadcast → live == re-sync.
-      const text = _stringifyToolResult(m.content);
       const tcid = String(m.toolCallId ?? "");
+      const text = _stringifyToolResult(m.content, tcid);
       events.push(
         m.isError
           ? { ts, type: "tool_result", tool_call_id: tcid, error: text }

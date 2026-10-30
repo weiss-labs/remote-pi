@@ -26,7 +26,9 @@ interface Dependencies {
 }
 interface Transfer {
   owner: string; sender: object; generation: number; session: string; url: string;
-  file: FileHandle; path: string; stamp: BigIntStats; size: number;
+  file?: FileHandle; path: string; stamp?: BigIntStats; size: number;
+  /** Image block served from a tool result in the session, not from disk. */
+  bytes?: Buffer;
   expires: number; timer: ReturnType<typeof setTimeout>; busy: boolean;
 }
 class Refused extends Error {}
@@ -65,6 +67,29 @@ export function assistantLinked(manager: ReadonlySessionManager, url: string): b
       return [...block.text.matchAll(/file:\/\/[^\s<>\x00-\x1f\x7f\x22'`\]\)]+/g)].some(match => match[0] === url);
     }));
 }
+/** `pi-tool-image:<encoded toolCallId>/<index>`: the Mac appends one per image block to the phone's copy of a tool result. */
+export function toolImageUrl(toolCallId: string, index: number): string { return `pi-tool-image:${encodeURIComponent(toolCallId)}/${index}`; }
+const IMAGE_EXT: Record<string, string> = { "image/png": ".png", "image/jpeg": ".jpg", "image/gif": ".gif", "image/webp": ".webp" };
+/** The image block a tool returned on the active branch, magic-checked, or null. */
+export function toolImage(manager: ReadonlySessionManager, url: string): { bytes: Buffer; mime: string; name: string } | null {
+  const m = /^pi-tool-image:([^\s/]{1,512})\/(\d{1,2})$/.exec(url);
+  if (!m) return null;
+  let id: string;
+  try { id = decodeURIComponent(m[1]); } catch { return null; }
+  const branch = manager.getBranch();
+  if (!Array.isArray(branch) || branch.length > 20000) return null;
+  for (const entry of branch) {
+    const msg = entry.type === "message" ? entry.message as { role?: string; toolCallId?: string; content?: unknown } : null;
+    if (msg?.role !== "toolResult" || msg.toolCallId !== id || !Array.isArray(msg.content)) continue;
+    const block = msg.content[Number(m[2])] as { type?: string; data?: unknown; mimeType?: unknown } | undefined;
+    const ext = typeof block?.mimeType === "string" ? IMAGE_EXT[block.mimeType] : undefined;
+    if (block?.type !== "image" || typeof block.data !== "string" || !ext || block.data.length > ARTIFACT_MAX_SIZE * 4 / 3 + 4) return null;
+    const bytes = Buffer.from(block.data, "base64");
+    const mime = bytes.length ? mimeFor(`image${ext}`, bytes.subarray(0, 32)) : null;
+    return mime && bytes.length <= ARTIFACT_MAX_SIZE ? { bytes, mime, name: `image-${Number(m[2]) + 1}${ext}` } : null;
+  }
+  return null;
+}
 /** Filesystem requests never enter the agent, shell, or HTTP fetch path. */
 export class ArtifactBridge {
   private generation = 0;
@@ -75,7 +100,7 @@ export class ArtifactBridge {
   private close(id: string): void {
     const t = this.transfers.get(id);
     if (!t) return;
-    this.transfers.delete(id); clearTimeout(t.timer); void t.file.close().catch(() => {});
+    this.transfers.delete(id); clearTimeout(t.timer); void t.file?.close().catch(() => {});
   }
   reset(): void { this.generation++; for (const id of this.transfers.keys()) this.close(id); }
   detach(owner: string): void {
@@ -84,12 +109,14 @@ export class ArtifactBridge {
   private authority(url: string, generation: number, session?: string): ReadonlySessionManager {
     const manager = this.deps.session();
     requireSafe(generation === this.generation && manager && typeof manager.getBranch === "function" &&
-      typeof manager.getSessionId === "function" && (!session || session === manager.getSessionId()) && assistantLinked(manager, url));
+      typeof manager.getSessionId === "function" && (!session || session === manager.getSessionId()) &&
+      (url.startsWith("pi-tool-image:") ? toolImage(manager, url) !== null : assistantLinked(manager, url)));
     return manager;
   }
   private async validate(t: Transfer): Promise<void> {
     this.authority(t.url, t.generation, t.session);
-    requireSafe(t.expires > Date.now() && await realpath(fileURLToPath(t.url)) === t.path &&
+    if (t.bytes) { requireSafe(t.expires > Date.now()); return; }
+    requireSafe(t.file && t.stamp && t.expires > Date.now() && await realpath(fileURLToPath(t.url)) === t.path &&
       same(t.stamp, await t.file.stat({ bigint: true })) && same(t.stamp, await stat(t.path, { bigint: true })));
   }
   async handle(owner: string, sender: object, msg: ArtifactClientMessage): Promise<ArtifactServerMessage | null> {
@@ -108,6 +135,15 @@ export class ArtifactBridge {
         const manager = this.authority(msg.url, generation);
         const session = manager.getSessionId();
         requireSafe(this.transfers.size + this.totalPending <= 32 && [...this.transfers.values()].filter(t => t.owner === owner).length + (this.pending.get(owner) ?? 0) <= 4);
+        const image = msg.url.startsWith("pi-tool-image:") ? toolImage(manager, msg.url) : null;
+        if (image) {
+          requireSafe(await this.deps.authorize(owner, sender));
+          this.authority(msg.url, generation, session);
+          const transfer_id = randomUUID();
+          const timer = setTimeout(() => this.close(transfer_id), TTL); timer.unref();
+          this.transfers.set(transfer_id, { owner, sender, generation, session, url: msg.url, path: image.name, bytes: image.bytes, size: image.bytes.length, expires: Date.now() + TTL, timer, busy: false });
+          return { type: "artifact_opened", in_reply_to: id, transfer_id, name: image.name, mime: image.mime, size: image.bytes.length, sha256: createHash("sha256").update(image.bytes).digest("hex") };
+        }
         const url = new URL(msg.url);
         requireSafe(url.protocol === "file:" && (!url.hostname || url.hostname === "localhost") && !url.search && !url.hash && !url.username && !url.password);
         const raw = fileURLToPath(url);
@@ -149,8 +185,8 @@ export class ArtifactBridge {
       requireSafe(!t.busy); t.busy = true; reading = t;
       await this.validate(t);
       requireSafe(Number.isSafeInteger(msg.offset) && msg.offset >= 0 && msg.offset < t.size);
-      const data = Buffer.alloc(Math.min(ARTIFACT_CHUNK_SIZE, t.size - msg.offset));
-      const { bytesRead } = await t.file.read(data, 0, data.length, msg.offset);
+      const data = t.bytes ? t.bytes.subarray(msg.offset, msg.offset + ARTIFACT_CHUNK_SIZE) : Buffer.alloc(Math.min(ARTIFACT_CHUNK_SIZE, t.size - msg.offset));
+      const { bytesRead } = t.bytes ? { bytesRead: data.length } : await t.file!.read(data, 0, data.length, msg.offset);
       requireSafe(bytesRead === data.length && this.transfers.get(msg.transfer_id) === t && await this.deps.authorize(owner, sender));
       await this.validate(t);
       requireSafe(this.transfers.get(msg.transfer_id) === t);

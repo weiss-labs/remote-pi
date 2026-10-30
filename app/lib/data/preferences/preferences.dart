@@ -13,7 +13,7 @@ import 'package:app/ui/core/themes/app_font_scale.dart';
 /// the first frame to hydrate the in-memory cache.
 class Preferences extends ChangeNotifier {
   final FlutterSecureStorage _store;
-  bool _hideToolCalls = false;
+  bool _quietMode = true;
   String? _selectedPeerEpk;
   String? _relayUrl;
   bool _onboardingCompleted = false;
@@ -23,6 +23,8 @@ class Preferences extends ChangeNotifier {
   Preferences([FlutterSecureStorage? store])
     : _store = store ?? const FlutterSecureStorage();
 
+  static const _kQuietModeKey = 'prefs.quiet_mode';
+  // Pre-quiet-mode key, read once to migrate an explicit opt-out.
   static const _kHideToolCallsKey = 'prefs.hide_tool_calls';
   static const _kSelectedPeerEpkKey = 'prefs.selected_peer_epk';
   static const _kRelayUrlKey = 'prefs.relay_url';
@@ -34,8 +36,10 @@ class Preferences extends ChangeNotifier {
   static const _kHideUsageKey = 'prefs.hide_usage';
   static const _kLastActiveKey = 'prefs.last_active';
 
-  /// True → chat hides `ToolEvent` rows (only user/assistant text remain).
-  bool get hideToolCalls => _hideToolCalls;
+  /// Quiet mode (plan/75): tool steps fold into one "Worked for…" row with a
+  /// live status line; off shows every tool card. App-wide, phone-local,
+  /// never synced to the Mac. On by default.
+  bool get quietMode => _quietMode;
 
   /// Epoch of the peer the user last picked from Home — the one
   /// `/chat` will connect to when it mounts. Null = no peer selected yet
@@ -140,10 +144,16 @@ class Preferences extends ChangeNotifier {
   Future<void> load() async {
     var changed = false;
 
-    final raw = await _store.read(key: _kHideToolCallsKey);
-    final next = raw == 'true';
-    if (next != _hideToolCalls) {
-      _hideToolCalls = next;
+    final quietRaw = await _store.read(key: _kQuietModeKey);
+    // Migration: someone who explicitly turned the old "hide tool calls"
+    // switch back OFF wanted full detail; keep that choice. Everyone else
+    // (unset, or hid tool calls) starts quiet.
+    final legacy = quietRaw == null
+        ? await _store.read(key: _kHideToolCallsKey)
+        : null;
+    final next = quietRaw != null ? quietRaw == 'true' : legacy != 'false';
+    if (next != _quietMode) {
+      _quietMode = next;
       changed = true;
     }
 
@@ -220,11 +230,11 @@ class Preferences extends ChangeNotifier {
     if (changed) notifyListeners();
   }
 
-  Future<void> setHideToolCalls(bool value) async {
-    if (_hideToolCalls == value) return;
-    _hideToolCalls = value;
-    await _store.write(key: _kHideToolCallsKey, value: value.toString());
+  Future<void> setQuietMode(bool value) async {
+    if (_quietMode == value) return;
+    _quietMode = value;
     notifyListeners();
+    await _store.write(key: _kQuietModeKey, value: value.toString());
   }
 
   Future<void> setSelectedPeerEpk(String? value) async {

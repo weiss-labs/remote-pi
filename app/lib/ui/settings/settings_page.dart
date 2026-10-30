@@ -170,7 +170,8 @@ class _NotificationsSection extends StatelessWidget {
             'Show question previews',
             prefs.showQuestionPreview,
             available ? vm.setQuestionPreview : null,
-            subtitle: 'Shows short questions on your lock screen and enables pane names. Sensitive-text filtering is best effort. Sign-in alerts stay generic.',
+            subtitle:
+                'Shows short questions on your lock screen and enables pane names. Sensitive-text filtering is best effort. Sign-in alerts stay generic.',
           ),
         ],
         Padding(
@@ -432,18 +433,19 @@ class _DisplaySection extends StatelessWidget {
           contentPadding: const EdgeInsets.symmetric(horizontal: 18),
           activeThumbColor: colors.accent,
           title: Text(
-            'Hide tool calls in chat',
+            'Quiet mode',
             style: context.typo.sansBody.copyWith(color: colors.text),
           ),
           subtitle: Text(
-            'Only show your messages and the assistant replies.',
+            'Fold each run into one "Worked for…" row with a live status line. '
+            'Off shows every tool call in full. Approvals and drafts always show.',
             style: context.typo.sansBody.copyWith(
               color: colors.muted,
               fontSize: 12,
             ),
           ),
-          value: prefs.hideToolCalls,
-          onChanged: (v) => prefs.setHideToolCalls(v),
+          value: prefs.quietMode,
+          onChanged: (v) => prefs.setQuietMode(v),
         ),
         const SizedBox(height: 8),
       ],

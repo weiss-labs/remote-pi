@@ -116,8 +116,10 @@ class _Update extends ChangeNotifier implements UpdateBannerViewModel {
 }
 
 class _Prefs extends ChangeNotifier implements Preferences {
+  // Full details here: this review looks at the native tool cards. The quiet
+  // fold has its own review in quiet_mode_test.dart.
   @override
-  bool get hideToolCalls => false;
+  bool get quietMode => false;
   @override
   bool get hideUsage => false;
   @override

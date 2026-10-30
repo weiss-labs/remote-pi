@@ -5,7 +5,7 @@ import { join } from "node:path";
 import { pathToFileURL } from "node:url";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { SessionManager } from "@earendil-works/pi-coding-agent";
-import { ArtifactBridge, ARTIFACT_CHUNK_SIZE, ARTIFACT_MAX_SIZE, type ArtifactServerMessage } from "./artifacts.js";
+import { ArtifactBridge, ARTIFACT_CHUNK_SIZE, ARTIFACT_MAX_SIZE, toolImageUrl, type ArtifactServerMessage } from "./artifacts.js";
 
 const cleanups: Array<() => Promise<unknown> | void> = [];
 afterEach(async () => { vi.useRealTimers(); for (const clean of cleanups.splice(0).reverse()) await clean(); });
@@ -34,6 +34,19 @@ async function setup() {
 }
 const isError = (reply: ArtifactServerMessage | null) => expect(reply).toMatchObject({type:"artifact_error",code:"unavailable"});
 describe("assistant-linked bounded previews", () => {
+  it("serves an image block from a tool result on the active branch, and nothing else", async () => {
+    const s=await setup();
+    const png=Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aG1cAAAAASUVORK5CYII=","base64");
+    s.manager.appendMessage({role:"toolResult",toolCallId:"call|1",toolName:"screenshot",content:[{type:"text",text:"ok"},{type:"image",data:png.toString("base64"),mimeType:"image/png"},{type:"image",data:Buffer.from("not png").toString("base64"),mimeType:"image/png"}],isError:false,timestamp:0} as never);
+    const o=await s.opened(toolImageUrl("call|1",1));
+    expect(o).toMatchObject({mime:"image/png",size:png.length,name:"image-2.png",sha256:createHash("sha256").update(png).digest("hex")});
+    const c=await s.bridge.handle("owner",s.sender,{type:"artifact_chunk",id:"c",transfer_id:o.transfer_id,offset:0});
+    expect(Buffer.from((c as {data:string}).data,"base64")).toEqual(png);
+    expect(c).toMatchObject({eof:true});
+    for (const url of [toolImageUrl("call|1",0),toolImageUrl("call|1",2),toolImageUrl("other",1),"pi-tool-image:call%7C1/../1"]) isError(await s.bridge.handle("owner",s.sender,{type:"artifact_open",id:"x",url}));
+    isError(await s.bridge.handle("owner",s.other,{type:"artifact_open",id:"y",url:toolImageUrl("call|1",1)}));
+    s.switchSession(); isError(await s.bridge.handle("owner",s.sender,{type:"artifact_open",id:"z",url:toolImageUrl("call|1",1)}));
+  });
   it("reads a real temporary PDF linked in the actual SDK active branch, with bounded chunks and a final hash", async () => {
     const s=await setup(), f=await s.file(); assistant(s.manager,`[PDF](${f.url})`);
     const opened=await s.opened(f.url);

@@ -7,7 +7,13 @@
 
 sealed class ChatMessage {
   final String id;
-  const ChatMessage({required this.id});
+
+  /// When the row was recorded (live: on arrival; history: the Mac's own
+  /// message timestamp, epoch 0 when it had none). Presentation only, never
+  /// part of equality: quiet mode's "Worked for" row reads it and shows no
+  /// timing when it is missing or implausible.
+  final DateTime? ts;
+  const ChatMessage({required this.id, this.ts});
 }
 
 /// Plan/24-fix-app-source-of-truth: every UserMsg is tagged with the
@@ -81,6 +87,7 @@ class UserMsg extends ChatMessage {
 
   const UserMsg({
     required super.id,
+    super.ts,
     required this.text,
     this.status = UserMsgStatus.confirmed,
     this.steering = false,
@@ -89,6 +96,7 @@ class UserMsg extends ChatMessage {
 
   UserMsg copyWith({UserMsgStatus? status, bool? steering}) => UserMsg(
     id: id,
+    ts: ts,
     text: text,
     status: status ?? this.status,
     steering: steering ?? this.steering,
@@ -110,7 +118,7 @@ class UserMsg extends ChatMessage {
 
 class AssistantMsg extends ChatMessage {
   final String text;
-  const AssistantMsg({required super.id, required this.text});
+  const AssistantMsg({required super.id, super.ts, required this.text});
 
   @override
   bool operator ==(Object other) =>
@@ -130,6 +138,7 @@ class ToolEvent extends ChatMessage {
 
   const ToolEvent({
     required super.id,
+    super.ts,
     required this.toolCallId,
     required this.tool,
     required this.args,
@@ -144,6 +153,7 @@ class ToolEvent extends ChatMessage {
     String? error,
   }) => ToolEvent(
     id: id,
+    ts: ts,
     toolCallId: toolCallId,
     tool: tool,
     args: args,
@@ -176,6 +186,7 @@ class CompactionMsg extends ChatMessage {
   final int? tokensBefore;
   const CompactionMsg({
     required super.id,
+    super.ts,
     required this.summary,
     this.tokensBefore,
   });
