@@ -1,7 +1,8 @@
 // Plan/74 — "Share → Remote Pi": pick a pane (same Herdr grouping and names as
 // Home), the item is copied into the App Group inbox bound to that pane, and
-// the app is asked to open. The app sends it over the paired channel on its
-// next foreground, so this works even when Remote Pi was not running.
+// the app opens on that pane with the item attached (unsent) so the user can
+// add a note or voice memo. If iOS won't open the app, it picks the item up on
+// the next manual open.
 import UIKit
 import UniformTypeIdentifiers
 
@@ -13,7 +14,7 @@ final class ShareViewController: UIViewController, UITableViewDataSource, UITabl
   override func viewDidLoad() {
     super.viewDidLoad()
     view.backgroundColor = .systemGroupedBackground
-    title = "Send to pane"
+    title = "Open in pane"
     navigationItem.leftBarButtonItem = UIBarButtonItem(barButtonSystemItem: .cancel, target: self, action: #selector(cancel))
     var grouped: [(String, [ShareQueue.Pane])] = []
     for pane in ShareQueue.panes() {
@@ -96,11 +97,11 @@ final class ShareViewController: UIViewController, UITableViewDataSource, UITabl
       try? FileManager.default.removeItem(at: staging)
       guard let self = self else { return }
       if queued.isEmpty { self.fail(failure ?? ShareQueue.ShareError.unsupported); return }
+      if self.openApp() { self.extensionContext?.completeRequest(returningItems: nil); return }
       let label = queued[0].label
       let names = queued.map { $0.name }.joined(separator: ", ")
-      let opened = self.openApp()
-      let alert = UIAlertController(title: "Queued for \(label)",
-        message: opened ? "\(names) will be sent as soon as Remote Pi opens." : "\(names) is queued. Open Remote Pi to send it.", preferredStyle: .alert)
+      let alert = UIAlertController(title: "Ready for \(label)",
+        message: "Open Remote Pi to add a note and send \(names).", preferredStyle: .alert)
       alert.addAction(UIAlertAction(title: "Done", style: .default) { _ in self.extensionContext?.completeRequest(returningItems: nil) })
       self.present(alert, animated: true)
     }

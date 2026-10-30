@@ -1,4 +1,7 @@
+import 'dart:async';
+
 import 'package:app/data/images/image_picker_service.dart';
+import 'package:app/data/transport/epk_encoding.dart';
 import 'package:app/domain/contracts/file_transfer.dart';
 import 'package:flutter/services.dart';
 
@@ -143,4 +146,27 @@ List<SharedItem> parseSharedItems(List<dynamic>? raw) {
     );
   }
   return out;
+}
+
+/// Shared files waiting for their pane's composer. The app opens the picked
+/// pane and that pane's chat attaches them, so the user can add a note or
+/// voice memo before sending. Keyed by pane: never attached to another chat.
+class ShareDrafts {
+  final _items = <({String peer, String room, PendingFile file})>[];
+  final _added = StreamController<void>.broadcast();
+  Stream<void> get added => _added.stream;
+
+  void add(String peer, String room, PendingFile file) {
+    _items.add((peer: toStandardB64(peer), room: room, file: file));
+    _added.add(null);
+  }
+
+  /// Remove and return every file queued for exactly this pane.
+  List<PendingFile> take(String? peer, String room) {
+    if (peer == null) return const [];
+    final key = toStandardB64(peer);
+    final mine = _items.where((i) => i.peer == key && i.room == room).toList();
+    _items.removeWhere(mine.contains);
+    return [for (final i in mine) i.file];
+  }
 }

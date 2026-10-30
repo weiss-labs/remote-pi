@@ -6,6 +6,7 @@ import 'dart:io';
 import 'package:app/data/actions/actions_repository.dart';
 import 'package:app/data/images/image_picker_service.dart';
 import 'package:app/data/images/pasteboard_service.dart';
+import 'package:app/data/share/share_inbox.dart';
 import 'package:app/domain/contracts/file_transfer.dart';
 import 'package:app/domain/session_state.dart';
 import 'package:app/ui/chat/attachment/states/attachment_state.dart';
@@ -18,11 +19,31 @@ import 'package:app/ui/core/viewmodel/viewmodel.dart';
 /// app already fetches for the quick-actions picker (plan 28): cached in
 /// [IActionsRepository], re-resolved whenever the active model changes.
 class AttachmentViewModel extends ViewModel<AttachmentState> {
-  AttachmentViewModel(this._picker, this._actions, [this._pasteboard])
-    : super(const AttachmentEmpty()) {
-    _metaSub = _actions.activeRoomMetaStream.listen((_) => _refreshVision());
+  AttachmentViewModel(
+    this._picker,
+    this._actions, [
+    this._pasteboard,
+    this._drafts,
+  ]) : super(const AttachmentEmpty()) {
+    _metaSub = _actions.activeRoomMetaStream.listen((_) {
+      _refreshVision();
+      _claimShared();
+    });
+    _draftSub = _drafts?.added.listen((_) => _claimShared());
     // ignore: discarded_futures
     _refreshVision();
+    _claimShared();
+  }
+
+  final ShareDrafts? _drafts;
+  StreamSubscription<void>? _draftSub;
+
+  /// Share sheet: attach whatever was shared to THIS pane, unsent.
+  void _claimShared() {
+    final meta = _actions.activeRoomMeta;
+    final files = _drafts?.take(meta.peerEpk, meta.roomId) ?? const [];
+    // ignore: discarded_futures
+    if (files.isNotEmpty) attachItems(files);
   }
 
   final IImagePickerService _picker;
@@ -71,6 +92,12 @@ class AttachmentViewModel extends ViewModel<AttachmentState> {
       if (!_hints.isClosed) _hints.add(AttachHint.nothingToPaste);
       return false;
     }
+    await attachItems(items);
+    return true;
+  }
+
+  /// Images become inline image chips; everything else a file chip.
+  Future<void> attachItems(List<PendingFile> items) async {
     for (final item in items) {
       if (item.mime.startsWith('image/')) {
         Uint8List bytes;
@@ -84,7 +111,6 @@ class AttachmentViewModel extends ViewModel<AttachmentState> {
         await attachFile(item);
       }
     }
-    return true;
   }
 
   // Weiss Labs: several images per message; a new pick adds to the list.
@@ -265,6 +291,7 @@ class AttachmentViewModel extends ViewModel<AttachmentState> {
   @override
   void dispose() {
     _metaSub?.cancel();
+    _draftSub?.cancel();
     _hints.close();
     super.dispose();
   }

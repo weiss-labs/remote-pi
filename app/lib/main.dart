@@ -1,3 +1,4 @@
+import 'dart:io';
 import 'dart:async';
 import 'package:app/ui/chat/widgets/credential_needed_dialog.dart';
 
@@ -10,7 +11,6 @@ import 'package:app/data/preferences/preferences.dart';
 import 'package:app/data/share/share_inbox.dart';
 import 'package:app/data/sync/sync_service.dart';
 import 'package:app/domain/contracts/file_transfer.dart';
-import 'package:app/protocol/uuid7.dart';
 import 'package:app/data/transport/connection_manager.dart';
 import 'package:app/pairing/owner_identity_bridge.dart';
 import 'package:app/pairing/storage.dart';
@@ -69,34 +69,74 @@ class _RemotePiAppState extends State<RemotePiApp> with WidgetsBindingObserver {
   }
 
   // ---------------------------------------------------------------------------
-  // Plan/74 — Share-sheet queue. Each item is sent to exactly the pane picked
-  // in the extension; nothing is ever re-routed to the current chat.
+  // Plan/74 — Share-sheet queue. Each item opens exactly the pane picked in
+  // the extension and waits in its composer (unsent) for a note or voice memo;
+  // nothing is ever re-routed to the current chat.
   // ---------------------------------------------------------------------------
   final _messenger = GlobalKey<ScaffoldMessengerState>();
   bool _shareDraining = false;
   static const _shareNotReady =
-      'Remote Pi was not ready. It will send the next time you open the app.';
+      'Remote Pi was not ready. Your share will attach the next time you open the app.';
 
   Future<void> _drainShareInbox() async {
     if (_shareDraining || !mounted) return;
     _shareDraining = true;
     try {
       final inbox = injector.get<ShareInbox>();
-      for (final item in await inbox.takeQueued()) {
-        if (!mounted) return;
-        final error = await _sendShared(item);
-        if (error == _shareNotReady) {
-          // Keep it (and everything after it) queued for the next foreground.
-          _toast('${item.file.name}: $error');
-          return;
-        }
-        await inbox.complete(item.id);
-        _toast(
-          error == null
-              ? 'Sent ${item.file.name} to ${item.label}.'
-              : '${item.file.name}: $error',
-        );
+      final queued = await inbox.takeQueued();
+      if (queued.isEmpty) return;
+      if (!await _waitUntil(
+        () => {
+          '/home',
+          '/chat',
+          '/settings',
+        }.contains(currentNotificationPath(_router)),
+        const Duration(seconds: 15),
+      )) {
+        // Keep everything queued for the next foreground.
+        _toast(_shareNotReady);
+        return;
       }
+      final peers = await injector.get<PairingStorage>().listPeers();
+      final ready = <(PeerRecord, String, PendingFile)>[];
+      for (final item in queued) {
+        if (!mounted) return;
+        final peer = peers
+            .where(
+              (p) => toStandardB64(p.remoteEpk) == toStandardB64(item.peer),
+            )
+            .firstOrNull;
+        final file = peer == null ? null : await _copyShared(item.file);
+        await inbox.complete(item.id);
+        if (peer == null) {
+          _toast('${item.file.name}: That Mac is no longer paired.');
+        } else if (file == null) {
+          _toast('${item.file.name}: could not be read. Share it again.');
+        } else {
+          ready.add((peer, item.room, file));
+        }
+      }
+      if (ready.isEmpty || !mounted) return;
+      // Navigate ONCE, before handing anything over: re-opening a pane would
+      // dispose the composer that already holds earlier shared files.
+      final (peer, room, _) = ready.last;
+      final conn = injector.get<ConnectionManager>();
+      final showing =
+          currentNotificationPath(_router) == '/chat' &&
+          toStandardB64(conn.activePeer?.remoteEpk ?? '') ==
+              toStandardB64(peer.remoteEpk) &&
+          conn.activeRoomId == room;
+      if (!showing) await _openPane(peer, room);
+      if (!mounted) return;
+      final drafts = injector.get<ShareDrafts>();
+      for (final (p, r, f) in ready) {
+        drafts.add(p.remoteEpk, r, f);
+      }
+      _toast(
+        ready.length == 1
+            ? 'Attached ${ready.single.$3.name}. Add a note or voice memo, then send.'
+            : 'Attached ${ready.length} items. Add a note or voice memo, then send.',
+      );
     } finally {
       _shareDraining = false;
     }
@@ -115,46 +155,23 @@ class _RemotePiAppState extends State<RemotePiApp> with WidgetsBindingObserver {
     );
   }
 
-  /// Null on success, otherwise the user-facing reason the item was dropped.
-  Future<String?> _sendShared(SharedItem item) async {
-    if (!await _waitUntil(
-      () => {
-        '/home',
-        '/chat',
-        '/settings',
-      }.contains(currentNotificationPath(_router)),
-      const Duration(seconds: 15),
-    )) {
-      return _shareNotReady;
-    }
-    final peers = await injector.get<PairingStorage>().listPeers();
-    final peer = peers
-        .where((p) => toStandardB64(p.remoteEpk) == toStandardB64(item.peer))
-        .firstOrNull;
-    if (peer == null || !mounted) return 'That Mac is no longer paired.';
-    await _openPane(peer, item.room);
-    final conn = injector.get<ConnectionManager>();
-    if (!await _waitUntil(
-      () =>
-          conn.channel != null &&
-          conn.activePeer?.remoteEpk == peer.remoteEpk &&
-          conn.activeRoomId == item.room &&
-          conn.isRoomLive(peer.remoteEpk, item.room),
-      const Duration(seconds: 20),
-    )) {
-      return 'That pane is offline. Share it again when it is back.';
-    }
+  /// The queue deletes its copy on completion; keep a private one for the
+  /// composer until the user sends or discards it.
+  Future<PendingFile?> _copyShared(PendingFile file) async {
     try {
-      await injector.get<FileTransfer>().send(
-        item.file,
-        messageId: 'cli_${uuid7()}',
-        peer: peer.remoteEpk,
-        room: item.room,
-        steer: conn.isRoomWorking(peer.remoteEpk, item.room),
+      final dir = await Directory.systemTemp.createTemp('shared-');
+      final copy = await File(
+        file.path,
+      ).copy('${dir.path}/${file.path.split('/').last}');
+      return PendingFile(
+        path: copy.path,
+        name: file.name,
+        mime: file.mime,
+        size: file.size,
+        durationMs: file.durationMs,
       );
+    } on FileSystemException {
       return null;
-    } on FileTransferFailure catch (e) {
-      return e.message;
     }
   }
 

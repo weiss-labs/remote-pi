@@ -150,6 +150,7 @@ Future<void> setupDependencies() async {
   _injector.addOther<IPasteboardService>(() => PasteboardService());
   // Plan 74 — Share-extension hand-off queue in the App Group container.
   _injector.addOther<ShareInbox>(() => NativeShareInbox());
+  _injector.addInstance<ShareDrafts>(ShareDrafts());
 
   // Plan 31 — SSOT writer + read-only repos. SyncService is the SINGLE
   // mutator of the message/index/runtime boxes; the read repos only watch.
@@ -240,6 +241,7 @@ Future<void> setupDependencies() async {
       _injector.get<IImagePickerService>(),
       _injector.get<IActionsRepository>(),
       _injector.get<IPasteboardService>(),
+      _injector.get<ShareDrafts>(),
     ),
   );
 
