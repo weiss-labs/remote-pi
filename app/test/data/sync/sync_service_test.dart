@@ -380,6 +380,35 @@ void main() {
     s.sync.dispose();
   });
 
+  test('a retried reply drops the failed attempt\'s partial text', () async {
+    final s = await setup();
+    s.ch.push(AgentChunk(inReplyTo: 'r1', delta: 'half an ans'));
+    await _settle();
+    s.ch.push(AgentStreamReset(inReplyTo: 'r1'));
+    s.ch.push(AgentChunk(inReplyTo: 'r1', delta: 'full answer'));
+    await _settle();
+    s.ch.push(AgentDone(inReplyTo: 'r1'));
+    await _settle();
+    final assistant = messages(
+      s.epk,
+    ).where((m) => m.role == MsgRole.assistant).toList();
+    expect(assistant.single.text, 'full answer');
+    s.conn.dispose();
+    s.sync.dispose();
+  });
+
+  test('provider errors read in plain English with the raw error kept', () {
+    expect(
+      errorLine('provider_error', 'terminated'),
+      startsWith('⚠ The connection to the AI provider dropped'),
+    );
+    expect(
+      errorLine('provider_error', 'terminated'),
+      endsWith('Details: provider_error: terminated'),
+    );
+    expect(errorLine('unknown_x', 'y'), '⚠ unknown_x: y');
+  });
+
   test('cancel sends a Cancel frame for the active turn target', () async {
     final s = await setup();
     s.ch.push(UserInput(id: 'u1', text: 'hi'));
@@ -634,11 +663,12 @@ void main() {
       await _settle();
 
       final m = messages(s.epk);
-      expect(
-        m.map((r) => r.role),
-        [MsgRole.user, MsgRole.assistant, MsgRole.tool, MsgRole.assistant],
-        reason: 'pre-tool text, then tool, then post-tool text — in order',
-      );
+      expect(m.map((r) => r.role), [
+        MsgRole.user,
+        MsgRole.assistant,
+        MsgRole.tool,
+        MsgRole.assistant,
+      ], reason: 'pre-tool text, then tool, then post-tool text — in order');
       expect(m[1].text, 'let me check');
       expect(m[2].tool?.tool, 'Read');
       expect(m[3].text, 'all done');

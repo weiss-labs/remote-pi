@@ -488,6 +488,10 @@ class SyncService extends Service {
         _flushTimer = Timer(const Duration(milliseconds: 16), _flushChunks);
         _setWorking(true, replyTo: inReplyTo);
 
+      case AgentStreamReset():
+        // Pi is retrying a failed reply; its partial text is not the answer.
+        _discardStreamingState();
+
       case AgentDone(:final inReplyTo):
         // Finalize whatever text accumulated since the last tool boundary.
         final text = _finalizeSegment();
@@ -668,7 +672,7 @@ class SyncService extends Service {
             id: 'err_$seq',
             seq: seq,
             role: MsgRole.assistant,
-            text: '⚠ $code: $message',
+            text: errorLine(code, message),
             ts: DateTime.now(),
           ),
         );
@@ -1226,4 +1230,28 @@ class SyncService extends Service {
     _workingController.close();
     _queuedController.close();
   }
+}
+
+/// Plain-English error line for the transcript; the raw code/message stays
+/// visible after it as detail.
+String errorLine(String code, String message) {
+  final raw = '$code: $message';
+  if (code != 'provider_error') return '⚠ $raw';
+  final m = message.toLowerCase();
+  final why =
+      m.contains('terminated') ||
+          m.contains('socket') ||
+          m.contains('connection')
+      ? 'The connection to the AI provider dropped before the reply finished.'
+      : m.contains('rate') ||
+            m.contains('429') ||
+            m.contains('quota') ||
+            m.contains('usage limit')
+      ? 'The AI provider is rate-limiting this account right now.'
+      : m.contains('overloaded') || m.contains('503') || m.contains('529')
+      ? 'The AI provider is overloaded right now.'
+      : m.contains('timeout') || m.contains('timed out')
+      ? 'The AI provider took too long to answer.'
+      : 'The AI provider returned an error.';
+  return '⚠ $why Send your message again to retry.\n\nDetails: $raw';
 }

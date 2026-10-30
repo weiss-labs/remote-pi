@@ -320,6 +320,8 @@ export type ServerMessage =
   | { type: "steer_consumed"; id: string }
   | { type: "agent_chunk"; in_reply_to: string; delta: string }
   | { type: "agent_done"; in_reply_to: string; usage?: Usage }
+  /** The provider reply failed and Pi is retrying it: discard streamed text for this turn. */
+  | { type: "agent_stream_reset"; in_reply_to: string }
   | { type: "agent_message"; in_reply_to: string; text: string; usage?: Usage }
   // Plan/32: pushed after a context compaction (live, and replayed on history
   // re-sync). `tokens_before` is the pre-compaction token count.

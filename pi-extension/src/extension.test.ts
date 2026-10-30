@@ -237,6 +237,8 @@ const {
   _setCurrentModelForTest,
   _setPiForTest,
   _getCurrentTurnIdForTest,
+  _setCurrentTurnIdForTest,
+  _setSawAgentSettledForTest,
   _getPendingSteerIdsForTest,
   _connectForTest,
   _startRelayForTest,
@@ -2359,6 +2361,8 @@ describe("multi-channel broadcast (W2D)", () => {
         errorMessage: "Provider finish_reason: error", content: [],
       },
     });
+    // Final only once Pi settles (it may retry first).
+    captureEventHandler("agent_settled")({ type: "agent_settled", aborted: false });
 
     const sent = relayRef.current!.send.mock.calls.slice(sendsBefore)
       .map((c) => c[0] as string).map(decodeSentCt);
@@ -2366,6 +2370,74 @@ describe("multi-channel broadcast (W2D)", () => {
     expect(err?.inner).toMatchObject({
       type: "error", code: "provider_error", message: "Provider finish_reason: error",
     });
+  });
+
+  function turnFrames(since: number) {
+    return relayRef.current!.send.mock.calls.slice(since)
+      .map((c) => decodeSentCt(c[0] as string).inner as { type: string; in_reply_to?: string; delta?: string });
+  }
+  const failed = { type: "message_end", message: { role: "assistant", stopReason: "error", errorMessage: "terminated", content: [] } };
+
+  test("provider error that Pi retries → no error; partial text reset; retry streams into the same turn", async () => {
+    await _pairForTest("ownerA__1234567890");
+    _setSawAgentSettledForTest(true);
+    _setCurrentTurnIdForTest("turn-1");
+    const since = relayRef.current!.send.mock.calls.length;
+    captureEventHandler("message_end")(failed);
+    captureEventHandler("agent_end")({ type: "agent_end", messages: [] });
+    expect(_getCurrentTurnIdForTest()).toBe("turn-1");
+    captureEventHandler("agent_start")({ type: "agent_start" });
+    captureEventHandler("message_start")({ type: "message_start", message: { role: "assistant", content: [] } });
+    captureEventHandler("message_update")({ type: "message_update", assistantMessageEvent: { type: "text_delta", delta: "answer" } });
+    captureEventHandler("message_end")({ type: "message_end", message: { role: "assistant", stopReason: "stop", content: [{ type: "text", text: "answer" }] } });
+    captureEventHandler("agent_end")({ type: "agent_end", messages: [] });
+    captureEventHandler("agent_settled")({ type: "agent_settled", aborted: false });
+    const frames = turnFrames(since), types = frames.map((m) => m.type);
+    expect(types).not.toContain("error");
+    expect(frames).toEqual(expect.arrayContaining([
+      expect.objectContaining({ type: "agent_stream_reset", in_reply_to: "turn-1" }),
+      expect.objectContaining({ type: "agent_chunk", in_reply_to: "turn-1", delta: "answer" }),
+      expect.objectContaining({ type: "agent_done", in_reply_to: "turn-1" }),
+    ]));
+    expect(types.indexOf("agent_stream_reset")).toBeLessThan(types.indexOf("agent_chunk"));
+    expect(types.filter((t) => t === "agent_done")).toHaveLength(1);
+    expect(_getCurrentTurnIdForTest()).toBeNull();
+  });
+
+  test("provider error with no retry → error then agent_done when Pi settles", async () => {
+    await _pairForTest("ownerA__1234567890");
+    _setSawAgentSettledForTest(true);
+    _setCurrentTurnIdForTest("turn-2");
+    const since = relayRef.current!.send.mock.calls.length;
+    captureEventHandler("message_end")(failed);
+    captureEventHandler("agent_end")({ type: "agent_end", messages: [] });
+    captureEventHandler("agent_settled")({ type: "agent_settled", aborted: false });
+    expect(turnFrames(since).map((m) => m.type).filter((t) => t === "error" || t === "agent_done")).toEqual(["error", "agent_done"]);
+    expect(_getCurrentTurnIdForTest()).toBeNull();
+  });
+
+  test("a new prompt during the hold is not a retry: the failure is reported first", async () => {
+    await _pairForTest("ownerA__1234567890");
+    _setSawAgentSettledForTest(true);
+    _setCurrentTurnIdForTest("turn-3");
+    const since = relayRef.current!.send.mock.calls.length;
+    captureEventHandler("message_end")(failed);
+    captureEventHandler("agent_end")({ type: "agent_end", messages: [] });
+    captureEventHandler("agent_start")({ type: "agent_start" });
+    captureEventHandler("message_start")({ type: "message_start", message: { role: "user", content: [{ type: "text", text: "new" }] } });
+    const types = turnFrames(since).map((m) => m.type);
+    expect(types.filter((t) => t === "error" || t === "agent_done" || t === "agent_stream_reset")).toEqual(["error", "agent_done"]);
+  });
+
+  test("a runtime without agent_settled reports the error and ends the turn at once", async () => {
+    await _pairForTest("ownerA__1234567890");
+    _setSawAgentSettledForTest(false);
+    _setCurrentTurnIdForTest("turn-4");
+    const since = relayRef.current!.send.mock.calls.length;
+    captureEventHandler("message_end")(failed);
+    captureEventHandler("agent_end")({ type: "agent_end", messages: [] });
+    expect(turnFrames(since).map((m) => m.type).filter((t) => t === "error" || t === "agent_done")).toEqual(["error", "agent_done"]);
+    expect(_getCurrentTurnIdForTest()).toBeNull();
   });
 
   test("normal assistant turn (stopReason:stop) → no error forwarded", async () => {

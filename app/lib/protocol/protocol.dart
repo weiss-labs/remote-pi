@@ -839,6 +839,9 @@ sealed class ServerMessage {
       ),
       'agent_chunk' => AgentChunk.fromJson(json),
       'agent_done' => AgentDone.fromJson(json),
+      'agent_stream_reset' => AgentStreamReset(
+        inReplyTo: json['in_reply_to'] as String,
+      ),
       'tool_request' => ToolRequest.fromJson(json),
       'tool_result' => ToolResult.fromJson(json),
       'error' => ErrorMessage.fromJson(json),
@@ -1083,6 +1086,12 @@ class AgentChunk extends ServerMessage {
     inReplyTo: j['in_reply_to'] as String,
     delta: j['delta'] as String,
   );
+}
+
+/// The provider reply failed and Pi is retrying it: drop the streamed text.
+class AgentStreamReset extends ServerMessage {
+  final String inReplyTo;
+  AgentStreamReset({required this.inReplyTo});
 }
 
 class AgentDone extends ServerMessage {

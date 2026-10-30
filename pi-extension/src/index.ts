@@ -1027,6 +1027,31 @@ function _broadcastConsumedSteerForUserContent(content: unknown): void {
   _broadcastToActive({ type: "steer_consumed", id });
 }
 
+// A provider error is final only once Pi settles: Pi may auto-retry the same
+// turn (e.g. a dropped stream, "terminated"). Hold the error and the turn until
+// `agent_settled`; a retry's `agent_start` discards it and streams into the turn.
+let _heldProviderError: ServerMessage | null = null;
+let _turnHeldForRetry = false;
+// Only runtimes that emit agent_settled (Pi 1.x) can hold; older ones report at once.
+let _sawAgentSettled = false;
+// ponytail: fallback for a runtime that never emits agent_settled; Pi's default retry waits are 2/4/8 s.
+let _retryHoldTimer: ReturnType<typeof setTimeout> | null = null;
+
+function _settleHeldTurn(): void {
+  if (_retryHoldTimer) { clearTimeout(_retryHoldTimer); _retryHoldTimer = null; }
+  const error = _heldProviderError;
+  const held = _turnHeldForRetry;
+  _heldProviderError = null;
+  _turnHeldForRetry = false;
+  if (error && _anyPeerActive()) _broadcastToActive(error);
+  if (!held) return;
+  if (_anyPeerActive() && _currentTurnId) {
+    _broadcastToActive({ type: "agent_done", in_reply_to: _currentTurnId });
+  }
+  _currentTurnId = null;
+  _maybeDrainQueuedItem();
+}
+
 function _maybeDrainQueuedItem(): void {
   if (_isBusyForQueueDrain()) return;
   const item = _queuedItems.shift();
@@ -1143,6 +1168,8 @@ export function _setCurrentModelForTest(name: string | undefined): void {
 }
 
 /** Test-only: read the active turn id used for plain `cancel` routing. */
+export function _setCurrentTurnIdForTest(id: string | null): void { _currentTurnId = id; }
+export function _setSawAgentSettledForTest(v: boolean): void { _sawAgentSettled = v; }
 export function _getCurrentTurnIdForTest(): string | null {
   return _currentTurnId;
 }
@@ -2329,8 +2356,28 @@ const extension: ExtensionFactory = (pi: ExtensionAPI): void => {
     _agentRunGeneration += 1;
   });
 
+  // Pi >= 1.x event; the bundled dev SDK types predate it.
+  (pi.on as (event: string, handler: () => void) => void)("agent_settled", () => {
+    _sawAgentSettled = true;
+    _settleHeldTurn();
+  });
+
   pi.on("message_start", (event) => {
     const message = event?.message as BufferMsg | undefined;
+    if (_turnHeldForRetry) {
+      if (message?.role === "assistant") {
+        // Pi is retrying the failed reply: drop the error and the partial text.
+        _heldProviderError = null;
+        _turnHeldForRetry = false;
+        if (_retryHoldTimer) { clearTimeout(_retryHoldTimer); _retryHoldTimer = null; }
+        if (_anyPeerActive() && _currentTurnId) {
+          _broadcastToActive({ type: "agent_stream_reset", in_reply_to: _currentTurnId });
+        }
+      } else {
+        // A new prompt, not a retry: the failure was final.
+        _settleHeldTurn();
+      }
+    }
     if (!_anyPeerActive() || message?.role !== "user") return;
     _broadcastConsumedSteerForUserContent(message.content);
   });
@@ -2408,10 +2455,9 @@ const extension: ExtensionFactory = (pi: ExtensionAPI): void => {
       const message = typeof m.errorMessage === "string" && m.errorMessage
         ? m.errorMessage
         : "Provider error";
-      const errMsg: ServerMessage = _currentTurnId
+      _heldProviderError = _currentTurnId
         ? { type: "error", in_reply_to: _currentTurnId, code: "provider_error", message }
         : { type: "error", code: "provider_error", message };
-      _broadcastToActive(errMsg);
     }
   });
 
@@ -2419,7 +2465,18 @@ const extension: ExtensionFactory = (pi: ExtensionAPI): void => {
     _notifications.end();
     // Buffer is fed by `message_end`; here we only finalize the outbound
     // turn signal to every connected owner. No buffer mutation.
-    if (_anyPeerActive() && _currentTurnId) {
+    if (_heldProviderError && !_sawAgentSettled) {
+      _settleHeldTurn();
+      if (_anyPeerActive() && _currentTurnId) {
+        _broadcastToActive({ type: "agent_done", in_reply_to: _currentTurnId });
+        _currentTurnId = null;
+      }
+    } else if (_heldProviderError) {
+      // Possibly retried: keep the turn open until the next run's first message or agent_settled.
+      _turnHeldForRetry = true;
+      _retryHoldTimer ??= setTimeout(_settleHeldTurn, 60_000);
+      _retryHoldTimer.unref?.();
+    } else if (_anyPeerActive() && _currentTurnId) {
       _broadcastToActive({ type: "agent_done", in_reply_to: _currentTurnId });
       _currentTurnId = null;
     }
