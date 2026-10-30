@@ -1032,9 +1032,10 @@ function _broadcastConsumedSteerForUserContent(content: unknown): void {
 // `agent_settled`; a retry's `agent_start` discards it and streams into the turn.
 let _heldProviderError: ServerMessage | null = null;
 let _turnHeldForRetry = false;
-// Only runtimes that emit agent_settled (Pi 1.x) can hold; older ones report at once.
+// Runtimes that emit agent_settled (Pi 1.x) release the hold exactly; older ones
+// (which also auto-retry, 2/4/8 s apart by default) fall back to a short timer.
 let _sawAgentSettled = false;
-// ponytail: fallback for a runtime that never emits agent_settled; Pi's default retry waits are 2/4/8 s.
+// ponytail: timer only bounds the hold; a retry delay configured past it ends the turn early (old behaviour).
 let _retryHoldTimer: ReturnType<typeof setTimeout> | null = null;
 
 function _settleHeldTurn(): void {
@@ -2465,16 +2466,10 @@ const extension: ExtensionFactory = (pi: ExtensionAPI): void => {
     _notifications.end();
     // Buffer is fed by `message_end`; here we only finalize the outbound
     // turn signal to every connected owner. No buffer mutation.
-    if (_heldProviderError && !_sawAgentSettled) {
-      _settleHeldTurn();
-      if (_anyPeerActive() && _currentTurnId) {
-        _broadcastToActive({ type: "agent_done", in_reply_to: _currentTurnId });
-        _currentTurnId = null;
-      }
-    } else if (_heldProviderError) {
+    if (_heldProviderError) {
       // Possibly retried: keep the turn open until the next run's first message or agent_settled.
       _turnHeldForRetry = true;
-      _retryHoldTimer ??= setTimeout(_settleHeldTurn, 60_000);
+      _retryHoldTimer ??= setTimeout(_settleHeldTurn, _sawAgentSettled ? 60_000 : 15_000);
       _retryHoldTimer.unref?.();
     } else if (_anyPeerActive() && _currentTurnId) {
       _broadcastToActive({ type: "agent_done", in_reply_to: _currentTurnId });

@@ -2429,15 +2429,32 @@ describe("multi-channel broadcast (W2D)", () => {
     expect(types.filter((t) => t === "error" || t === "agent_done" || t === "agent_stream_reset")).toEqual(["error", "agent_done"]);
   });
 
-  test("a runtime without agent_settled reports the error and ends the turn at once", async () => {
-    await _pairForTest("ownerA__1234567890");
-    _setSawAgentSettledForTest(false);
-    _setCurrentTurnIdForTest("turn-4");
-    const since = relayRef.current!.send.mock.calls.length;
-    captureEventHandler("message_end")(failed);
-    captureEventHandler("agent_end")({ type: "agent_end", messages: [] });
-    expect(turnFrames(since).map((m) => m.type).filter((t) => t === "error" || t === "agent_done")).toEqual(["error", "agent_done"]);
-    expect(_getCurrentTurnIdForTest()).toBeNull();
+  test("a runtime without agent_settled still streams a retry, and ends a final failure after a short hold", async () => {
+    vi.useFakeTimers();
+    try {
+      await _pairForTest("ownerA__1234567890");
+      _setSawAgentSettledForTest(false);
+      _setCurrentTurnIdForTest("turn-4");
+      let since = relayRef.current!.send.mock.calls.length;
+      captureEventHandler("message_end")(failed);
+      captureEventHandler("agent_end")({ type: "agent_end", messages: [] });
+      vi.advanceTimersByTime(8_000);
+      captureEventHandler("message_start")({ type: "message_start", message: { role: "assistant", content: [] } });
+      captureEventHandler("message_update")({ type: "message_update", assistantMessageEvent: { type: "text_delta", delta: "ok" } });
+      expect(turnFrames(since).map((m) => m.type)).toEqual(expect.arrayContaining(["agent_stream_reset", "agent_chunk"]));
+      expect(turnFrames(since).map((m) => m.type)).not.toContain("error");
+      captureEventHandler("agent_end")({ type: "agent_end", messages: [] });
+      expect(_getCurrentTurnIdForTest()).toBeNull();
+
+      _setCurrentTurnIdForTest("turn-5");
+      since = relayRef.current!.send.mock.calls.length;
+      captureEventHandler("message_end")(failed);
+      captureEventHandler("agent_end")({ type: "agent_end", messages: [] });
+      expect(turnFrames(since).map((m) => m.type)).not.toContain("error");
+      vi.advanceTimersByTime(15_000);
+      expect(turnFrames(since).map((m) => m.type).filter((t) => t === "error" || t === "agent_done")).toEqual(["error", "agent_done"]);
+      expect(_getCurrentTurnIdForTest()).toBeNull();
+    } finally { vi.useRealTimers(); }
   });
 
   test("normal assistant turn (stopReason:stop) → no error forwarded", async () => {
