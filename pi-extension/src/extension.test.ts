@@ -2423,10 +2423,16 @@ describe("multi-channel broadcast (W2D)", () => {
     const since = relayRef.current!.send.mock.calls.length;
     captureEventHandler("message_end")(failed);
     captureEventHandler("agent_end")({ type: "agent_end", messages: [] });
+    _setCurrentTurnIdForTest("turn-new"); // the input handler assigns the new prompt's id first
     captureEventHandler("agent_start")({ type: "agent_start" });
     captureEventHandler("message_start")({ type: "message_start", message: { role: "user", content: [{ type: "text", text: "new" }] } });
-    const types = turnFrames(since).map((m) => m.type);
-    expect(types.filter((t) => t === "error" || t === "agent_done" || t === "agent_stream_reset")).toEqual(["error", "agent_done"]);
+    captureEventHandler("message_update")({ type: "message_update", assistantMessageEvent: { type: "text_delta", delta: "reply" } });
+    const frames = turnFrames(since);
+    expect(frames.filter((m) => ["error", "agent_done", "agent_stream_reset"].includes(m.type)))
+      .toEqual([expect.objectContaining({ type: "error", in_reply_to: "turn-3" }), expect.objectContaining({ type: "agent_done", in_reply_to: "turn-3" })]);
+    expect(frames).toContainEqual(expect.objectContaining({ type: "agent_chunk", in_reply_to: "turn-new", delta: "reply" }));
+    expect(_getCurrentTurnIdForTest()).toBe("turn-new");
+    _setCurrentTurnIdForTest(null);
   });
 
   test("a runtime without agent_settled still streams a retry, and ends a final failure after a short hold", async () => {

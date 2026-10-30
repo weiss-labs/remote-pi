@@ -1032,6 +1032,8 @@ function _broadcastConsumedSteerForUserContent(content: unknown): void {
 // `agent_settled`; a retry's `agent_start` discards it and streams into the turn.
 let _heldProviderError: ServerMessage | null = null;
 let _turnHeldForRetry = false;
+/** The failed turn being held; a new prompt may already own _currentTurnId. */
+let _heldTurnId: string | null = null;
 // Runtimes that emit agent_settled (Pi 1.x) release the hold exactly; older ones
 // (which also auto-retry, 2/4/8 s apart by default) fall back to a short timer.
 let _sawAgentSettled = false;
@@ -1042,15 +1044,18 @@ function _settleHeldTurn(): void {
   if (_retryHoldTimer) { clearTimeout(_retryHoldTimer); _retryHoldTimer = null; }
   const error = _heldProviderError;
   const held = _turnHeldForRetry;
+  const turn = _heldTurnId;
   _heldProviderError = null;
   _turnHeldForRetry = false;
+  _heldTurnId = null;
   if (error && _anyPeerActive()) _broadcastToActive(error);
   if (!held) return;
-  if (_anyPeerActive() && _currentTurnId) {
-    _broadcastToActive({ type: "agent_done", in_reply_to: _currentTurnId });
+  if (_anyPeerActive() && turn) _broadcastToActive({ type: "agent_done", in_reply_to: turn });
+  // Only end the turn we held; a newer prompt keeps its own.
+  if (_currentTurnId === turn) {
+    _currentTurnId = null;
+    _maybeDrainQueuedItem();
   }
-  _currentTurnId = null;
-  _maybeDrainQueuedItem();
 }
 
 function _maybeDrainQueuedItem(): void {
@@ -2370,6 +2375,7 @@ const extension: ExtensionFactory = (pi: ExtensionAPI): void => {
         // Pi is retrying the failed reply: drop the error and the partial text.
         _heldProviderError = null;
         _turnHeldForRetry = false;
+        _heldTurnId = null;
         if (_retryHoldTimer) { clearTimeout(_retryHoldTimer); _retryHoldTimer = null; }
         if (_anyPeerActive() && _currentTurnId) {
           _broadcastToActive({ type: "agent_stream_reset", in_reply_to: _currentTurnId });
@@ -2469,6 +2475,7 @@ const extension: ExtensionFactory = (pi: ExtensionAPI): void => {
     if (_heldProviderError) {
       // Possibly retried: keep the turn open until the next run's first message or agent_settled.
       _turnHeldForRetry = true;
+      _heldTurnId = _currentTurnId;
       _retryHoldTimer ??= setTimeout(_settleHeldTurn, _sawAgentSettled ? 60_000 : 15_000);
       _retryHoldTimer.unref?.();
     } else if (_anyPeerActive() && _currentTurnId) {
