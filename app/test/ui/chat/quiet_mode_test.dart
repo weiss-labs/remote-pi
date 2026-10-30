@@ -220,11 +220,13 @@ List<ChatMessage> _holdsAndDrafts() => [
     'agent-network',
     args: {
       'from': '/tmp@William›Main›FB_Ads',
-      'message': 'FULL_PRIVATE_MESH_BODY',
+      'message':
+          '{"status":"needs_approval","summary":"Publish the page","detail":"FULL_PRIVATE_MESH_BODY"}',
     },
     result: {
       'from': '/tmp@William›Main›FB_Ads',
-      'message': 'FULL_PRIVATE_MESH_BODY',
+      'message':
+          '{"status":"needs_approval","summary":"Publish the page","detail":"FULL_PRIVATE_MESH_BODY"}',
     },
     at: 130,
   ),
@@ -347,7 +349,8 @@ void main() {
 
       expect(find.byType(ToolRequestCard), findsNothing);
       expect(find.text('Worked for 2m 4s · 6 steps'), findsOneWidget);
-      expect(find.text('Quiet'), findsOneWidget);
+      // The Quiet switch lives in Quick actions, not the app bar.
+      expect(find.text('Quiet'), findsNothing);
       expect(find.textContaining('STACK TRACE'), findsNothing);
       await capture(tester, 'quiet-collapsed');
 
@@ -518,8 +521,12 @@ void main() {
       find.text("Sign-in needed. Open this step's preview."),
       findsOneWidget,
     );
-    // The mesh message is one line; its body is hidden until tapped.
-    expect(find.text('Message from Main / FB Ads'), findsOneWidget);
+    // An approval request from another pane is one meaningful line; its
+    // full body is hidden until tapped.
+    expect(
+      find.text('Approval needed · Main / FB Ads: Publish the page'),
+      findsOneWidget,
+    );
     expect(find.textContaining('FULL_PRIVATE_MESH_BODY'), findsNothing);
     // The draft panel is fully visible, exact text intact.
     expect(find.byKey(const Key('quiet-attention-draft')), findsOneWidget);
@@ -529,7 +536,7 @@ void main() {
 
     await tester.tap(find.byKey(const Key('quiet-notice-mesh_1')));
     await tester.pumpAndSettle();
-    expect(find.text('FULL_PRIVATE_MESH_BODY'), findsOneWidget);
+    expect(find.textContaining('FULL_PRIVATE_MESH_BODY'), findsWidgets);
     await capture(tester, 'quiet-preview-message');
     await tester.tap(find.byKey(const Key('quiet-preview-close')));
     await tester.pumpAndSettle();
@@ -571,7 +578,7 @@ void main() {
       ),
     ]);
     await tester.pump();
-    expect(find.text('Running tests'), findsOneWidget);
+    expect(find.text('Running the tests'), findsOneWidget);
     expect(find.byType(QuietWorkRow), findsNothing);
     expect(find.byType(ToolRequestCard), findsNothing);
     await capture(tester, 'quiet-working');
@@ -641,22 +648,97 @@ void main() {
     (tester) async {
       final (_, prefs) = await pump(tester, _holdsAndDrafts());
       expect(find.byType(ToolRequestCard), findsNothing);
-      await tester.tap(find.byKey(const Key('quiet-toggle')));
+      await prefs.setQuietMode(false);
       await tester.pump();
       expect(prefs.quietMode, isFalse);
-      expect(find.text('Full details'), findsOneWidget);
       expect(find.byType(ToolRequestCard), findsWidgets);
       expect(find.byType(QuietWorkRow), findsNothing);
       // Native cards: every tool back, including the one carrying the draft.
       expect(find.text('MCP__CUSTOM-TOOLS__CODEMODE'), findsOneWidget);
       await capture(tester, 'full-details');
 
-      await tester.tap(find.byKey(const Key('quiet-toggle')));
+      await prefs.setQuietMode(true);
       await tester.pump();
       expect(prefs.quietMode, isTrue);
-      expect(find.text('Quiet'), findsOneWidget);
       expect(find.byType(ToolRequestCard), findsNothing);
       expect(find.text('Worked for 2m 4s · 6 steps'), findsOneWidget);
     },
   );
+
+  // Fleet #117/#120 demo: the same transcript renders on main (before) and
+  // this branch (after). RP_REVIEW_DIR=/tmp/rp-labels/demo/after flutter test
+  // --plain-name 'activity labels demo' test/ui/chat/quiet_mode_test.dart
+  testWidgets('activity labels demo', (tester) async {
+    final before = Platform.environment['RP_DEMO_BEFORE'] != null;
+    Map<String, String> mesh(String text) => {
+      'from': '/x@Personal_Projects›Remote_Pi›Main',
+      'message': text,
+    };
+    final (vm, _) = await pump(tester, [
+      UserMsg(id: 'u', ts: _t0, text: 'Add task-specific activity labels.'),
+      _tool('r1', 'read', args: {'path': '/a/quiet-mode.ts'}, at: 1),
+      _tool(
+        'ack1',
+        'agent-network',
+        args: mesh('Got it, on it.'),
+        result: mesh('Got it, on it.'),
+        at: 2,
+      ),
+      _tool(
+        'ack2',
+        'agent-network',
+        args: mesh('Got it, on it.'),
+        result: mesh('Got it, on it.'),
+        at: 3,
+      ),
+      _tool('t1', 'bash', args: {'command': 'flutter test --no-pub'}, at: 30),
+      _tool(
+        'done1',
+        'agent-network',
+        args: mesh(
+          '{"status":"success","summary":"Build 16 uploaded and verified."}',
+        ),
+        result: mesh(
+          '{"status":"success","summary":"Build 16 uploaded and verified."}',
+        ),
+        at: 40,
+      ),
+      AssistantMsg(
+        id: 'a1',
+        ts: _t0.add(const Duration(seconds: 45)),
+        text: 'Labels are in.',
+      ),
+      UserMsg(
+        id: 'u2',
+        ts: _t0.add(const Duration(seconds: 50)),
+        text: 'Check the release.',
+      ),
+      AssistantMsg(
+        id: 'a2',
+        ts: _t0.add(const Duration(seconds: 51)),
+        text: 'Let me check the release:',
+      ),
+      _tool(
+        'gh',
+        'bash',
+        args: {'command': 'gh release view --json tagName'},
+        status: ToolEventStatus.pending,
+        at: 52,
+      ),
+    ], working: true);
+    if (!before) {
+      expect(find.text('Checking the release'), findsOneWidget);
+      expect(find.text('Message from Remote Pi / Main'), findsNothing);
+      expect(find.text('Worked for 44s · 4 steps'), findsOneWidget);
+      expect(
+        find.text('Done · Remote Pi / Main: Build 16 uploaded and verified'),
+        findsOneWidget,
+      );
+    }
+    await capture(tester, 'demo-live-and-notices');
+    await tester.tap(find.textContaining('Worked for'));
+    await tester.pump(const Duration(milliseconds: 300));
+    await capture(tester, 'demo-expanded');
+    expect(vm.messages.length, 10);
+  });
 }

@@ -1,0 +1,740 @@
+[
+ {
+  "tool": "bash",
+  "args": {
+   "command": "python3 probe.py"
+  },
+  "label": "Checking Terra Fast-mode support",
+  "intent": "Checking Terra Fast-mode support:"
+ },
+ {
+  "tool": "bash",
+  "args": {
+   "command": "python3 x.py"
+  },
+  "label": "Checking the relay build",
+  "intent": "Checking the relay build:"
+ },
+ {
+  "tool": "edit",
+  "args": {
+   "path": "/a/models.json"
+  },
+  "label": "Updating the model list",
+  "intent": "Now I'll update the model list."
+ },
+ {
+  "tool": "bash",
+  "args": {
+   "command": "git log"
+  },
+  "label": "Checking the release",
+  "intent": "Let me check the release:"
+ },
+ {
+  "tool": "bash",
+  "args": {
+   "command": "npm test"
+  },
+  "label": "Running the app tests",
+  "intent": "Good, the build passed. Next I'm going to run the app tests."
+ },
+ {
+  "tool": "bash",
+  "args": {
+   "command": "ship-testflight.sh"
+  },
+  "label": "Uploading to TestFlight",
+  "intent": "I'll upload to TestFlight now"
+ },
+ {
+  "tool": "bash",
+  "args": {
+   "command": "node thread.js \"Michael\""
+  },
+  "label": "Reading Michael's messages",
+  "intent": "Let me read Michael’s messages."
+ },
+ {
+  "tool": "bash",
+  "args": {
+   "command": "ls"
+  },
+  "label": "Verifying the fix",
+  "intent": "Let me quickly verify the fix."
+ },
+ {
+  "tool": "bash",
+  "args": {
+   "command": "ls"
+  },
+  "label": "Making sure the tests pass",
+  "intent": "I'll make sure the tests pass."
+ },
+ {
+  "tool": "bash",
+  "args": {
+   "command": "ls"
+  },
+  "label": "Staging the change",
+  "intent": "I'll stage the change"
+ },
+ {
+  "tool": "bash",
+  "args": {
+   "command": "ls"
+  },
+  "label": "Writing the handoff",
+  "intent": "Writing the handoff…"
+ },
+ {
+  "tool": "bash",
+  "args": {
+   "command": "npm test"
+  },
+  "label": "Running the tests",
+  "intent": "Should I check the logs?"
+ },
+ {
+  "tool": "bash",
+  "args": {
+   "command": "npm test"
+  },
+  "label": "Running the tests",
+  "intent": "Done."
+ },
+ {
+  "tool": "bash",
+  "args": {
+   "command": "npm test"
+  },
+  "label": "Running the tests",
+  "intent": "The tests pass"
+ },
+ {
+  "tool": "bash",
+  "args": {
+   "command": "npm test"
+  },
+  "label": "Running the tests",
+  "intent": "Let me know if this works."
+ },
+ {
+  "tool": "bash",
+  "args": {
+   "command": "npm test"
+  },
+  "label": "Running the tests",
+  "intent": "Checking `npm test` output:"
+ },
+ {
+  "tool": "bash",
+  "args": {
+   "command": "npm test"
+  },
+  "label": "Running the tests",
+  "intent": "Reading /Users/zach/secrets/key.txt"
+ },
+ {
+  "tool": "bash",
+  "args": {
+   "command": "npm test"
+  },
+  "label": "Running the tests",
+  "intent": "Checking token sk1234567890abcdef1234"
+ },
+ {
+  "tool": "bash",
+  "args": {
+   "command": "npm test"
+  },
+  "label": "Running the tests",
+  "intent": "Checking every remaining place where the old label still appears in the code"
+ },
+ {
+  "tool": "bash",
+  "args": {
+   "command": "npm test"
+  },
+  "label": "Running the tests",
+  "intent": "Something went wrong."
+ },
+ {
+  "tool": "bash",
+  "args": {
+   "command": "npm test"
+  },
+  "label": "Running the tests",
+  "intent": "Checking"
+ },
+ {
+  "tool": "bash",
+  "args": {
+   "command": "npm test"
+  },
+  "label": "Running the tests",
+  "intent": ""
+ },
+ {
+  "tool": "bash",
+  "args": {
+   "command": "npm test"
+  },
+  "label": "Running the tests",
+  "intent": "I'm checking: x = 1"
+ },
+ {
+  "tool": "bash",
+  "args": {
+   "command": "npm test"
+  },
+  "label": "Running the tests",
+  "intent": "Let me run the tests?"
+ },
+ {
+  "tool": "bash",
+  "args": {
+   "command": "cat a.md"
+  },
+  "label": "Reading the spec again",
+  "intent": "Here's the plan.\n\nReading the spec again."
+ },
+ {
+  "tool": "bash",
+  "args": {
+   "command": "node /root/wa-capture/thread.js \"Michael Nussen\" 40"
+  },
+  "label": "Reading Michael Nussen's messages"
+ },
+ {
+  "tool": "bash",
+  "args": {
+   "command": "ssh root@host 'node /root/wa-capture/thread.js \"Michael\" 40'"
+  },
+  "label": "Reading Michael's messages"
+ },
+ {
+  "tool": "bash",
+  "args": {
+   "command": "echo 'node thread.js \"Michael\"'"
+  },
+  "label": "Checking task details"
+ },
+ {
+  "tool": "bash",
+  "args": {
+   "command": "echo 'a; node thread.js \"Michael\"'"
+  },
+  "label": "Checking task details"
+ },
+ {
+  "tool": "bash",
+  "args": {
+   "command": "node test-native-status.mjs"
+  },
+  "label": "Running the tests"
+ },
+ {
+  "tool": "bash",
+  "args": {
+   "command": "cd app && flutter test --no-pub 2>&1 | tail -20"
+  },
+  "label": "Running the app tests"
+ },
+ {
+  "tool": "bash",
+  "args": {
+   "command": "npx vitest run"
+  },
+  "label": "Running the tests"
+ },
+ {
+  "tool": "bash",
+  "args": {
+   "command": "python3 -m pytest -q"
+  },
+  "label": "Running the tests"
+ },
+ {
+  "tool": "bash",
+  "args": {
+   "command": "cargo test"
+  },
+  "label": "Running the tests"
+ },
+ {
+  "tool": "bash",
+  "args": {
+   "command": "flutter analyze --no-pub"
+  },
+  "label": "Checking the code"
+ },
+ {
+  "tool": "bash",
+  "args": {
+   "command": "flutter build ios --no-codesign --no-pub"
+  },
+  "label": "Building the iOS app"
+ },
+ {
+  "tool": "bash",
+  "args": {
+   "command": "npm run build"
+  },
+  "label": "Building the project"
+ },
+ {
+  "tool": "bash",
+  "args": {
+   "command": "git push origin activity-labels"
+  },
+  "label": "Pushing code to GitHub"
+ },
+ {
+  "tool": "bash",
+  "args": {
+   "command": "git -C /repo push"
+  },
+  "label": "Pushing code to GitHub"
+ },
+ {
+  "tool": "bash",
+  "args": {
+   "command": "git commit -m 'secret message'"
+  },
+  "label": "Saving a commit"
+ },
+ {
+  "tool": "bash",
+  "args": {
+   "command": "git status --short"
+  },
+  "label": "Checking the code changes"
+ },
+ {
+  "tool": "bash",
+  "args": {
+   "command": "git log --oneline -5"
+  },
+  "label": "Checking the code history"
+ },
+ {
+  "tool": "bash",
+  "args": {
+   "command": "gh pr create --fill"
+  },
+  "label": "Opening a pull request"
+ },
+ {
+  "tool": "bash",
+  "args": {
+   "command": "gh run list"
+  },
+  "label": "Checking GitHub"
+ },
+ {
+  "tool": "bash",
+  "args": {
+   "command": "./scripts/ship-testflight.sh"
+  },
+  "label": "Uploading to TestFlight"
+ },
+ {
+  "tool": "bash",
+  "args": {
+   "command": "bash pi-extension/scripts/build-release.sh --install"
+  },
+  "label": "Installing the Mac extension"
+ },
+ {
+  "tool": "bash",
+  "args": {
+   "command": "ssh root@1.2.3.4 'curl -s localhost:8080/health'"
+  },
+  "label": "Checking the server"
+ },
+ {
+  "tool": "bash",
+  "args": {
+   "command": "ssh -i ~/.ssh/key root@vps 'docker ps'"
+  },
+  "label": "Checking the server"
+ },
+ {
+  "tool": "bash",
+  "args": {
+   "command": "ssh -t root@vps 'some-unknown-tool --flag'"
+  },
+  "label": "Working on the server"
+ },
+ {
+  "tool": "bash",
+  "args": {
+   "command": "ssh root@vps"
+  },
+  "label": "Connecting to the server"
+ },
+ {
+  "tool": "bash",
+  "args": {
+   "command": "curl -s https://relay.example.com/healthz"
+  },
+  "label": "Checking the server"
+ },
+ {
+  "tool": "bash",
+  "args": {
+   "command": "curl -H 'Authorization: Bearer SECRET' https://api.stripe.com/v1/charges"
+  },
+  "label": "Contacting api.stripe.com"
+ },
+ {
+  "tool": "bash",
+  "args": {
+   "command": "sleep 20 && curl -s https://x.example.com/health"
+  },
+  "label": "Checking the server"
+ },
+ {
+  "tool": "bash",
+  "args": {
+   "command": "sleep 5"
+  },
+  "label": "Waiting"
+ },
+ {
+  "tool": "bash",
+  "args": {
+   "command": "curl https://abc123secret@api.example.com/private"
+  },
+  "label": "Contacting api.example.com"
+ },
+ {
+  "tool": "bash",
+  "args": {
+   "command": "FOO=bar sudo npm install"
+  },
+  "label": "Installing dependencies"
+ },
+ {
+  "tool": "bash",
+  "args": {
+   "command": "flutter pub get"
+  },
+  "label": "Installing dependencies"
+ },
+ {
+  "tool": "bash",
+  "args": {
+   "command": "cat /Users/zach/notes/REPORT.md"
+  },
+  "label": "Reading REPORT.md"
+ },
+ {
+  "tool": "bash",
+  "args": {
+   "command": "sed -n 1,80p quiet-mode.ts"
+  },
+  "label": "Reading quiet-mode.ts"
+ },
+ {
+  "tool": "bash",
+  "args": {
+   "command": "tail -n 50 /var/log/app.log"
+  },
+  "label": "Reading app.log"
+ },
+ {
+  "tool": "bash",
+  "args": {
+   "command": "cat a.md b.md"
+  },
+  "label": "Reading files"
+ },
+ {
+  "tool": "bash",
+  "args": {
+   "command": "rg -n liveSummary lib"
+  },
+  "label": "Searching the code"
+ },
+ {
+  "tool": "bash",
+  "args": {
+   "command": "grep -rn TODO ."
+  },
+  "label": "Searching the code"
+ },
+ {
+  "tool": "bash",
+  "args": {
+   "command": "find . -name '*.dart'"
+  },
+  "label": "Looking for files"
+ },
+ {
+  "tool": "bash",
+  "args": {
+   "command": "ls -la"
+  },
+  "label": "Looking through files"
+ },
+ {
+  "tool": "bash",
+  "args": {
+   "command": "diff -u a b > /tmp/x.diff"
+  },
+  "label": "Comparing files"
+ },
+ {
+  "tool": "bash",
+  "args": {
+   "command": "python3 ~/.claude/email/draft.py --to x"
+  },
+  "label": "Preparing the email draft"
+ },
+ {
+  "tool": "bash",
+  "args": {
+   "command": "python3 /x/herdr-workers/worker.py --root /r finish --job 1 --report h.json"
+  },
+  "label": "Submitting the work handoff"
+ },
+ {
+  "tool": "bash",
+  "args": {
+   "command": "python3 /x/worker.py thread note --kind progress --text hi"
+  },
+  "label": "Posting an update to the main pane"
+ },
+ {
+  "tool": "bash",
+  "args": {
+   "command": "gws gmail users messages list"
+  },
+  "label": "Checking email"
+ },
+ {
+  "tool": "bash",
+  "args": {
+   "command": "op read op://Vault/Item/field"
+  },
+  "label": "Getting a saved credential"
+ },
+ {
+  "tool": "bash",
+  "args": {
+   "command": "python3 -c 'print(1)'"
+  },
+  "label": "Checking task details"
+ },
+ {
+  "tool": "bash",
+  "args": {
+   "command": "make_offline_session --x"
+  },
+  "label": "Checking task details"
+ },
+ {
+  "tool": "bash",
+  "args": {
+   "command": ""
+  },
+  "label": "Checking task details"
+ },
+ {
+  "tool": "bash",
+  "args": {
+   "command": "cd /tmp"
+  },
+  "label": "Checking task details"
+ },
+ {
+  "tool": "bash",
+  "args": {
+   "command": "rm -rf build"
+  },
+  "label": "Removing files"
+ },
+ {
+  "tool": "bash",
+  "args": {
+   "command": "osascript -e 'tell app \"Finder\" to activate'"
+  },
+  "label": "Using an app on the Mac"
+ },
+ {
+  "tool": "read",
+  "args": {
+   "path": "/tmp/results.json"
+  },
+  "label": "Reading results.json"
+ },
+ {
+  "tool": "read",
+  "args": {
+   "path": "/tmp/\u001b]52;c;SECRET\u0007file.md"
+  },
+  "label": "Reading file.md"
+ },
+ {
+  "tool": "write",
+  "args": {
+   "file_path": "/a/b/plan.md"
+  },
+  "label": "Writing plan.md"
+ },
+ {
+  "tool": "edit",
+  "args": {},
+  "label": "Editing a file"
+ },
+ {
+  "tool": "Grep",
+  "args": {
+   "pattern": "x"
+  },
+  "label": "Searching the code"
+ },
+ {
+  "tool": "Glob",
+  "args": {
+   "pattern": "*.ts"
+  },
+  "label": "Looking for files"
+ },
+ {
+  "tool": "chrome_screenshot",
+  "args": {},
+  "label": "Taking a screenshot"
+ },
+ {
+  "tool": "mcp__custom-tools__voice_capture_screen",
+  "args": {},
+  "label": "Taking a screenshot"
+ },
+ {
+  "tool": "chrome_navigate",
+  "args": {
+   "url": "https://dagim-ops.example.com/private?token=SECRET"
+  },
+  "label": "Opening Dagim"
+ },
+ {
+  "tool": "chrome_navigate",
+  "args": {
+   "url": "https://whatnot.com/live"
+  },
+  "label": "Opening whatnot.com"
+ },
+ {
+  "tool": "chrome_snapshot",
+  "args": {},
+  "label": "Checking the page"
+ },
+ {
+  "tool": "chrome_click",
+  "args": {
+   "uid": "1"
+  },
+  "label": "Using the page controls"
+ },
+ {
+  "tool": "chrome_tab",
+  "args": {
+   "action": "list"
+  },
+  "label": "Using the browser"
+ },
+ {
+  "tool": "launch_browser",
+  "args": {},
+  "label": "Using the browser"
+ },
+ {
+  "tool": "observe_ui",
+  "args": {},
+  "label": "Looking at the screen"
+ },
+ {
+  "tool": "act_ui",
+  "args": {},
+  "label": "Using an app on the Mac"
+ },
+ {
+  "tool": "mcp__whatsapp__read_thread",
+  "args": {},
+  "label": "Reading WhatsApp messages"
+ },
+ {
+  "tool": "whatsapp_send",
+  "args": {},
+  "label": "Using whatsapp send"
+ },
+ {
+  "tool": "mcp__custom-tools__mcp__firecrawl__firecrawl_search",
+  "args": {
+   "query": "x"
+  },
+  "label": "Searching the web"
+ },
+ {
+  "tool": "mcp__custom-tools__mcp__firecrawl__firecrawl_scrape",
+  "args": {
+   "url": "https://docs.flutter.dev/x"
+  },
+  "label": "Reading docs.flutter.dev"
+ },
+ {
+  "tool": "memory_search",
+  "args": {},
+  "label": "Searching for information"
+ },
+ {
+  "tool": "codemode",
+  "args": {
+   "code": "x"
+  },
+  "label": "Working through several steps"
+ },
+ {
+  "tool": "agent_send",
+  "args": {
+   "to": "/a@W›T›Main"
+  },
+  "label": "Messaging another pane"
+ },
+ {
+  "tool": "list_peers",
+  "args": {},
+  "label": "Finding available workers"
+ },
+ {
+  "tool": "notify_user",
+  "args": {},
+  "label": "Notifying Zach"
+ },
+ {
+  "tool": "request_credential",
+  "args": {},
+  "label": "Requesting a credential"
+ },
+ {
+  "tool": "mcp__stripe__create_invoice",
+  "args": {},
+  "label": "Using create invoice"
+ },
+ {
+  "tool": "weird$$tool",
+  "args": {},
+  "label": "Checking task details"
+ },
+ {
+  "tool": "read",
+  "args": {
+   "path": "/x.md"
+  },
+  "label": "Checking the spec",
+  "intent": "Checking the spec."
+ }
+]

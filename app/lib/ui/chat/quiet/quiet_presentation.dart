@@ -114,31 +114,462 @@ String summary(String name, dynamic args) {
   return label.isEmpty ? 'Tool' : label[0].toUpperCase() + label.substring(1);
 }
 
+// Live activity labels. The SAME rules live in the Mac extension
+// (~/.pi/agent/extensions/quiet-mode.ts `liveSummary`); keep them identical
+// and run the shared fixtures in test/ui/chat/fixtures/activity-labels.json.
+// Order: the assistant's own "about to" sentence, then a recognized
+// operation, then "Checking task details". Never a raw command, path or secret.
+const _unknown = 'Checking task details';
+const _doubled = {
+  'run', 'rerun', 'get', 'set', 'reset', 'put', 'stop', 'plan', 'ship', 'cut',
+  'swap', 'drop', 'skip', 'grab', 'scan', 'map', 'tap', 'log', 'commit',
+  'submit', 'begin', 'dig', 'pin', 'prep', 'wrap', 'trim', 'tag', 'zip',
+  'debug', 'jot', 'sum', 'chat', 'rig', //
+};
+const _notVerbs = {
+  'be', 'have', 'know', 'need', 'want', 'try', 'go', 'do', 'see', 'say',
+  'think', 'ask', 'wait', 'keep', //
+};
+const _ingNouns = {
+  'thing', 'something', 'nothing', 'anything', 'everything', 'morning',
+  'evening', 'string', 'ceiling', 'during', 'king', 'ring', 'spring',
+  'bring', 'sing', 'wing', 'sting', 'swing', //
+};
+final _captureRe = RegExp(r"^[\p{L}\p{N} ._'-]{1,30}$", unicode: true);
+String? _capture(Object? value) {
+  final text = _clean(value);
+  return _captureRe.hasMatch(text) ? text : null;
+}
+
+String? _fileName(Object? value) {
+  final parts = (value ?? '')
+      .toString()
+      .replaceAll(RegExp(r'''^['"]|['"]$'''), '')
+      .split('/')
+      .where((p) => p.isNotEmpty);
+  return _capture(parts.isEmpty ? null : parts.last);
+}
+
+String _gerund(String verb) {
+  final v = verb.toLowerCase();
+  if (_doubled.contains(v)) return '$v${v[v.length - 1]}ing';
+  if (v.endsWith('ie')) return '${v.substring(0, v.length - 2)}ying';
+  if (RegExp(r'[^aeoy]e$').hasMatch(v)) {
+    return '${v.substring(0, v.length - 1)}ing';
+  }
+  return '${v}ing';
+}
+
+/// The assistant's short "about to" sentence as a present-participle label,
+/// or null when it is not one.
+String? intentLabel(Object? text) {
+  final lines = sanitize((text ?? '').toString())
+      .replaceAll(RegExp('[‘’]'), "'")
+      .split('\n')
+      .map((l) => l.trim())
+      .where((l) => l.isNotEmpty);
+  final line = lines.isEmpty ? '' : lines.last;
+  var sentence = line.split(RegExp(r'[.!?]\s+')).last.trim();
+  if (sentence.isEmpty || sentence.endsWith('?')) return null;
+  sentence = sentence
+      .replaceAll(RegExp(r'[\s:.!…]+$'), '')
+      .replaceAll(
+        RegExp(r'\s+(?:now|next|first|then|too)$', caseSensitive: false),
+        '',
+      );
+  final match = RegExp(
+    r"^(?:(?:ok|okay|now|next|first|then|so|alright|great|good|right)\b[,]?\s+)*(i'll|i will|i'm going to|i am going to|let me|let's|let us|i need to|going to|i'm|i am)?\s*(.*)$",
+    caseSensitive: false,
+  ).firstMatch(sentence)!;
+  final modal = match.group(1)?.toLowerCase();
+  final words = match
+      .group(2)!
+      .replaceAll(
+        RegExp(
+          r'^(?:(?:now|also|quickly|first|then|just|briefly|next|still|actually)\s+)+',
+          caseSensitive: false,
+        ),
+        '',
+      )
+      .split(' ')
+      .where((w) => w.isNotEmpty)
+      .toList();
+  if (words.length < 2) return null;
+  final first = words.first.toLowerCase();
+  // "I'll check X" names an upcoming action; otherwise only an -ing phrase does.
+  final future = modal != null && modal != "i'm" && modal != 'i am';
+  if (future
+      ? !RegExp(r'^[a-z]{2,}$').hasMatch(first) ||
+            _notVerbs.contains(first) ||
+            first.endsWith('ing')
+      : !RegExp(r'^[a-z]{3,}ing$').hasMatch(first) ||
+            _ingNouns.contains(first)) {
+    return null;
+  }
+  final verb = future ? _gerund(first) : first;
+  final label = [
+    verb[0].toUpperCase() + verb.substring(1),
+    ...words.skip(1),
+  ].join(' ');
+  if (label.length > 40 ||
+      !RegExp(r"^[\p{L}\p{N} ,'&.+-]+$", unicode: true).hasMatch(label) ||
+      label.contains('..')) {
+    return null;
+  }
+  // Long or mixed letter-digit words look like tokens or IDs, not intent.
+  if (words.any(
+    (w) =>
+        w.length >= 25 ||
+        (w.length >= 12 &&
+            RegExp(r'\d').hasMatch(w) &&
+            RegExp(r'[a-z]', caseSensitive: false).hasMatch(w)),
+  )) {
+    return null;
+  }
+  return label;
+}
+
+/// Top-level commands, quote-aware; text after a pipe is a filter, not the
+/// operation.
+List<String> _commands(String command) {
+  final out = <String>[];
+  var current = StringBuffer();
+  var quote = '';
+  var piped = false;
+  void push() {
+    final text = current.toString().trim();
+    if (!piped && text.isNotEmpty) out.add(text);
+    current = StringBuffer();
+  }
+
+  for (var i = 0; i < command.length; i++) {
+    final c = command[i];
+    final next = i + 1 < command.length ? command[i + 1] : '';
+    if (quote.isNotEmpty) {
+      if (c == r'\' && quote == '"') {
+        current.write(c + next);
+        i++;
+        continue;
+      }
+      if (c == quote) quote = '';
+      current.write(c);
+      continue;
+    }
+    if (c == "'" || c == '"') {
+      quote = c;
+      current.write(c);
+      continue;
+    }
+    if (c == r'\') {
+      current.write(c + next);
+      i++;
+      continue;
+    }
+    if ((c == '&' && next == '&') || (c == '|' && next == '|')) {
+      push();
+      piped = false;
+      i++;
+      continue;
+    }
+    if (c == ';' || c == '\n') {
+      push();
+      piped = false;
+      continue;
+    }
+    if (c == '|') {
+      push();
+      piped = true;
+      continue;
+    }
+    current.write(c);
+  }
+  push();
+  return out;
+}
+
+typedef _Rule = (
+  RegExp,
+  Object,
+); // label: String or String? Function(RegExpMatch)
+const _script = r'^(?:(?:bash|sh|zsh|node|python3?|npx|tsx|bun)\s+)?(?:\S*/)?';
+final List<_Rule> _rules = [
+  (
+    RegExp(
+      r'''^node\s+(?:\S*\/)?thread\.js\s+(["'])([\p{L}][\p{L} .-]{0,38})\1(?:\s|$)''',
+      unicode: true,
+    ),
+    (RegExpMatch m) => "Reading ${m.group(2)!.trim()}'s messages",
+  ),
+  (RegExp('${_script}ship-testflight\\.sh\\b'), 'Uploading to TestFlight'),
+  (RegExp('${_script}build-release\\.sh\\b'), 'Installing the Mac extension'),
+  (RegExp('${_script}draft\\.py\\b'), 'Preparing the email draft'),
+  (RegExp('${_script}panel\\.py\\b'), 'Preparing the email preview'),
+  (
+    RegExp(r'^python3?\s+\S*worker\.py\b.*\sfinish\b'),
+    'Submitting the work handoff',
+  ),
+  (
+    RegExp(r'^python3?\s+\S*worker\.py\b.*\sthread\s+note\b'),
+    'Posting an update to the main pane',
+  ),
+  (RegExp(r'^flutter\s+test\b'), 'Running the app tests'),
+  (
+    RegExp(
+      r'^(?:dart\s+test|(?:npm|pnpm|yarn|bun)\s+(?:run\s+)?test(?::\S+)?|npx\s+(?:vitest|jest|playwright\s+test)|vitest|jest|pytest|python3?\s+-m\s+(?:pytest|unittest)|cargo\s+(?:test|nextest)|go\s+test|swift\s+test|xcodebuild\s+test|make\s+test)(?:\s|$)',
+    ),
+    'Running the tests',
+  ),
+  (
+    RegExp(
+      r'^(?:node|python3?|bash|sh|npx\s+tsx|tsx)\s+(?:\S*\/)?[\w-]*test[\w.-]*\.(?:mjs|js|ts|py|sh)(?:\s|$)',
+    ),
+    'Running the tests',
+  ),
+  (
+    RegExp(
+      r'^(?:flutter\s+analyze|dart\s+analyze|(?:npm|pnpm|yarn|bun)\s+(?:run\s+)?(?:lint|typecheck|check)|npx\s+(?:eslint|tsc)|eslint|tsc\s+--noEmit|cargo\s+(?:clippy|check)|ruff|mypy|swiftlint|dart\s+format|biome)(?:\s|$)',
+    ),
+    'Checking the code',
+  ),
+  (RegExp(r'^flutter\s+build\s+ios\b'), 'Building the iOS app'),
+  (RegExp(r'^flutter\s+build\b'), 'Building the app'),
+  (
+    RegExp(
+      r'^(?:(?:npm|pnpm|yarn|bun)\s+(?:run\s+)?build|cargo\s+build|xcodebuild|swift\s+build|go\s+build|make|tsc|npx\s+tsc|next\s+build|vite\s+build)(?:\s|$)',
+    ),
+    'Building the project',
+  ),
+  (
+    RegExp(
+      r'^(?:(?:npm|pnpm|yarn|bun)\s+(?:install|i|add|ci)|pip3?\s+install|python3?\s+-m\s+pip\s+install|brew\s+install|(?:flutter|dart)\s+pub\s+(?:get|upgrade|add)|cargo\s+add|pod\s+install|uv\s+(?:sync|add|pip\s+install))(?:\s|$)',
+    ),
+    'Installing dependencies',
+  ),
+  (RegExp(r'^git\s+(?:-C\s+\S+\s+)?push\b'), 'Pushing code to GitHub'),
+  (RegExp(r'^git\s+(?:-C\s+\S+\s+)?commit\b'), 'Saving a commit'),
+  (
+    RegExp(r'^git\s+(?:-C\s+\S+\s+)?(?:pull|fetch)\b'),
+    'Getting the latest code',
+  ),
+  (
+    RegExp(r'^git\s+(?:-C\s+\S+\s+)?(?:status|diff)\b'),
+    'Checking the code changes',
+  ),
+  (
+    RegExp(r'^git\s+(?:-C\s+\S+\s+)?(?:log|show|blame|describe|shortlog)\b'),
+    'Checking the code history',
+  ),
+  (
+    RegExp(r'^git\s+(?:-C\s+\S+\s+)?(?:checkout|switch)\b'),
+    'Switching branches',
+  ),
+  (
+    RegExp(r'^git\s+(?:-C\s+\S+\s+)?(?:merge|rebase|cherry-pick)\b'),
+    'Merging code changes',
+  ),
+  (RegExp(r'^git\s+(?:-C\s+\S+\s+)?add\b'), 'Staging code changes'),
+  (RegExp(r'^git\s+(?:-C\s+\S+\s+)?clone\b'), 'Downloading the code'),
+  (
+    RegExp(
+      r'^git\s+(?:-C\s+\S+\s+)?(?:branch|rev-parse|remote|ls-files|worktree\s+list|stash\s+list|config\s+--get)\b',
+    ),
+    'Checking the repository',
+  ),
+  (RegExp(r'^gh\s+pr\s+create\b'), 'Opening a pull request'),
+  (RegExp(r'^gh\s+pr\s+merge\b'), 'Merging the pull request'),
+  (RegExp(r'^gh\s+release\s+create\b'), 'Publishing a GitHub release'),
+  (RegExp(r'^gh\b'), 'Checking GitHub'),
+  (
+    RegExp(
+      r'''^curl\b.*\/(?:health|healthz|status|ping|ready|readyz|version)(?:[\s'"?/]|$)''',
+    ),
+    'Checking the server',
+  ),
+  (
+    RegExp(
+      r'''^(?:curl|wget|http|xh)\b[^|]*?https?:\/\/(?:[^\s/@'"]*@)?([a-z0-9.-]+)''',
+      caseSensitive: false,
+    ),
+    (RegExpMatch m) {
+      final host = _capture(m.group(1));
+      return host != null ? 'Contacting $host' : 'Contacting a web service';
+    },
+  ),
+  (
+    RegExp(
+      r'^(?:docker(?:-compose)?\s+(?:ps|compose\s+ps|logs|stats|inspect|images)|systemctl\s+(?:status|is-active|list-units|list-timers)|journalctl|uptime|pm2\s+(?:status|list|ls|logs)|service\s+\S+\s+status|crontab\s+-l|ps\s|ps$)',
+    ),
+    'Checking the server',
+  ),
+  (RegExp(r'^(?:df|du|free)(?:\s|$)'), 'Checking disk space'),
+  (
+    RegExp(
+      r'''^(?:cat|head|tail|less|bat|nl|wc|sed\s+-n\s+\S+|jq\s+\S+|plutil\s+-p)\s+(?:-\S+\s+)*(?:\d+\s+)?(["']?[^\s'"|;&<>]+["']?)\s*$''',
+    ),
+    (RegExpMatch m) {
+      final file = _fileName(m.group(1));
+      return file != null ? 'Reading $file' : 'Reading files';
+    },
+  ),
+  (RegExp(r'^(?:cat|head|tail|less|bat|nl|wc)\s'), 'Reading files'),
+  (
+    RegExp(r'^(?:rg|grep|egrep|fgrep|ag|ack|git\s+grep)(?:\s|$)'),
+    'Searching the code',
+  ),
+  (RegExp(r'^(?:find|fd|mdfind|locate)(?:\s|$)'), 'Looking for files'),
+  (
+    RegExp(r'^(?:ls|tree|stat|file|realpath|pwd)(?:\s|$)'),
+    'Looking through files',
+  ),
+  (RegExp(r'^(?:diff|cmp)(?:\s|$)'), 'Comparing files'),
+  (RegExp(r'^scp(?:\s|$)'), 'Copying files to the server'),
+  (RegExp(r'^(?:cp|rsync|ditto)(?:\s|$)'), 'Copying files'),
+  (RegExp(r'^mv(?:\s|$)'), 'Moving files'),
+  (RegExp(r'^(?:rm|trash)(?:\s|$)'), 'Removing files'),
+  (RegExp(r'^gws\s+gmail\b.*\bsend\b'), 'Sending the email'),
+  (RegExp(r'^gws\s+gmail\b'), 'Checking email'),
+  (RegExp(r'^gws\s+calendar\b'), 'Checking the calendar'),
+  (RegExp(r'^gws\s+drive\b'), 'Checking Google Drive'),
+  (RegExp(r'^gws\b'), 'Using Google Workspace'),
+  (RegExp(r'^op\s+(?:read|item|inject|run)\b'), 'Getting a saved credential'),
+  (
+    RegExp(r'^(?:which|type|command\s+-v)\s|^\S+\s+--version$'),
+    'Checking installed tools',
+  ),
+  (RegExp(r'^launchctl\b'), 'Checking background services'),
+  (RegExp(r'^(?:sqlite3|psql|mysql)\b'), 'Checking the database'),
+  (RegExp(r'^ffmpeg\b'), 'Processing media'),
+  (RegExp(r'^yt-dlp\b'), 'Downloading media'),
+  (RegExp(r'^osascript\b'), 'Using an app on the Mac'),
+  (RegExp(r'^pbcopy\b'), 'Copying to the clipboard'),
+];
+final _skip = RegExp(
+  r'^(?:cd|export|set|source|\.|unset|echo|printf|true|false|:|mkdir|sleep|trap|local|wait)(?:\s|$)',
+);
+
+/// A recognized shell operation as plain English; "Checking task details"
+/// when nothing matches.
+String commandLabel(Object? command) {
+  var slept = false;
+  for (var part in _commands((command ?? '').toString())) {
+    part = part
+        .replaceFirst(
+          RegExp(r'''^(?:[A-Za-z_]\w*=(?:'[^']*'|"[^"]*"|\S*)\s+)+'''),
+          '',
+        )
+        .replaceFirst(
+          RegExp(r'^(?:(?:sudo|time|env|exec|command|nohup)\s+)+'),
+          '',
+        )
+        .trim();
+    final remote = RegExp(
+      r'''^ssh(?:\s+-\w+(?:\s+(?!['"])\S+)?)*\s+[\w@.-]+(?:\s+(['"])([\s\S]*)\1)?\s*$''',
+    ).firstMatch(part);
+    if (remote != null) {
+      if (remote.group(2) == null) return 'Connecting to the server';
+      final inner = commandLabel(remote.group(2));
+      return inner == _unknown ? 'Working on the server' : inner;
+    }
+    if (_skip.hasMatch(part)) {
+      if (RegExp(r'^sleep\b').hasMatch(part)) slept = true;
+      continue;
+    }
+    for (final (pattern, label) in _rules) {
+      final m = pattern.firstMatch(part);
+      if (m == null) continue;
+      final text = label is String
+          ? label
+          : (label as String? Function(RegExpMatch))(m);
+      if (text != null) return text;
+    }
+    // The real operation is this command; later ones have not started.
+    return _unknown;
+  }
+  return slept ? 'Waiting' : _unknown;
+}
+
+String? _host(Object? url) {
+  if (url is! String) return null;
+  final host = Uri.tryParse(url)?.host ?? '';
+  return host.isEmpty ? null : host;
+}
+
 /// Present-tense status while a step runs, e.g. "Reading file.md".
-String liveSummary(String name, dynamic args) {
-  final label = summary(name, args);
-  if (name.contains('screenshot')) return 'Taking a screenshot';
-  if (name.contains('whatsapp')) return 'Reading WhatsApp messages';
-  if (name.contains('search')) return 'Searching for information';
-  const verbs = {
-    'Read': 'Reading',
-    'Write': 'Writing',
-    'Edit': 'Editing',
-    'Run': 'Running',
-    'Search': 'Searching',
-    'List': 'Listing',
-    'Check': 'Checking',
-    'Contact': 'Contacting',
-    'Find': 'Finding',
-    'Notify': 'Notifying',
-    'Open': 'Opening',
-    'Request': 'Requesting',
-  };
-  final parts = label.split(' ');
-  final verb = verbs[parts.first];
-  return verb == null
-      ? 'Using ${label.toLowerCase()}'
-      : [verb, ...parts.skip(1)].join(' ');
+/// [intent] is the assistant's visible text immediately before the call.
+String liveSummary(String name, dynamic args, [Object? intent]) {
+  final said = intent == null ? null : intentLabel(intent);
+  if (said != null) return said;
+  final a = args is Map ? args : const {};
+  final tool = bareTool(name);
+  bool re(String pattern, String value, {bool ci = false}) =>
+      RegExp(pattern, caseSensitive: !ci).hasMatch(value);
+  if (re(r'screenshot|capture_screen', tool)) return 'Taking a screenshot';
+  if (tool == 'bash') return commandLabel(a['command']);
+  if (tool == 'read' || tool == 'write' || tool == 'edit') {
+    final file = _fileName(
+      sanitize((a['path'] ?? a['file_path'] ?? '').toString()),
+    );
+    final verb = const {
+      'read': 'Reading',
+      'write': 'Writing',
+      'edit': 'Editing',
+    }[tool];
+    return '$verb ${file ?? 'a file'}';
+  }
+  if (re(r'^(?:grep|rg)$', tool, ci: true)) return 'Searching the code';
+  if (re(r'^(?:glob|find|ls)$', tool, ci: true)) return 'Looking for files';
+  if (re('whatsapp', name) && re('read|thread|list|search', tool)) {
+    return 'Reading WhatsApp messages';
+  }
+  if (re(r'^(?:chrome_navigate|navigate_browser|launch_browser)$', tool) &&
+      a['url'] is String) {
+    final host = _host(a['url']);
+    if (host != null) {
+      if (re(r'^(?:[a-z0-9-]+\.)?dagim(?:-ops)?\.', host, ci: true)) {
+        return 'Opening Dagim';
+      }
+      if (_capture(host) != null) return 'Opening $host';
+    }
+    return 'Using the browser';
+  }
+  if (re(
+    r'^(?:chrome_snapshot|chrome_find|chrome_inspect|evaluate_browser|chrome_evaluate)$',
+    tool,
+  )) {
+    return 'Checking the page';
+  }
+  if (re(
+    r'^(?:chrome_(?:click|fill|type|key|scroll|drag|hover|tap|upload_file))$',
+    tool,
+  )) {
+    return 'Using the page controls';
+  }
+  if (re(r'^chrome_|browser', tool)) return 'Using the browser';
+  if (re(
+    r'^(?:observe_ui|find_roots|inspect_ui|search_ui|expand_ui|read_text)$',
+    tool,
+  )) {
+    return 'Looking at the screen';
+  }
+  if (re(r'^(?:act_ui|wait_for)$', tool)) return 'Using an app on the Mac';
+  if (re('search', tool)) {
+    return re('firecrawl|exa|web|brave|tavily|parallel', name)
+        ? 'Searching the web'
+        : 'Searching for information';
+  }
+  final urlHost = _capture(_host(a['url']));
+  if (urlHost != null) return 'Reading $urlHost';
+  if (tool == 'codemode') return 'Working through several steps';
+  if (tool == 'agent_send' || tool == 'agent_request') {
+    return 'Messaging another pane';
+  }
+  if (tool == 'list_peers') return 'Finding available workers';
+  if (tool == 'notify_user') return 'Notifying Zach';
+  if (tool == 'request_credential') return 'Requesting a credential';
+  final words = _clean(tool.replaceAll(RegExp(r'[_-]+'), ' ')).toLowerCase();
+  return words.isNotEmpty && RegExp(r'^[a-z0-9 ]{1,28}$').hasMatch(words)
+      ? 'Using $words'
+      : _unknown;
 }
 
 final _draftPanel = RegExp(
@@ -375,6 +806,198 @@ String incomingLabel(String type, String text, {String? attribution}) {
       : 'Updates from this workspace';
 }
 
+// Routine cross-pane traffic (ack/progress/receipt) folds into the work group;
+// approvals, questions, blocked, failed and finished/result reports stay one
+// visible line. The SAME rules are in the Mac extension `noticeView`; shared
+// fixtures in test/ui/chat/fixtures/notice-views.json.
+const _noticeKinds = {
+  'needs_approval': 'Approval needed',
+  'approval': 'Approval needed',
+  'question': 'Question',
+  'blocked': 'Blocked',
+  'failed': 'Failed',
+  'failure': 'Failed',
+  'error': 'Failed',
+  'done': 'Done',
+  'success': 'Done',
+  'complete': 'Done',
+  'completed': 'Done',
+  'handoff': 'Done',
+  'result': 'Result',
+};
+const _routineKinds = {
+  'ack', 'progress', 'decision', 'instruction', 'user', 'received', 'receipt',
+  'status', 'ping', 'heartbeat', 'in_progress', 'started', 'working', 'note',
+  'info', //
+};
+
+/// First sentence of [text], at most ~60 characters.
+String noticeGist(Object? text) {
+  final s = _clean(sanitize((text ?? '').toString())).replaceFirst(
+    RegExp(
+      r'^(?:done|finished|completed?|ok(?:ay)?|result)\s*[.:!-]\s+',
+      caseSensitive: false,
+    ),
+    '',
+  );
+  final sentence = (RegExp(r'^(.+?[.!?])(?=\s|$)').firstMatch(s)?.group(1) ?? s)
+      .replaceFirst(RegExp(r'[.!]+$'), '');
+  if (sentence.length <= 60) return sentence;
+  final cut = sentence.substring(0, 60);
+  final space = cut.lastIndexOf(' ');
+  return '${space > 20 ? cut.substring(0, space) : cut}…';
+}
+
+String _noticeLine(String kind, String sender, String gist) =>
+    '$kind${sender.isNotEmpty ? ' · $sender' : ''}${gist.isNotEmpty ? ': $gist' : ''}';
+
+/// How an incoming notice presents in quiet mode. `routine` → fold into the
+/// work group; `label` null → keep the existing one-line label.
+class NoticeView {
+  final bool routine;
+  final String? label;
+  const NoticeView(this.routine, this.label);
+}
+
+NoticeView noticeView(String type, String text, [String sender = '']) {
+  if (type == 'herdr-thread' || type == 'herdr-fleet') {
+    final entries =
+        RegExp(
+              r'^#\d+\s+\S+\s+\[([^\]]+)\]\s+([a-z_]+)\b[^:\n]*:[ \t]*(.*)$',
+              multiLine: true,
+            )
+            .allMatches(text)
+            .map(
+              (m) => (
+                sender: _clean(
+                  m.group(1),
+                ).replaceAll(RegExp(r'\bw\d+:p\w+\b'), '').trim(),
+                kind: m.group(2)!,
+                text: m.group(3)!,
+              ),
+            )
+            .toList();
+    if (entries.isEmpty) return const NoticeView(false, null);
+    final important = entries
+        .where(
+          (e) =>
+              _noticeKinds.containsKey(e.kind) ||
+              !_routineKinds.contains(e.kind),
+        )
+        .toList();
+    if (important.isEmpty) return const NoticeView(true, null);
+    final first = important.first;
+    return NoticeView(
+      false,
+      _noticeLine(
+            _noticeKinds[first.kind] ?? 'Update',
+            first.sender,
+            noticeGist(first.text),
+          ) +
+          (important.length > 1 ? ' (+${important.length - 1} more)' : ''),
+    );
+  }
+  if (type == 'herdr-worker-inbox') {
+    final statuses = RegExp(
+      r'^Job\s+\S+\s+hash\s+\S+\s+status\s+([a-z_]+)',
+      multiLine: true,
+    ).allMatches(text).map((m) => m.group(1)!).toList();
+    if (statuses.isEmpty) return const NoticeView(false, null);
+    final counts = <String, int>{};
+    for (final s in statuses) {
+      if (s != 'success') counts[s] = (counts[s] ?? 0) + 1;
+    }
+    final head = statuses.length == 1
+        ? 'Worker result'
+        : '${statuses.length} worker results';
+    return NoticeView(
+      false,
+      counts.isEmpty
+          ? '$head ready'
+          : '$head: ${counts.entries.map((e) => '${e.value} ${e.key.replaceAll('_', ' ')}').join(', ')}',
+    );
+  }
+  if (type == 'remote-pi:mesh-message') {
+    final body = text
+        .replaceFirst(
+          RegExp(r'\n*\((?:This is a reply|If a reply is expected)[\s\S]*$'),
+          '',
+        )
+        .trim();
+    Object? data;
+    try {
+      final start = body.indexOf('{');
+      if (start >= 0) data = jsonDecode(body.substring(start));
+    } catch (_) {
+      // Untyped text.
+    }
+    String field(Object? value) => value is String ? value.toLowerCase() : '';
+    final map = data is Map ? data : null;
+    final fields = map == null
+        ? const <String>[]
+        : [field(map['kind']), field(map['type']), field(map['status'])];
+    // A surfaced kind (blocked, approval, done…) beats a routine one in any field.
+    final signal =
+        fields.where(_noticeKinds.containsKey).firstOrNull ??
+        fields.where(_routineKinds.contains).firstOrNull;
+    // Structured payloads show only a human field, never raw JSON.
+    final human = map == null
+        ? null
+        : [
+            'summary',
+            'note',
+            'message',
+            'text',
+          ].map((k) => map[k]).whereType<String>().firstOrNull;
+    final gist = noticeGist(map != null ? human ?? '' : body);
+    if (signal != null) {
+      final kind = _noticeKinds[signal];
+      return kind != null
+          ? NoticeView(false, _noticeLine(kind, sender, gist))
+          : const NoticeView(true, null);
+    }
+    // Conservative text rules on the human text: anything that might need Zach stays visible.
+    final said = human ?? body;
+    bool has(String pattern) =>
+        RegExp(pattern, caseSensitive: false).hasMatch(said);
+    final kind =
+        has(
+          r"\b(?:needs? (?:your |zach'?s )?approval|approval (?:needed|required)|awaiting (?:your )?approval)\b",
+        )
+        ? 'Approval needed'
+        : has(r'\bblocked\b')
+        ? 'Blocked'
+        : has(r'\b(?:failed|failure)\b')
+        ? 'Failed'
+        : has(r'''\?(?:[\s"'\)\]}]|$)''')
+        ? 'Question'
+        : has(r'^(?:done|finished|completed?|shipped|result)\b')
+        ? 'Done'
+        : null;
+    return kind != null
+        ? NoticeView(false, _noticeLine(kind, sender, gist))
+        : const NoticeView(true, null);
+  }
+  return const NoticeView(false, null);
+}
+
+/// Sender of a mesh address: its last two pane segments ("Main / FB Ads").
+String meshSender(String? address) {
+  final segments = (address ?? '')
+      .split('@')
+      .last
+      .split('›')
+      .where((s) => s.trim().isNotEmpty)
+      .toList();
+  if (segments.isEmpty) return '';
+  return _clean(
+    segments
+        .sublist(segments.length > 2 ? segments.length - 2 : 0)
+        .join(' / ')
+        .replaceAll('_', ' '),
+  );
+}
+
 /// Status line text while a run is active, from the newest row.
 String liveStatusLabel(List<ChatMessage> messages) {
   if (messages.isEmpty) return 'Thinking';
@@ -385,7 +1008,13 @@ String liveStatusLabel(List<ChatMessage> messages) {
         last.status == ToolEventStatus.pending ||
         last.status == ToolEventStatus.allowed;
     if (pending && !isIncomingMessage(last)) {
-      return liveSummary(last.tool, last.args);
+      // The assistant text segment right before this call, as on the Mac.
+      final before = messages.length > 1 ? messages[messages.length - 2] : null;
+      return liveSummary(
+        last.tool,
+        last.args,
+        before is AssistantMsg ? before.text : null,
+      );
     }
   }
   return 'Working';

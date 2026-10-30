@@ -6,6 +6,7 @@
 // `IActionsRepository` so we don't spin up the DI graph or a live channel.
 
 import 'package:app/data/actions/actions_repository.dart';
+import 'package:app/data/preferences/preferences.dart';
 import 'package:app/protocol/protocol.dart';
 import 'package:app/ui/chat/quick_actions/states/quick_actions_state.dart';
 import 'package:app/ui/chat/quick_actions/viewmodels/quick_actions_viewmodel.dart';
@@ -75,6 +76,7 @@ Future<({_FakeRepo repo, List<int> resetCalls})> _openSheet(
   WidgetTester tester, {
   bool failCompact = false,
   bool failNewSession = false,
+  Preferences? preferences,
 }) async {
   final repo = _FakeRepo()
     ..failCompact = failCompact
@@ -99,6 +101,7 @@ Future<({_FakeRepo repo, List<int> resetCalls})> _openSheet(
                 child: QuickActionsSheetBody(
                   messenger: messenger,
                   onSessionReset: () async => resetCalls.add(1),
+                  preferences: preferences,
                 ),
               ),
             );
@@ -113,7 +116,44 @@ Future<({_FakeRepo repo, List<int> resetCalls})> _openSheet(
   return (repo: repo, resetCalls: resetCalls);
 }
 
+class _Prefs extends ChangeNotifier implements Preferences {
+  bool _quiet = true;
+  @override
+  bool get quietMode => _quiet;
+  @override
+  Future<void> setQuietMode(bool value) async {
+    _quiet = value;
+    notifyListeners();
+  }
+
+  @override
+  dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
+}
+
 void main() {
+  testWidgets('Quiet view switch lives here and flips the UI preference', (
+    tester,
+  ) async {
+    final prefs = _Prefs();
+    final s = await _openSheet(tester, preferences: prefs);
+    expect(find.text('Quiet view'), findsOneWidget);
+    expect(find.text('Steps fold into one line.'), findsOneWidget);
+    await tester.tap(find.byKey(const Key('quiet-toggle')));
+    await tester.pumpAndSettle();
+    expect(prefs.quietMode, isFalse);
+    // Stays open so the change is visible; no session action was sent.
+    expect(find.text('Showing full tool details.'), findsOneWidget);
+    expect(s.repo.compactCalls, 0);
+    expect(s.resetCalls, isEmpty);
+  });
+
+  testWidgets('without preferences the sheet has no Quiet row', (
+    tester,
+  ) async {
+    await _openSheet(tester);
+    expect(find.byKey(const Key('quiet-toggle')), findsNothing);
+  });
+
   testWidgets('Compact: tap sends and closes the sheet — no success toast',
       (tester) async {
     final s = await _openSheet(tester);

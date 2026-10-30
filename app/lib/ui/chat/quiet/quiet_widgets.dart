@@ -305,57 +305,6 @@ class QuietAttentionCard extends StatelessWidget {
   }
 }
 
-/// Small top-bar control: "Quiet" ⇄ "Full details".
-class QuietTogglePill extends StatelessWidget {
-  const QuietTogglePill({super.key, required this.quiet, required this.onTap});
-  final bool quiet;
-  final VoidCallback onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    final colors = context.colors;
-    return Semantics(
-      button: true,
-      toggled: quiet,
-      label: quiet
-          ? 'Quiet view, tap for full details'
-          : 'Full details, tap for quiet view',
-      child: InkWell(
-        key: const Key('quiet-toggle'),
-        borderRadius: BorderRadius.circular(999),
-        onTap: onTap,
-        child: Container(
-          constraints: const BoxConstraints(minHeight: 32),
-          padding: const EdgeInsets.symmetric(horizontal: 10),
-          decoration: BoxDecoration(
-            borderRadius: BorderRadius.circular(999),
-            border: Border.all(color: colors.border),
-          ),
-          child: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Icon(
-                quiet ? LucideIcons.eyeOff : LucideIcons.eye,
-                size: 12,
-                color: colors.muted,
-              ),
-              const SizedBox(width: 5),
-              Text(
-                quiet ? 'Quiet' : 'Full details',
-                style: TextStyle(
-                  fontFamily: kMonoFamily,
-                  fontSize: 10,
-                  color: colors.muted,
-                ),
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-}
-
 /// In-app preview of one step: the full command/arguments, the complete
 /// output, and any Mac image paths it named (opened through the paired
 /// pane's authenticated artifact transport). Local UI state only.

@@ -56,13 +56,13 @@ void main() {
 
     test('live status is present tense', () {
       expect(liveSummary('read', {'path': 'file.md'}), 'Reading file.md');
-      expect(liveSummary('bash', {'command': 'npm test'}), 'Running tests');
+      expect(liveSummary('bash', {'command': 'npm test'}), 'Running the tests');
       expect(liveSummary('chrome_screenshot', {}), 'Taking a screenshot');
       expect(
         liveSummary('mcp__x__whatsapp_read', {}),
         'Reading WhatsApp messages',
       );
-      expect(liveSummary('observe_ui', {}), 'Using observe ui');
+      expect(liveSummary('observe_ui', {}), 'Looking at the screen');
     });
   });
 
@@ -271,22 +271,43 @@ void main() {
       expect(incomingLabel('pi-voice-transcript', 'x'), 'Voice handoff');
     });
 
-    test('an agent-network tool event is a notice, not a step', () {
+    test('routine pane traffic folds into the group as a step', () {
+      final ack = _tool(
+        'agent-network',
+        id: 'mesh_0',
+        args: {'from': '/tmp@William›Main›FB_Ads'},
+        result: {
+          'from': '/tmp@William›Main›FB_Ads',
+          'message': 'Got it, on it.',
+        },
+      );
+      final items = foldQuiet([ack, _tool('bash', id: 'b')], working: false);
+      expect(items.whereType<QuietNotice>(), isEmpty);
+      final group = items.whereType<QuietGroup>().single;
+      expect(group.steps.map((s) => s.id), ['mesh_0', 'b']);
+      expect(group.views.first.label, 'Message from Main / FB Ads');
+      expect(resultText(ack.result), 'Got it, on it.');
+    });
+
+    test('an agent-network tool event needing attention is a notice', () {
       final mesh = _tool(
         'agent-network',
         id: 'mesh_1',
         args: {'from': '/tmp@William›Main›FB_Ads', 'message': 'FULL_PRIVATE'},
-        result: {'from': '/tmp@William›Main›FB_Ads', 'message': 'FULL_PRIVATE'},
+        result: {
+          'from': '/tmp@William›Main›FB_Ads',
+          'message': '{"status":"failed","detail":"FULL_PRIVATE"}',
+        },
       );
       final items = foldQuiet([mesh, _tool('bash', id: 'b')], working: false);
       expect(
         items.whereType<QuietNotice>().single.label,
-        'Message from Main / FB Ads',
+        'Failed · Main / FB Ads',
       );
       expect(items.whereType<QuietGroup>().single.steps.map((s) => s.id), [
         'b',
       ]);
-      expect(resultText(mesh.result), 'FULL_PRIVATE');
+      expect(resultText(mesh.result), contains('FULL_PRIVATE'));
     });
   });
 
@@ -389,7 +410,7 @@ void main() {
           ),
         ];
         expect(foldQuiet(live, working: true).whereType<QuietGroup>(), isEmpty);
-        expect(liveStatusLabel(live), 'Running tests');
+        expect(liveStatusLabel(live), 'Running the tests');
         expect(liveStatusLabel([live.first]), 'Thinking');
         expect(
           liveStatusLabel([live.first, _tool('bash', id: 'a', ts: t0)]),

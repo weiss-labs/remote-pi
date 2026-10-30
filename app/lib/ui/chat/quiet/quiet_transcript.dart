@@ -1,7 +1,8 @@
 // Plan/75 — quiet mode fold. A pure view transform over the chat's message
 // list: consecutive tool steps between two non-tool rows become one
 // `QuietGroup` ("Worked for 2m 4s · 6 steps"); human-action steps and
-// incoming pane messages stay out of the count as their own rows. The input
+// incoming pane messages that need attention stay out of the count as their
+// own rows. Routine pane traffic (ack/progress) folds in as a step. The input
 // list and every ChatMessage in it are read, never copied-with or mutated.
 
 import 'package:app/domain/session_state.dart';
@@ -91,9 +92,29 @@ List<QuietItem> foldQuiet(List<ChatMessage> messages, {required bool working}) {
           rest.add(QuietProminent(t, view));
         } else {
           final from = (t.args as Map)['from']?.toString();
-          final label =
-              meshLabel(from) + (view.prominent ? ' · ${view.label}' : '');
-          rest.add(QuietNotice(t, view, label));
+          final base = meshLabel(from);
+          final sorted = noticeView(
+            'remote-pi:mesh-message',
+            resultText(t.result),
+            meshSender(from),
+          );
+          if (!view.prominent && sorted.routine) {
+            // Routine ack/progress: an inspectable step inside the group.
+            steps.add(t);
+            views.add(
+              QuietView(
+                draft: false,
+                prominent: false,
+                failed: false,
+                label: base,
+              ),
+            );
+          } else {
+            final label = view.prominent
+                ? '$base · ${view.label}'
+                : sorted.label ?? base;
+            rest.add(QuietNotice(t, view, label));
+          }
         }
       } else if (view.prominent) {
         rest.add(QuietProminent(t, view));

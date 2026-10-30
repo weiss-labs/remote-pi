@@ -299,11 +299,6 @@ class ChatPage extends StatelessWidget {
                   ],
                 ),
               ),
-              // Plan/75 — one tap between the quiet fold and full tool cards.
-              QuietTogglePill(
-                quiet: prefs.quietMode,
-                onTap: () => prefs.setQuietMode(!prefs.quietMode),
-              ),
               // Plan/32g follow-up: ALWAYS render the info button (gating it on
               // the async PeerRecord caused an AppBar layout shift). The dialog
               // reads the PeerRecord at tap time.

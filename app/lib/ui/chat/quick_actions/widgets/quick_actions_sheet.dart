@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:app/config/dependencies.dart';
+import 'package:app/data/preferences/preferences.dart';
 import 'package:app/data/actions/actions_repository.dart' show ActionFailure;
 import 'package:app/protocol/protocol.dart';
 import 'package:app/routing/adaptive.dart';
@@ -30,6 +31,9 @@ Future<void> showQuickActionsSheet(BuildContext context) {
   // Captured to auto-close the sheet if the tablet's selected session changes
   // out from under it (the sheet lives on the detail-pane navigator).
   final selection = context.read<SessionSelection>();
+  // App-wide UI preference; read here because the sheet's own context sits
+  // above the chat page.
+  final preferences = context.read<Preferences>();
   return showModalBottomSheet<void>(
     context: context,
     backgroundColor: context.colors.bg,
@@ -47,6 +51,7 @@ Future<void> showQuickActionsSheet(BuildContext context) {
           child: QuickActionsSheetBody(
             messenger: messenger,
             onSessionReset: chat.clearActiveSession,
+            preferences: preferences,
           ),
         ),
       );
@@ -65,10 +70,15 @@ class QuickActionsSheetBody extends StatefulWidget {
   /// [ChatViewModel.clearActiveSession].
   final Future<void> Function()? onSessionReset;
 
+  /// Plan/75 — the Quiet view switch lives here, tucked out of the app bar.
+  /// Optional so tests can omit it.
+  final Preferences? preferences;
+
   const QuickActionsSheetBody({
     super.key,
     required this.messenger,
     this.onSessionReset,
+    this.preferences,
   });
 
   @override
@@ -165,6 +175,16 @@ class _QuickActionsSheetBodyState extends State<QuickActionsSheetBody> {
               busy: busyAction == ActionName.thinkingSet,
               onPick: (level) => _onThinking(vm, level),
             ),
+            if (widget.preferences case final prefs?) ...[
+              const _Divider(),
+              ListenableBuilder(
+                listenable: prefs,
+                builder: (context, _) => _QuietRow(
+                  quiet: prefs.quietMode,
+                  onChanged: prefs.setQuietMode,
+                ),
+              ),
+            ],
             const SizedBox(height: 18),
           ],
         ),
@@ -596,6 +616,46 @@ class _SegButton extends StatelessWidget {
                   : colors.text,
             ),
           ),
+        ),
+      ),
+    );
+  }
+}
+
+/// Plan/75 — UI-only: folds tool steps into one line. Off shows full details.
+class _QuietRow extends StatelessWidget {
+  final bool quiet;
+  final ValueChanged<bool> onChanged;
+  const _QuietRow({required this.quiet, required this.onChanged});
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.colors;
+    return SwitchListTile(
+      key: const Key('quiet-toggle'),
+      value: quiet,
+      onChanged: onChanged,
+      activeThumbColor: colors.accent,
+      contentPadding: const EdgeInsets.symmetric(horizontal: 20),
+      secondary: Icon(
+        quiet ? LucideIcons.eyeOff : LucideIcons.eye,
+        color: colors.accent,
+        size: 18,
+      ),
+      title: Text(
+        'Quiet view',
+        style: TextStyle(
+          fontFamily: kMonoFamily,
+          fontSize: 13,
+          color: colors.text,
+        ),
+      ),
+      subtitle: Text(
+        quiet ? 'Steps fold into one line.' : 'Showing full tool details.',
+        style: TextStyle(
+          fontFamily: kMonoFamily,
+          fontSize: 11,
+          color: colors.muted,
         ),
       ),
     );
