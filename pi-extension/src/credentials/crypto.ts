@@ -75,16 +75,17 @@ export function x25519FromSeed(seed: Buffer): X25519Keypair {
   return { publicKey: Buffer.from(createPublicKey(privateKey).export({ type: "spki", format: "der" })).subarray(X25519_SPKI_PREFIX.length), secretKey: Buffer.from(seed) };
 }
 
-/** HKDF-SHA256(ECDH(mine, theirs)) → 32B AES key, bound to both ephemerals and the request id. */
-export function deriveKey(mine: X25519Keypair, theirPublic: Buffer, macEpk: string, phoneEpk: string, requestId: string): Buffer {
+/** HKDF-SHA256(ECDH(mine, theirs)) → 32B AES key, bound to both ephemerals and the request id.
+ *  `salt`/`infoPrefix` separate protocols (credential vs location) so keys never cross over. */
+export function deriveKey(mine: X25519Keypair, theirPublic: Buffer, macEpk: string, phoneEpk: string, requestId: string, salt: Buffer = HKDF_SALT, infoPrefix = HKDF_INFO_PREFIX): Buffer {
   if (theirPublic.length !== 32) throw new Error("bad ephemeral key");
   const shared = diffieHellman({
     privateKey: createPrivateKey({ key: Buffer.concat([X25519_PKCS8_PREFIX, mine.secretKey]), format: "der", type: "pkcs8" }),
     publicKey: createPublicKey({ key: Buffer.concat([X25519_SPKI_PREFIX, theirPublic]), format: "der", type: "spki" }),
   });
   if (shared.every(b => b === 0)) throw new Error("low-order ephemeral key");
-  const info = Buffer.from(HKDF_INFO_PREFIX + JSON.stringify([macEpk, phoneEpk, requestId]), "utf8");
-  return Buffer.from(hkdfSync("sha256", shared, HKDF_SALT, info, 32));
+  const info = Buffer.from(infoPrefix + JSON.stringify([macEpk, phoneEpk, requestId]), "utf8");
+  return Buffer.from(hkdfSync("sha256", shared, salt, info, 32));
 }
 
 export function encrypt(key: Buffer, aad: Buffer, plaintext: Buffer, nonce = randomBytes(NONCE_BYTES)): { nonce: Buffer; ciphertext: Buffer } {

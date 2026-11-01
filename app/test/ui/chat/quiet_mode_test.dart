@@ -5,6 +5,7 @@ import 'dart:io';
 import 'dart:ui' as ui;
 
 import 'package:app/data/credentials/credential_request_controller.dart';
+import 'package:app/data/location/location_request_controller.dart';
 import 'package:app/data/preferences/preferences.dart';
 import 'package:app/data/voice/speech_service.dart';
 import 'package:app/domain/contracts/artifact_preview.dart';
@@ -100,6 +101,8 @@ class _Chat extends ChangeNotifier implements ChatViewModel {
 
   @override
   CredentialRequestController? get credentials => null;
+  @override
+  LocationRequestController? get location => null;
   @override
   ValueListenable<FileTransferProgress?> get upload => ValueNotifier(null);
   @override

@@ -1,4 +1,5 @@
 import 'package:app/domain/entities/notification_preferences.dart';
+import 'package:app/data/location/phone_location.dart';
 import 'package:app/data/preferences/preferences.dart';
 import 'package:app/data/transport/relay_config.dart';
 import 'package:app/pairing/storage.dart';
@@ -54,6 +55,8 @@ class SettingsPage extends StatelessWidget {
           const _DisplaySection(),
           Divider(color: colors.border, height: 1),
           const _NotificationsSection(),
+          Divider(color: colors.border, height: 1),
+          const LocationSection(),
           Divider(color: colors.border, height: 1),
           const _SectionHeader('Pairings'),
           switch (state) {
@@ -354,6 +357,74 @@ class _RelaySectionState extends State<_RelaySection> {
               ),
             ],
           ),
+        ),
+      ],
+    );
+  }
+}
+
+/// Plan 76: "Share location when a pane asks". Off by default; turning it on
+/// asks iOS for While-Using permission and stays off unless it is granted.
+class LocationSection extends StatefulWidget {
+  final PhoneLocation location;
+  const LocationSection({super.key, this.location = const PhoneLocation()});
+  @override
+  State<LocationSection> createState() => _LocationSectionState();
+}
+
+class _LocationSectionState extends State<LocationSection> {
+  bool _busy = false;
+
+  Future<void> _toggle(Preferences prefs, bool on) async {
+    if (!on) return prefs.setShareLocation(false);
+    setState(() => _busy = true);
+    final status = await widget.location.requestPermission();
+    if (!mounted) return;
+    setState(() => _busy = false);
+    if (status == 'authorized') return prefs.setShareLocation(true);
+    ScaffoldMessenger.maybeOf(context)?.showSnackBar(
+      SnackBar(
+        content: const Text(
+          'Location permission is off for Remote Pi. Allow "While Using the '
+          'App" in iOS Settings, then turn this on again.',
+        ),
+        action: SnackBarAction(
+          label: 'Settings',
+          onPressed: widget.location.openSettings,
+        ),
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final prefs = context.watch<Preferences>();
+    final colors = context.colors;
+    final supported = widget.location.supported;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        const _SectionHeader('Location'),
+        SwitchListTile(
+          contentPadding: const EdgeInsets.symmetric(horizontal: 18),
+          activeThumbColor: colors.accent,
+          title: Text(
+            'Share location when a pane asks',
+            style: context.typo.sansBody.copyWith(color: colors.text),
+          ),
+          subtitle: Text(
+            supported
+                ? 'One fresh fix per request (e.g. "find me a minyan"), only '
+                      'while the app is open. Encrypted to your Mac; nothing '
+                      'stored on the phone.'
+                : 'Available on iPhone.',
+            style: context.typo.sansBody.copyWith(
+              color: colors.muted,
+              fontSize: 12,
+            ),
+          ),
+          value: prefs.shareLocation,
+          onChanged: !supported || _busy ? null : (v) => _toggle(prefs, v),
         ),
       ],
     );

@@ -143,6 +143,8 @@ import { NativeCommands } from "./actions/commands.js";
 import { CREDENTIAL_INSTRUCTIONS, isOpAuthorizationTimeout } from "./actions/credential_blocker.js";
 import { CredentialBridge } from "./credentials/bridge.js";
 import { registerCredentialTool } from "./credentials/tool.js";
+import { LocationBridge } from "./location/bridge.js";
+import { registerLocationTool } from "./location/tool.js";
 let _lastCredentialNotice: number | null = null;
 function _announceCredentialNeeded(): void {
   const now = Date.now();
@@ -171,6 +173,14 @@ const _credentials = new CredentialBridge({
   broadcast: (msg) => _broadcastToActive(msg),
   opened: (id) => _notifications.credentialOpened(id),
   resolved: (id) => _notifications.promptResolved(id),
+});
+// Plan 76: one opt-in encrypted phone location fix per explicit nearby ask.
+const _location = new LocationBridge({
+  identity: () => _cachedEd25519,
+  room: () => _myRoomId,
+  connected: () => _activePeers.size > 0,
+  authorize: async (phone, sender) => _activePeers.get(phone) === sender && (await _findKnownPeer(phone)) !== null && _activePeers.get(phone) === sender,
+  broadcast: (msg) => _broadcastToActive(msg),
 });
 function _broadcastWithNotifications(msg: ServerMessage): void {
   if (msg.type === "extension_ui_request" && msg.method !== "notify") {
@@ -2287,6 +2297,7 @@ const extension: ExtensionFactory = (pi: ExtensionAPI): void => {
   registerAgentTools(pi, () => _meshNode?.peer() ?? null);
   _notifications.registerTool(pi);
   registerCredentialTool(pi, _credentials);
+  registerLocationTool(pi, _location);
   _registerReceivedImageRenderer(pi);
 
   // Received-image preview entries are for local TUI display only. Pi's custom
@@ -2565,11 +2576,12 @@ const extension: ExtensionFactory = (pi: ExtensionAPI): void => {
   // "stale after session replacement" crash when the app taps Compact after a
   // New session. Fires on startup/new/fork/reload/resume; the ctx is always
   // bound to the current session.
-  pi.on("session_tree", () => { _artifacts.reset(); void _attachments.reset(); _credentials.start(); });
+  pi.on("session_tree", () => { _artifacts.reset(); void _attachments.reset(); _credentials.start(); _location.start(); });
   pi.on("session_start", (_event, ctx) => {
     _artifacts.reset();
     _attachments.start();
     _credentials.start();
+    _location.start();
     _lastEventCtx = ctx;
     _commands?.resume();
     // session_shutdown disposes per-session pi-ask subscriptions. A host that
@@ -2669,6 +2681,7 @@ const extension: ExtensionFactory = (pi: ExtensionAPI): void => {
     _artifacts.reset();
     _attachments.stop();
     _credentials.stop();
+    _location.stop();
     _commands?.stop();
     _notifications.stop();
     // Revoke async authority synchronously, before any teardown await. `_disposed`
@@ -4629,6 +4642,13 @@ export function _routeClientMessageFrom(
     void _credentials.handle(phone, sender, msg).then(reply => { if (_activePeers.get(phone) === sender) sender.send(reply); }).catch(() => { try { sender.send({ type: "credential_result", in_reply_to: id, id: "", ok: false, error: "internal_error" }); } catch { /* channel gone */ } });
     return;
   }
+  if (msg.type === "location_response") {
+    const phone = [..._activePeers].find(([, channel]) => channel === sender)?.[0];
+    const id = typeof msg.id === "string" ? msg.id.slice(0, 128) : "";
+    if (!phone) { sender.send({ type: "location_result", in_reply_to: id, id: "", ok: false, error: "not_paired" }); return; }
+    void _location.handle(phone, sender, msg).then(reply => { if (_activePeers.get(phone) === sender) sender.send(reply); }).catch(() => { try { sender.send({ type: "location_result", in_reply_to: id, id: "", ok: false, error: "internal_error" }); } catch { /* channel gone */ } });
+    return;
+  }
   if (msg.type === "notify_register" || msg.type === "notify_unregister" || msg.type === "notify_presence") {
     const phone = [..._activePeers].find(([, channel]) => channel === sender)?.[0];
     if (!phone) { sender.send({ type: "notification_registration", in_reply_to: msg.id, ok: false, error: "not_paired" }); return; }
@@ -4952,6 +4972,8 @@ function _handleSessionSync(
   // that returns from 1Password/background or opens the push sees the form.
   const credential = _credentials.pendingWire();
   if (credential) sender.send(credential);
+  const location = _location.pendingWire();
+  if (location) sender.send(location);
 }
 
 /**

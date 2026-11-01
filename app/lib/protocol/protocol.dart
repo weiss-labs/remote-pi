@@ -898,6 +898,13 @@ sealed class ServerMessage {
         ok: json['ok'] == true,
         error: json['error'] as String?,
       ),
+      // Plan 76: opt-in phone location, signed request + result ack.
+      'location_request' => LocationRequest.fromJson(json),
+      'location_result' => LocationResult(
+        id: json['id'] as String? ?? '',
+        ok: json['ok'] == true,
+        error: json['error'] as String?,
+      ),
       // forward-compat: unknown types are not fatal — callers catch and log
       _ => throw UnsupportedTypeException(type ?? ''),
     };
@@ -2102,4 +2109,76 @@ class CredentialQuery extends ClientMessage {
   CredentialQuery({required this.id});
   @override
   Map<String, dynamic> toJson() => {'type': 'credential_query', 'id': id};
+}
+
+// --- Opt-in phone location (plan 76; relay sees ciphertext only) ---
+
+/// A Mac-signed ask for ONE location fix. Answered only after the signature
+/// verifies against the paired Mac key, room and live routing.
+class LocationRequest extends ServerMessage {
+  final String id, macKey, room, session, purpose, macEpk, sig;
+  final int expiresAt;
+  const LocationRequest({
+    required this.id,
+    required this.macKey,
+    required this.room,
+    required this.session,
+    required this.expiresAt,
+    required this.purpose,
+    required this.macEpk,
+    required this.sig,
+  });
+  factory LocationRequest.fromJson(Map<String, dynamic> j) => LocationRequest(
+    id: j['id'] as String,
+    macKey: j['mac_key'] as String,
+    room: j['room'] as String,
+    session: j['session'] as String,
+    expiresAt: (j['expires_at'] as num).toInt(),
+    purpose: j['purpose'] as String,
+    macEpk: j['mac_epk'] as String,
+    sig: j['sig'] as String,
+  );
+
+  /// Signed canonical fields, in wire order (shared with pi-extension).
+  List<Object> get canonicalFields => [
+    macKey,
+    room,
+    session,
+    id,
+    expiresAt,
+    purpose,
+    macEpk,
+  ];
+}
+
+class LocationResult extends ServerMessage {
+  final String id;
+  final bool ok;
+  final String? error;
+  const LocationResult({required this.id, required this.ok, this.error});
+}
+
+/// Ciphertext answer (a fix or an error code). Never holds plaintext.
+class LocationResponse extends ClientMessage {
+  final String id, requestId, phoneKey, phoneEpk, nonce, ciphertext, sig;
+  LocationResponse({
+    required this.id,
+    required this.requestId,
+    required this.phoneKey,
+    required this.phoneEpk,
+    required this.nonce,
+    required this.ciphertext,
+    required this.sig,
+  });
+  @override
+  Map<String, dynamic> toJson() => {
+    'type': 'location_response',
+    'id': id,
+    'request_id': requestId,
+    'phone_key': phoneKey,
+    'phone_epk': phoneEpk,
+    'nonce': nonce,
+    'ciphertext': ciphertext,
+    'sig': sig,
+  };
 }

@@ -33,6 +33,8 @@
 		<true/>
 	</dict>
 	<!-- Required for iOS 14+ to connect to devices on the local network (LAN relay). -->
+	<key>NSLocationWhenInUseUsageDescription</key>
+	<string>When you turn on "Share location when a pane asks", Remote Pi sends one current location, encrypted, to your paired Mac for that request (for example finding a nearby minyan). Only while the app is open; nothing is stored or tracked.</string>
 	<key>NSLocalNetworkUsageDescription</key>
 	<string>Remote Pi connects to a relay on your local network to communicate with your Mac.</string>
 	<!-- App uses only standard TLS transport + Ed25519 signatures (digital

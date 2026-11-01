@@ -14,6 +14,7 @@ import 'package:app/ui/core/themes/app_font_scale.dart';
 class Preferences extends ChangeNotifier {
   final FlutterSecureStorage _store;
   bool _quietMode = true;
+  bool _shareLocation = false;
   String? _selectedPeerEpk;
   String? _relayUrl;
   bool _onboardingCompleted = false;
@@ -24,6 +25,7 @@ class Preferences extends ChangeNotifier {
     : _store = store ?? const FlutterSecureStorage();
 
   static const _kQuietModeKey = 'prefs.quiet_mode';
+  static const _kShareLocationKey = 'prefs.share_location';
   // Pre-quiet-mode key, read once to migrate an explicit opt-out.
   static const _kHideToolCallsKey = 'prefs.hide_tool_calls';
   static const _kSelectedPeerEpkKey = 'prefs.selected_peer_epk';
@@ -40,6 +42,10 @@ class Preferences extends ChangeNotifier {
   /// live status line; off shows every tool card. App-wide, phone-local,
   /// never synced to the Mac. On by default.
   bool get quietMode => _quietMode;
+
+  /// Plan 76: answer a pane's signed location request with one fresh fix.
+  /// Off by default and only ever turned on by the user in Settings.
+  bool get shareLocation => _shareLocation;
 
   /// Epoch of the peer the user last picked from Home — the one
   /// `/chat` will connect to when it mounts. Null = no peer selected yet
@@ -157,6 +163,12 @@ class Preferences extends ChangeNotifier {
       changed = true;
     }
 
+    final share = await _store.read(key: _kShareLocationKey) == 'true';
+    if (share != _shareLocation) {
+      _shareLocation = share;
+      changed = true;
+    }
+
     final selected = await _store.read(key: _kSelectedPeerEpkKey);
     final cleaned = (selected != null && selected.isNotEmpty) ? selected : null;
     if (cleaned != _selectedPeerEpk) {
@@ -235,6 +247,13 @@ class Preferences extends ChangeNotifier {
     _quietMode = value;
     notifyListeners();
     await _store.write(key: _kQuietModeKey, value: value.toString());
+  }
+
+  Future<void> setShareLocation(bool value) async {
+    if (_shareLocation == value) return;
+    _shareLocation = value;
+    notifyListeners();
+    await _store.write(key: _kShareLocationKey, value: value.toString());
   }
 
   Future<void> setSelectedPeerEpk(String? value) async {

@@ -69,6 +69,10 @@ class SyncService extends Service {
   final StreamController<ServerMessage> _credentialController =
       StreamController<ServerMessage>.broadcast();
 
+  // Plan 76: signed phone-location requests. Transient; never persisted.
+  final StreamController<LocationRequest> _locationController =
+      StreamController<LocationRequest>.broadcast();
+
   List<QueuedMsg> _queuedMessages = const [];
   final StreamController<List<QueuedMsg>> _queuedController =
       StreamController<List<QueuedMsg>>.broadcast();
@@ -129,6 +133,9 @@ class SyncService extends Service {
   /// Private credential handoff frames ([CredentialRequest],
   /// [CredentialClosed], [CredentialResult]) for the live session.
   Stream<ServerMessage> get credentialStream => _credentialController.stream;
+
+  /// Signed [LocationRequest]s for the live session.
+  Stream<LocationRequest> get locationStream => _locationController.stream;
 
   final StreamController<void> _resumedController =
       StreamController<void>.broadcast();
@@ -690,6 +697,11 @@ class SyncService extends Service {
       case CredentialResult():
         _credentialController.add(msg);
         break;
+      case LocationRequest():
+        _locationController.add(msg);
+        break;
+      case LocationResult():
+        break;
       case ArtifactReply():
       case FileReply():
       case CommandsList():
@@ -1226,6 +1238,7 @@ class SyncService extends Service {
     _eventController.close();
     _extensionUiController.close();
     _credentialController.close();
+    _locationController.close();
     _resumedController.close();
     _workingController.close();
     _queuedController.close();

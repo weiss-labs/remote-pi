@@ -3,12 +3,14 @@ import UIKit
 import UserNotifications
 import QuickLook
 import WebKit
+import CoreLocation
 
 @main
 @objc class AppDelegate: FlutterAppDelegate, FlutterImplicitEngineDelegate {
   private var artifacts: ArtifactViewer?
   private var pasteboard: PasteboardBridge?
   private var shareInbox: ShareInboxBridge?
+  private var location: LocationBridge?
   private var notifications: FlutterMethodChannel?
   private var pushToken: String?
   private var pendingTaps: [[String: Any]] = []
@@ -29,6 +31,7 @@ import WebKit
     artifacts = ArtifactViewer(messenger: engineBridge.applicationRegistrar.messenger())
     pasteboard = PasteboardBridge(messenger: engineBridge.applicationRegistrar.messenger())
     shareInbox = ShareInboxBridge(messenger: engineBridge.applicationRegistrar.messenger())
+    location = LocationBridge(messenger: engineBridge.applicationRegistrar.messenger())
     let channel = FlutterMethodChannel(
       name: "ai.weisslabs.remotepi/notifications",
       binaryMessenger: engineBridge.applicationRegistrar.messenger())
@@ -117,6 +120,90 @@ import WebKit
       isActive: UIApplication.shared.applicationState == .active,
       visiblePeer: visiblePeer, visibleRoom: visibleRoom, target: target)
     completionHandler(activeRoom ? [] : [.banner, .sound, .list])
+  }
+}
+
+/// Plan 76: one-shot While-Using location for a pane's signed request. Never
+/// asks for Always, never starts continuous or background updates, stores and
+/// logs nothing. Permission is requested only from the Settings toggle.
+private final class LocationBridge: NSObject, CLLocationManagerDelegate {
+  private let channel: FlutterMethodChannel
+  private let manager = CLLocationManager()
+  private var permissionResults: [FlutterResult] = []
+  private var fixResult: FlutterResult?
+  private var timeout: Timer?
+
+  init(messenger: FlutterBinaryMessenger) {
+    channel = FlutterMethodChannel(name: "ai.weisslabs.remotepi/location", binaryMessenger: messenger)
+    super.init()
+    manager.delegate = self
+    manager.desiredAccuracy = kCLLocationAccuracyNearestTenMeters
+    channel.setMethodCallHandler { [weak self] call, result in
+      guard let self = self else { return }
+      switch call.method {
+      case "status": result(self.status())
+      case "requestPermission":
+        if self.manager.authorizationStatus == .notDetermined {
+          self.permissionResults.append(result)
+          self.manager.requestWhenInUseAuthorization()
+        } else { result(self.status()) }
+      case "current": self.current(result)
+      case "openSettings":
+        if let url = URL(string: UIApplication.openSettingsURLString) { UIApplication.shared.open(url) }
+        result(nil)
+      default: result(FlutterMethodNotImplemented)
+      }
+    }
+  }
+
+  private func status() -> String {
+    switch manager.authorizationStatus {
+    case .authorizedWhenInUse, .authorizedAlways: return "authorized"
+    case .denied: return "denied"
+    case .restricted: return "restricted"
+    default: return "notDetermined"
+    }
+  }
+
+  private func current(_ result: @escaping FlutterResult) {
+    guard fixResult == nil else { result(["error": "unavailable"]); return }
+    guard status() == "authorized" else { result(["error": "denied"]); return }
+    guard UIApplication.shared.applicationState == .active else { result(["error": "background"]); return }
+    fixResult = result
+    timeout = Timer.scheduledTimer(withTimeInterval: 10, repeats: false) { [weak self] _ in
+      self?.finish(["error": "unavailable"])
+    }
+    manager.requestLocation()
+  }
+
+  private func finish(_ payload: [String: Any]) {
+    timeout?.invalidate()
+    timeout = nil
+    let result = fixResult
+    fixResult = nil
+    result?(payload)
+  }
+
+  func locationManagerDidChangeAuthorization(_ manager: CLLocationManager) {
+    guard manager.authorizationStatus != .notDetermined, !permissionResults.isEmpty else { return }
+    let waiting = permissionResults
+    permissionResults.removeAll()
+    let value = status()
+    for r in waiting { r(value) }
+  }
+
+  func locationManager(_ manager: CLLocationManager, didUpdateLocations locations: [CLLocation]) {
+    guard let loc = locations.last, loc.horizontalAccuracy >= 0 else { finish(["error": "unavailable"]); return }
+    // Backgrounded or permission revoked while the fix was pending: no coordinates.
+    guard status() == "authorized" else { finish(["error": "denied"]); return }
+    guard UIApplication.shared.applicationState == .active else { finish(["error": "background"]); return }
+    finish(["lat": loc.coordinate.latitude, "lng": loc.coordinate.longitude,
+            "accuracy_m": loc.horizontalAccuracy,
+            "captured_at": Int64(loc.timestamp.timeIntervalSince1970 * 1000)])
+  }
+
+  func locationManager(_ manager: CLLocationManager, didFailWithError error: Error) {
+    finish(["error": (error as? CLError)?.code == .denied ? "denied" : "unavailable"])
   }
 }
 

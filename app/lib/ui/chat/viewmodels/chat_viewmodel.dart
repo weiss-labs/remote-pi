@@ -4,8 +4,11 @@ import 'package:app/domain/contracts/artifact_preview.dart';
 import 'package:app/domain/contracts/file_transfer.dart';
 import 'package:app/protocol/uuid7.dart';
 import 'package:flutter/foundation.dart' show ValueListenable, ValueNotifier;
+import 'package:flutter/widgets.dart' show AppLifecycleState, WidgetsBinding;
 
 import 'package:app/data/credentials/credential_request_controller.dart';
+import 'package:app/data/location/location_request_controller.dart';
+import 'package:app/data/location/phone_location.dart';
 import 'package:app/data/local/records/message_record.dart';
 import 'package:app/data/local/records/runtime_record.dart';
 import 'package:app/data/preferences/preferences.dart';
@@ -112,6 +115,10 @@ class ChatViewModel extends ViewModel<ChatState> {
   /// Null when no Owner key is available (tests without identity).
   late final CredentialRequestController? credentials;
 
+  /// Plan 76: answers this chat's signed location requests (one fix each,
+  /// only while the user's "Share location" setting is on).
+  late final LocationRequestController? location;
+
   ChatViewModel(
     this._read,
     this._sync,
@@ -121,7 +128,25 @@ class ChatViewModel extends ViewModel<ChatState> {
     this.artifacts,
     this.files,
     Future<SimpleKeyPair> Function()? ownerKey,
+    PhoneLocation phoneLocation = const PhoneLocation(),
   }) : super(const ChatReady(messages: [])) {
+    location = ownerKey == null
+        ? null
+        : LocationRequestController(
+            frames: _sync.locationStream,
+            channel: () => _conn.channel,
+            ownerKey: ownerKey,
+            expectedMacKey: () => _activePeer?.remoteEpk ?? '',
+            expectedRoom: () => _activeRoomId,
+            routedPeer: () => _conn.activePeer?.remoteEpk ?? '',
+            routedRoom: () => _conn.activeRoomId,
+            enabled: () => _prefs.shareLocation,
+            foreground: () =>
+                WidgetsBinding.instance.lifecycleState ==
+                AppLifecycleState.resumed,
+            permission: phoneLocation.status,
+            fix: phoneLocation.current,
+          );
     credentials = ownerKey == null
         ? null
         : CredentialRequestController(
@@ -458,6 +483,7 @@ class ChatViewModel extends ViewModel<ChatState> {
     _eventSub?.cancel();
     _uiReqSub?.cancel();
     credentials?.dispose();
+    location?.dispose();
     _roomsSub?.cancel();
     _statusSub?.cancel();
     unawaited(files?.cancel());

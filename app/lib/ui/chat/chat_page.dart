@@ -123,15 +123,26 @@ class ChatPage extends StatelessWidget {
     // Private credential handoff: a verified pending request overlays the
     // chat with the compact masked form. Same reactive pattern as ask_user.
     final credentials = vm.credentials;
-    if (credentials == null) return base;
+    final withLocation = vm.location == null
+        ? base
+        : _LocationSharedNotice(
+            shared: vm.location!.shared,
+            paneName: () => _roomDisplayName(
+              vm.activeRoom,
+              vm.state,
+              initialTitle,
+            ).split('›').last.replaceAll('_', ' ').trim(),
+            child: base,
+          );
+    if (credentials == null) return withLocation;
     return ListenableBuilder(
       listenable: credentials,
       builder: (context, _) {
         final pending = credentials.pending;
-        if (pending == null) return base;
+        if (pending == null) return withLocation;
         return Stack(
           children: [
-            base,
+            withLocation,
             Positioned.fill(
               child: CredentialRequestSheet(
                 key: ValueKey('credential-${pending.id}'),
@@ -754,6 +765,60 @@ class ChatPage extends StatelessWidget {
 }
 
 // ---------------------------------------------------------------------------
+
+/// Plan 76: a shared location is never silent. Shows a short snackbar each
+/// time this chat actually sent a fix to its pane.
+class _LocationSharedNotice extends StatefulWidget {
+  final Stream<void> shared;
+  final String Function() paneName;
+  final Widget child;
+  const _LocationSharedNotice({
+    required this.shared,
+    required this.paneName,
+    required this.child,
+  });
+  @override
+  State<_LocationSharedNotice> createState() => _LocationSharedNoticeState();
+}
+
+class _LocationSharedNoticeState extends State<_LocationSharedNotice> {
+  StreamSubscription<void>? _sub;
+  @override
+  void initState() {
+    super.initState();
+    _listen();
+  }
+
+  void _listen() {
+    _sub = widget.shared.listen((_) {
+      if (!mounted) return;
+      ScaffoldMessenger.maybeOf(context)?.showSnackBar(
+        SnackBar(
+          content: Text('Shared location with ${widget.paneName()}'),
+          duration: const Duration(seconds: 3),
+        ),
+      );
+    });
+  }
+
+  @override
+  void didUpdateWidget(_LocationSharedNotice old) {
+    super.didUpdateWidget(old);
+    if (old.shared != widget.shared) {
+      _sub?.cancel();
+      _listen();
+    }
+  }
+
+  @override
+  void dispose() {
+    _sub?.cancel();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) => widget.child;
+}
 
 class _MessageList extends StatelessWidget {
   final List<ChatMessage> messages;

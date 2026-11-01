@@ -1,0 +1,29 @@
+{
+  "mac_seed": "AQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQE=",
+  "phone_seed": "AgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgI=",
+  "mac_x25519_seed": "AwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwM=",
+  "phone_x25519_seed": "BAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQ=",
+  "request": {
+    "mac_key": "iojj3XQJ8ZX9UtstPLpdcspnCb8dlBIb83SIAbQPb1w=",
+    "room": "room-abc",
+    "session": "11111111-2222-4333-8444-555555555555",
+    "id": "01999999-aaaa-7bbb-8ccc-dddddddddddd",
+    "expires_at": 1790000000000,
+    "purpose": "find a nearby minyan",
+    "mac_epk": "Xf7dO2vUf2+ijuFdlp1bsOpTd01Ii9r53xxuASSz7yI="
+  },
+  "request_sig": "74v32uyT/BmAUmF05QbVMD06fNQ25e1BnFXvLKnBF1RkF76oU8IV3iUSnYJfhnTqwqA+soPOfiGwR9JIbYGoCA==",
+  "canonical_request": "remote-pi-location-request-v1\n[\"iojj3XQJ8ZX9UtstPLpdcspnCb8dlBIb83SIAbQPb1w=\",\"room-abc\",\"11111111-2222-4333-8444-555555555555\",\"01999999-aaaa-7bbb-8ccc-dddddddddddd\",1790000000000,\"find a nearby minyan\",\"Xf7dO2vUf2+ijuFdlp1bsOpTd01Ii9r53xxuASSz7yI=\"]",
+  "request_hash": "dUR10E/ZpFYRBNCkStySLPRCH0UyDSmAhBTjKW6keAY=",
+  "key": "ZBCjBylD8SGbzzp8hDz7gFWmk3UdLb1pwZ+Afrfv3yg=",
+  "plaintext": "eyJsYXQiOjQwLjYyMDUsImxuZyI6LTczLjk4MTEsImFjY3VyYWN5X20iOjEyLCJjYXB0dXJlZF9hdCI6MTc4OTk5OTk5MDAwMH0=",
+  "response": {
+    "id": "01999999-aaaa-7bbb-8ccc-dddddddddddd",
+    "phone_key": "gTl3Dqh9F19Wo1Rmw0x+zMuNipG07jeiXfYPW4/Js5Q=",
+    "phone_epk": "rAGyIJ6GNU+4UyN7XeD0+rE8f8v0M6YcAZNpYX/s8Qs=",
+    "nonce": "AAECAwQFBgcICQoL",
+    "ciphertext": "/EkxfSiBaYmCCHb7pLT3kS8hw2gXkB+B7w/1nhbdsK0tpSjBnVwpmkyOe1/taJrCrpF4WjuWhhocQlePu0iUXHEDbVyitMr7H4aizDC6TjFd9SGHi18D1U3x"
+  },
+  "canonical_response": "remote-pi-location-response-v1\n[\"dUR10E/ZpFYRBNCkStySLPRCH0UyDSmAhBTjKW6keAY=\",\"01999999-aaaa-7bbb-8ccc-dddddddddddd\",\"gTl3Dqh9F19Wo1Rmw0x+zMuNipG07jeiXfYPW4/Js5Q=\",\"Xf7dO2vUf2+ijuFdlp1bsOpTd01Ii9r53xxuASSz7yI=\",\"rAGyIJ6GNU+4UyN7XeD0+rE8f8v0M6YcAZNpYX/s8Qs=\",\"AAECAwQFBgcICQoL\",\"/EkxfSiBaYmCCHb7pLT3kS8hw2gXkB+B7w/1nhbdsK0tpSjBnVwpmkyOe1/taJrCrpF4WjuWhhocQlePu0iUXHEDbVyitMr7H4aizDC6TjFd9SGHi18D1U3x\"]",
+  "response_sig": "Mv7R83TMbpvra8Bg2eeiVnPWAuLL9ab13n8kEcvD4zRj8022EB4MPKfGIWSmtQ1rP4zoijNhBOeSyYHobU7OAA=="
+}

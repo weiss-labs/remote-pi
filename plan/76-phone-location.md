@@ -1,6 +1,6 @@
 # Plan 76: phone location for nearby requests (fleet #155)
 
-Status: planned, not built. Build and release each need Zach's go.
+Status: built on branch `phone-location` (not merged, not released). Release needs Zach's go.
 
 ## Goal
 "Find me a minyan" (and similar nearby asks) uses where Zach actually is,
@@ -22,8 +22,9 @@ without asking him each time. Not tracking: one fresh fix per explicit request.
    request as AAD, phone-signed. Bound to request id, room, session and phone
    key; late, replayed or foreign replies are refused. The relay sees only
    ciphertext.
-3. **Tool result** to the model: coordinates, accuracy, capture time and age,
-   e.g. "Phone location 40.6205,-73.9811 ±12 m, 8 s old". On any error it
+3. **Tool result** to the model: accuracy, capture time and age plus the path of
+   a private 0600 file holding the coordinates; the model never sees them (it
+   could echo them into the relay-readable chat). On any error it
    says so and names the fallback honestly: "Using home (5811 20th Ave), not
    live location."
 4. **Phone setting** "Share location when a pane asks", default OFF. Turning it
@@ -33,8 +34,8 @@ without asking him each time. Not tracking: one fresh fix per explicit request.
 5. **Native CoreLocation** through the existing method-channel pattern in
    AppDelegate (`requestLocation`, one fix); no new Flutter dependency.
    Info.plist gets `NSLocationWhenInUseUsageDescription`.
-6. **mincha skill**: `mincha.py --at LAT,LNG` searches GoDaven around that
-   point (default stays home); SKILL.md tells the pane to call
+6. **mincha skill**: `mincha.py --at-file PATH` searches GoDaven around that
+   point without printing it (default stays home); SKILL.md tells the pane to call
    `request_location` for nearby asks and to label a home fallback.
 
 ## Not doing
@@ -48,5 +49,6 @@ maps or directions to anyone.
 - Works when Remote Pi is open on the phone (the usual case when Zach asks
   from it). Asked from the Mac keyboard with the phone asleep → "unavailable",
   home fallback, labeled.
-- The coordinates the tool returns are saved in that pane's session log like
-  any tool result.
+- Coordinates live only in the encrypted reply, the 15-minute private file and
+  GoDaven's search request. Shul addresses in the results reveal the
+  neighborhood to the relay-readable chat.

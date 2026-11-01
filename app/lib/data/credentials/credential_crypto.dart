@@ -68,13 +68,16 @@ Future<bool> verifyCredentialRequest(
 }
 
 /// HKDF-SHA256(X25519(phone ephemeral, mac ephemeral)) bound to both
-/// ephemeral keys and the request id.
+/// ephemeral keys and the request id. [salt]/[infoPrefix] separate protocols
+/// (credential vs location) so their keys never cross over.
 Future<SecretKey> deriveCredentialKey({
   required SimpleKeyPair phoneEphemeral,
   required List<int> macEpk,
   required String macEpkB64,
   required String phoneEpkB64,
   required String requestId,
+  List<int>? salt,
+  String infoPrefix = hkdfInfoPrefix,
 }) async {
   if (macEpk.length != 32) throw const FormatException('bad ephemeral key');
   final shared = await X25519().sharedSecretKey(
@@ -87,9 +90,9 @@ Future<SecretKey> deriveCredentialKey({
   }
   return Hkdf(hmac: Hmac.sha256(), outputLength: 32).deriveKey(
     secretKey: shared,
-    nonce: hkdfSalt,
+    nonce: salt ?? hkdfSalt,
     info: utf8.encode(
-      hkdfInfoPrefix + jsonEncode([macEpkB64, phoneEpkB64, requestId]),
+      infoPrefix + jsonEncode([macEpkB64, phoneEpkB64, requestId]),
     ),
   );
 }

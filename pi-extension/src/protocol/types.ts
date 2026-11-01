@@ -177,6 +177,7 @@ export type ClientMessage =
   | import("../artifacts.js").ArtifactClientMessage
   | import("../attachments.js").FileClientMessage
   | import("../credentials/bridge.js").CredentialClientMessage
+  | import("../location/bridge.js").LocationClientMessage
   | import("../actions/commands.js").CommandClientMessage
   | import("../notifications.js").NotificationClientMessage
   | { type: "pair_request"; id: string; token: string; device_name: string }
@@ -271,6 +272,7 @@ export type SessionHistoryEvent =
 export type ServerMessage =
   | import("../actions/commands.js").CommandServerMessage
   | import("../credentials/bridge.js").CredentialServerMessage
+  | import("../location/bridge.js").LocationServerMessage
   | import("../notifications.js").NotificationReply
   | import("../artifacts.js").ArtifactServerMessage
   | import("../attachments.js").FileServerMessage
