@@ -1,0 +1,73 @@
+[
+ {
+  "case": "read of an instructions file that only names the panel format",
+  "tool": "read",
+  "args": {
+   "path": "/Users/test/.claude/CLAUDE.md"
+  },
+  "text": "## Draft preview format\nEvery outbound draft is shown as a panel from panel.py\n(EMAIL DRAFT / WHATSAPP DRAFT / IMESSAGE DRAFT). Keep lines within ~64 chars.",
+  "isError": false,
+  "draft": false
+ },
+ {
+  "case": "codemode printing an instructions file (nested read)",
+  "tool": "codemode",
+  "args": {
+   "code": "text(await tools.read({path:'/Users/test/.claude/CLAUDE.md'}))"
+  },
+  "text": "==> text 1/2 <==\n## Draft preview format\nEvery outbound draft is shown as a panel from panel.py\n(EMAIL DRAFT / WHATSAPP DRAFT / IMESSAGE DRAFT). Keep lines within ~64 chars.",
+  "isError": false,
+  "draft": false
+ },
+ {
+  "case": "write saving an already-shown preview panel",
+  "tool": "write",
+  "args": {
+   "path": "/tmp/test/verification-preview.txt",
+   "content": "```text\n┌──────────────────────────────┐\n│ WHATSAPP DRAFT               │\n├──────────┬───────────────────┤\n│ To       │ Synthetic Contact │\n│ Preview  │ p-test            │\n└──────────┴───────────────────┘\nSynthetic body text.\n```\n"
+  },
+  "text": "Successfully wrote 512 bytes to /tmp/test/verification-preview.txt",
+  "isError": false,
+  "draft": false
+ },
+ {
+  "case": "read of a saved preview file",
+  "tool": "read",
+  "args": {
+   "path": "/tmp/test/verification-preview.txt"
+  },
+  "text": "┌──────────────────────────────┐\n│ WHATSAPP DRAFT               │\n├──────────┬───────────────────┤\n│ To       │ Synthetic Contact │\n│ Preview  │ p-test            │\n└──────────┴───────────────────┘\nSynthetic body text.",
+  "isError": false,
+  "draft": false
+ },
+ {
+  "case": "preview helper output is the review surface",
+  "tool": "bash",
+  "args": {
+   "command": "python3 helper.py preview 'JID' 'Synthetic body text.'"
+  },
+  "text": "┌──────────────────────────────┐\n│ WHATSAPP DRAFT               │\n├──────────┬───────────────────┤\n│ To       │ Synthetic Contact │\n│ Preview  │ p-test            │\n└──────────┴───────────────────┘\nSynthetic body text.",
+  "isError": false,
+  "draft": true
+ },
+ {
+  "case": "email panel from panel.py stays in full",
+  "tool": "bash",
+  "args": {
+   "command": "python3 panel.py --account test --draft d-test"
+  },
+  "text": "┌──────────────────────────────┐\n│ EMAIL DRAFT                  │\n├──────────┬───────────────────┤\n│ To       │ Synthetic Contact │\n│ Preview  │ p-test            │\n└──────────┴───────────────────┘\nSynthetic body text.",
+  "isError": false,
+  "draft": true
+ },
+ {
+  "case": "plain heading line still counts (unboxed relay of a draft)",
+  "tool": "bash",
+  "args": {
+   "command": "cat note"
+  },
+  "text": "EMAIL DRAFT\nExact body",
+  "isError": false,
+  "draft": true
+ }
+]

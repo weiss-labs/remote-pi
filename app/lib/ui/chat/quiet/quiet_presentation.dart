@@ -675,8 +675,10 @@ String liveSummary(String name, dynamic args, [Object? intent]) {
       : _unknown;
 }
 
+// Heading at line start after borders/marks/emoji; a prose mention such as
+// "(EMAIL DRAFT / …)" or `EMAIL DRAFT` in an instructions file is not a panel.
 final _draftPanel = RegExp(
-  r'^[^\p{L}\p{N}\n]*(?:(?:EMAIL|WHATSAPP|IMESSAGE|SMS) DRAFT|(?:[A-Z][A-Z0-9 ]{0,60} )?APPROVAL)\b',
+  r'''^[^\p{L}\p{N}\n(\[{"'`]*(?:(?:EMAIL|WHATSAPP|IMESSAGE|SMS) DRAFT|(?:[A-Z][A-Z0-9 ]{0,60} )?APPROVAL)\b''',
   multiLine: true,
   unicode: true,
 );
@@ -725,10 +727,13 @@ QuietView presentation(ToolEvent tool) {
   final name = tool.tool;
   final isError = tool.status == ToolEventStatus.failed || tool.error != null;
   final text = [resultText(tool.result), sanitize(tool.error ?? '')].join('\n');
+  // File tools only save or read text; the preview step that printed a panel
+  // is its review surface.
   final draft =
-      hasDraftPanel(tool.args) ||
-      hasDraftPanel(tool.result) ||
-      hasDraftPanel(tool.error);
+      !const {'read', 'write', 'edit'}.contains(name) &&
+      (hasDraftPanel(tool.args) ||
+          hasDraftPanel(tool.result) ||
+          hasDraftPanel(tool.error));
 
   String? action;
   Blocker? blocker;

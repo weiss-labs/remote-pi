@@ -39,6 +39,27 @@ void main() {
     expect(fixtures.length, greaterThan(100));
   });
 
+  test('every shared draft fixture matches the Mac', () {
+    final cases =
+        jsonDecode(
+              File('test/ui/chat/fixtures/draft-views.json').readAsStringSync(),
+            )
+            as List;
+    for (final f in cases.cast<Map<String, dynamic>>()) {
+      final view = presentation(
+        ToolEvent(
+          id: 'x',
+          toolCallId: 'x',
+          tool: f['tool'] as String,
+          args: f['args'],
+          result: f['text'],
+          status: ToolEventStatus.completed,
+        ),
+      );
+      expect(view.draft, f['draft'], reason: f['case'] as String);
+    }
+  });
+
   test('every shared blocker fixture matches the Mac', () {
     final blockers =
         jsonDecode(
