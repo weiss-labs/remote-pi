@@ -14,18 +14,121 @@ import 'package:app/domain/session_state.dart';
 /// `prominent`  → a human action (approval / sign-in / blocked): one visible
 ///                line, not folded into the step count.
 /// `failed`     → shown with a cross and plain-English wording.
+/// `blocker`    → this step is a refusal of its own call; it stays prominent
+///                only while it is the latest step of its run, then folds
+///                with the ordinary `folded` wording.
 class QuietView {
   final bool draft;
   final bool prominent;
   final bool failed;
   final String label;
+  final Blocker? blocker;
+  final String? folded;
   const QuietView({
     required this.draft,
     required this.prominent,
     required this.failed,
     required this.label,
+    this.blocker,
+    this.folded,
   });
 }
+
+/// A refusal of one tool call, summarized for the preview.
+class Blocker {
+  final String kind; // chrome | signin | approval | blocked
+  final String tried;
+  final String why;
+  final String? need;
+  const Blocker(this.kind, this.tried, this.why, this.need);
+
+  Map<String, dynamic> toJson() => {
+    'kind': kind,
+    'tried': tried,
+    'why': why,
+    'need': need,
+  };
+}
+
+final _need = RegExp(
+  r'ship it|/chrome \w+|\bask (?:zach|the user)\b|\bshow zach\b|\bzach (?:can )?approves?\b|\bfresh approval\b|\bsign in\b|\blog in\b|\bunlock\b',
+  caseSensitive: false,
+);
+
+/// A yellow row is only a refusal of THIS call: an error result that is a
+/// guard/hook reason (never process output: no exit code, no script dump), or
+/// a structured {blocked:true, reason}. Output that merely mentions the words
+/// (guard source, test logs) never qualifies. Mirrors desktop `blockerView`;
+/// shared fixtures in test/ui/chat/fixtures/blocker-views.json.
+Blocker? blockerView(String name, dynamic args, String text, bool isError) {
+  String? refusal;
+  try {
+    final data = jsonDecode(text);
+    if (data is Map && data['blocked'] == true && data['reason'] is String) {
+      refusal = data['reason'] as String;
+    }
+  } catch (_) {
+    // Not structured.
+  }
+  if (refusal == null &&
+      isError &&
+      text.length <= 4000 &&
+      !RegExp(
+        r'Command (?:exited with code \d|aborted)|^\s*Script failed',
+        caseSensitive: false,
+      ).hasMatch(text)) {
+    refusal = text;
+  }
+  if (refusal == null) return null;
+  final s = sanitize(refusal);
+  // A guard names its refusal up front; words deeper in the text are payload.
+  final first = s.split('\n').map(_clean).where((l) => l.isNotEmpty);
+  final head = first.isEmpty
+      ? ''
+      : first.first.substring(0, first.first.length.clamp(0, 600));
+  bool has(String pattern) =>
+      RegExp(pattern, caseSensitive: false).hasMatch(head);
+  final kind = has(r'/chrome authorize|chrome control is locked')
+      ? 'chrome'
+      : has(r'\b(?:sign.in|log.in|credentials?) required\b')
+      ? 'signin'
+      : has(
+          r'\bapprov|\bship it\b|\bask zach\b|\b(?:permission|confirmation) required\b',
+        )
+      ? 'approval'
+      : has(r'\b(?:blocked|blocking|held|not allowed|guard|gate)\b')
+      ? 'blocked'
+      : null;
+  if (kind == null) return null;
+  final sentences = s
+      .split('\n')
+      .map(_clean)
+      .where((l) => l.isNotEmpty)
+      .expand((l) => l.split(RegExp(r'(?<=[.!?])\s+')))
+      .toList();
+  String trim(String x) =>
+      x.length <= 200 ? x : '${x.substring(0, 199).trimRight()}…';
+  final need = sentences.where(_need.hasMatch).firstOrNull;
+  return Blocker(
+    kind,
+    liveSummary(name, args),
+    trim(sentences.firstOrNull ?? ''),
+    need == null ? null : trim(need),
+  );
+}
+
+const _blockerLabels = {
+  'chrome': 'Chrome is locked on the Mac. Open this step\'s preview.',
+  'signin': 'Sign-in needed. Open this step\'s preview.',
+  'approval': 'Approval needed. Open this step\'s preview.',
+  'blocked': 'Action blocked. Open this step\'s preview.',
+};
+const _blockerReasons = {
+  'chrome': 'Chrome locked',
+  'signin': 'sign-in needed',
+  'approval': 'approval needed',
+  'blocked': 'blocked',
+};
 
 String _clean(Object? value) => (value ?? '')
     .toString()
@@ -628,28 +731,36 @@ QuietView presentation(ToolEvent tool) {
       hasDraftPanel(tool.error);
 
   String? action;
-  if (name != 'read' || isError) {
+  Blocker? blocker;
+  if (isIncomingMessage(tool)) {
+    // Incoming pane messages keep their own wording rules; they are not
+    // tool refusals.
     if (RegExp(
       r'/chrome authorize|chrome control is locked',
       caseSensitive: false,
     ).hasMatch(text)) {
-      action = 'Chrome is locked on the Mac. Open this step\'s preview.';
+      action = _blockerLabels['chrome'];
     } else if (RegExp(
       r'\b(?:approval required|needs? (?:your )?approval|permission required|confirmation required|confirm before)\b',
       caseSensitive: false,
     ).hasMatch(text)) {
-      action = 'Approval needed. Open this step\'s preview.';
+      action = _blockerLabels['approval'];
     } else if (RegExp(
       r'\b(?:sign.in required|log.in required|credentials? required)\b',
       caseSensitive: false,
     ).hasMatch(text)) {
-      action = 'Sign-in needed. Open this step\'s preview.';
+      action = _blockerLabels['signin'];
     } else if (RegExp(
       r'blocked by (?:the )?(?:send|release|approval).*guard|(?:send|release) guard.*(?:blocked|held)',
       caseSensitive: false,
     ).hasMatch(text)) {
-      action = 'Action blocked. Open this step\'s preview.';
+      action = _blockerLabels['blocked'];
     }
+  } else {
+    // The Mac sends an error result's text as `error`, a success as `result`.
+    final raw = tool.error ?? resultText(tool.result);
+    blocker = blockerView(name, tool.args, raw, isError);
+    if (blocker != null) action = _blockerLabels[blocker.kind];
   }
 
   var structuredFailure = false;
@@ -680,7 +791,7 @@ QuietView presentation(ToolEvent tool) {
       label: 'Needs your approval, shown in full',
     );
   }
-  if (action != null) {
+  if (action != null && blocker == null) {
     return QuietView(
       draft: false,
       prominent: true,
@@ -688,7 +799,7 @@ QuietView presentation(ToolEvent tool) {
       label: action,
     );
   }
-  if (!failed) {
+  if (!failed && blocker == null) {
     return QuietView(
       draft: false,
       prominent: false,
@@ -721,7 +832,9 @@ QuietView presentation(ToolEvent tool) {
   var reason = 'the tool reported a failure';
   bool has(String pattern) =>
       RegExp(pattern, caseSensitive: false).hasMatch(text);
-  if (has(r'\b(?:ENOENT|no such file|file not found)\b')) {
+  if (blocker != null) {
+    reason = _blockerReasons[blocker.kind]!;
+  } else if (has(r'\b(?:ENOENT|no such file|file not found)\b')) {
     reason = 'file not found';
   } else if (has(
     r'element.*not found|target.*not found|no matching (?:element|control)',
@@ -748,13 +861,26 @@ QuietView presentation(ToolEvent tool) {
   } else if (has(r'cancelled|canceled|aborted')) {
     reason = 'cancelled';
   }
-  return QuietView(
-    draft: false,
-    prominent: false,
-    failed: true,
-    label: 'Could not $tried ($reason)',
-  );
+  final folded = 'Could not $tried ($reason)';
+  if (blocker != null) {
+    // `folded` is the ordinary line once a later step supersedes the blocker.
+    return QuietView(
+      draft: false,
+      prominent: true,
+      failed: true,
+      label: action!,
+      blocker: blocker,
+      folded: folded,
+    );
+  }
+  return QuietView(draft: false, prominent: false, failed: true, label: folded);
 }
+
+/// The preview's opening summary for a blocked step; the full call stays
+/// under Details.
+String blockerSummary(Blocker b) =>
+    'What I was trying\n${b.tried}\n\nWhy it was blocked\n${b.why}\n\n'
+    'What you need to do\n${b.need ?? 'Not identified from this step — see Details'}';
 
 /// The Mac forwards a mesh message to the phone as a matched
 /// `agent-network` tool pair with `args.from` = the sender's pane address.

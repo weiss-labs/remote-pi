@@ -1,0 +1,363 @@
+[
+  {
+    "case": "codemode reading the draft-format memory note (guard wording quoted)",
+    "tool": "codemode",
+    "args": {
+      "code": "for(const f of [\"feedback_draft_preview_format.md\"]) text(await tools.read({path:M+f}));"
+    },
+    "text": "==> text 1/3 <==\n---\nname: feedback-draft-preview-format\n---\nEmail previews are generated, not drawn. Never hand-draw, shorten or rewrap an email preview: the send guards hold any send whose preview does not match. Anything else is held with the reason.",
+    "isError": false,
+    "before": "Action blocked. Open this step's preview.",
+    "blocker": null
+  },
+  {
+    "case": "rg over the client dashboard (approval required in a table cell)",
+    "tool": "bash",
+    "args": {
+      "command": "rg -n 'Client ads /' ~/memory/clients_dashboard.md"
+    },
+    "text": "75:| Client Meta ads / agency coordination | **PIXEL ID FOUND** | active retainer; launch/budget approval required | 10/5 after call: Zach resolved passkey blocker and granted agency access.",
+    "isError": false,
+    "before": "Approval needed. Open this step's preview.",
+    "blocker": null
+  },
+  {
+    "case": "grep of a send script doc (send guard ... held)",
+    "tool": "bash",
+    "args": {
+      "command": "sed -n 1,60p ~/skills/imessage-access/SKILL.md | grep -n -i attach"
+    },
+    "text": "54:**The send guard (Pi):** a send with `--attach` passes only when the command re-renders to exactly the preview. Anything else is held with the reason.",
+    "isError": false,
+    "before": "Action blocked. Open this step's preview.",
+    "blocker": null
+  },
+  {
+    "case": "failing test run whose test names mention approval",
+    "tool": "bash",
+    "args": {
+      "command": "cd ~/programs/pi-voice && npm run check",
+      "timeout": 65
+    },
+    "text": "> pi-voice-pilot@0.1.0 test\n> node --test test/*.test.mjs\n\n✔ later handler cannot mutate arguments after policy/approval (0.24ms)\n✔ voice delegation stays open, safe tools work, writes need approval (2.3ms)\n✖ exact safe tools, secret paths, network and screen boundaries (2.15ms)\n\nCommand exited with code 1",
+    "isError": true,
+    "before": "Approval needed. Open this step's preview.",
+    "blocker": null
+  },
+  {
+    "case": "passing test log tail (writes need approval)",
+    "tool": "bash",
+    "args": {
+      "command": "tail -n 70 /tmp/pi-voice-rich-check.log",
+      "timeout": 10
+    },
+    "text": "✔ new voice remains blocked during provider finalization (1.15ms)\n✔ voice delegation stays open, safe tools work, writes need approval, real typing stays normal (2.30ms)",
+    "isError": false,
+    "before": "Approval needed. Open this step's preview.",
+    "blocker": null
+  },
+  {
+    "case": "codemode memory read that failed partway (Script failed)",
+    "tool": "codemode",
+    "args": {
+      "code": "for(const p of [\"MEMORY.md\",\"clients_dashboard.md\"]) text(await tools.read({path:M+p}));"
+    },
+    "text": "Script failed\nWall time 0.1 seconds\nOutput:\n\n==> text 1/4 <==\n# Project Memory\n- [Confirm before large requests](pref-confirm-before-large-requests.md): multi-step = bullet plan first.\n- Approval required before any client send.",
+    "isError": true,
+    "before": "Approval needed. Open this step's preview.",
+    "blocker": null
+  },
+  {
+    "case": "printing a worker handoff whose status is blocked (exit 1)",
+    "tool": "bash",
+    "args": {
+      "command": "python3 -c \"import json;d=json.load(open('handoff.json'));print(d['status'])\""
+    },
+    "text": "status : \"blocked\"\nsummary : \"Recipients got everything; the send guard held one retry until re-link.\"\nTraceback (most recent call last):\nKeyError: 'never_resend_ids'\n\nCommand exited with code 1",
+    "isError": true,
+    "before": "Action blocked. Open this step's preview.",
+    "blocker": null
+  },
+  {
+    "case": "chrome_snapshot on a closed tab (an open tab is titled \"approval review\")",
+    "tool": "chrome_snapshot",
+    "args": {
+      "targetId": "1"
+    },
+    "text": "No Chrome tab with id 1 (it was likely closed or replaced). Re-target with chrome_tab list, or pass urlIncludes/titleIncludes instead of targetId.\nCurrent tabs:\n  2\tRemote Pi WL approval review\tfile:///private/tmp/review/index.html\n  3\tApp Store Connect\thttps://appstoreconnect.apple.com/login",
+    "isError": true,
+    "before": null,
+    "blocker": null
+  },
+  {
+    "case": "interrupted grep over meeting notes (sign in, approval)",
+    "tool": "bash",
+    "args": {
+      "command": "rg -n 'Oracle|OnTech' ~/state/meeting/NOTES.md"
+    },
+    "text": "18:- Oracle console: **signed out** in the bot's shared browser. It shows \"Sign In / Sign in with SSO\".\n38:Zach chose C (one-time approval of the serialized-issue path with Undo).\n\n\nCommand aborted",
+    "isError": true,
+    "before": null,
+    "blocker": null
+  },
+  {
+    "case": "fetched docs page titled \"Sign-in required\" (tool succeeded)",
+    "tool": "codemode",
+    "args": {
+      "code": "await Promise.allSettled(urls.map(url=>tools.firecrawl_scrape({url})))"
+    },
+    "text": "==> text 1/3 <==\n{\"status\":\"fulfilled\",\"value\":{\"content\":[{\"type\":\"text\",\"text\":\"# Sign-in required\\n\\nFor secure access, launch Customer Documentation from your authenticated web app.\"}]}}",
+    "isError": false,
+    "before": "Sign-in needed. Open this step's preview.",
+    "blocker": null
+  },
+  {
+    "case": "JSON status report with status blocked (not a refusal of this call)",
+    "tool": "bash",
+    "args": {
+      "command": "cat result.json"
+    },
+    "text": "{\"status\":\"blocked\",\"blockers\":[\"William has not approved the copy\"],\"summary\":\"Held for approval\"}",
+    "isError": false,
+    "before": null,
+    "blocker": null
+  },
+  {
+    "case": "newsletter proposal read (still need approval)",
+    "tool": "bash",
+    "args": {
+      "command": "sed -n 1,80p ~/state/ads/NEWSLETTER-COPY-PROPOSAL.md"
+    },
+    "text": "Operating plan and verified newsletter account constraints remain in account-and-newsletter-plan.md. Exact copy, merchandise and timing still need approval. This proposal is not that approval.",
+    "isError": false,
+    "before": "Approval needed. Open this step's preview.",
+    "blocker": null
+  },
+  {
+    "case": "ordinary missing file",
+    "tool": "read",
+    "args": {
+      "path": "/tmp/missing.md"
+    },
+    "text": "ENOENT: no such file or directory, open '/tmp/missing.md'",
+    "isError": true,
+    "before": null,
+    "blocker": null
+  },
+  {
+    "case": "ordinary browser failure",
+    "tool": "chrome_click",
+    "args": {
+      "selector": "#go"
+    },
+    "text": "Error: element not found for selector #go",
+    "isError": true,
+    "before": null,
+    "blocker": null
+  },
+  {
+    "case": "user abort",
+    "tool": "bash",
+    "args": {
+      "command": "sleep 100"
+    },
+    "text": "Operation aborted",
+    "isError": true,
+    "before": null,
+    "blocker": null
+  },
+  {
+    "case": "Gmail send held by the Pi send guard",
+    "tool": "bash",
+    "args": {
+      "command": "GOOGLE_WORKSPACE_CLI_CONFIG_DIR=<dir> gws gmail users drafts send --params '{\"userId\":\"me\"}' --json '{\"id\":\"<draft>\"}'"
+    },
+    "text": "Pi Gmail dispatch held: Pi approval validation failed: Latest Pi user input is not explicit approval of this email . No foreign transcript/history fallback is allowed.",
+    "isError": true,
+    "before": null,
+    "blocker": {
+      "kind": "approval",
+      "tried": "Sending the email",
+      "why": "Pi Gmail dispatch held: Pi approval validation failed: Latest Pi user input is not explicit approval of this email .",
+      "need": null
+    }
+  },
+  {
+    "case": "WhatsApp compound send held",
+    "tool": "bash",
+    "args": {
+      "command": "python3 ~/skills/whatsapp-access/whatsapp_send.py JID 'text' --id P1 && echo done"
+    },
+    "text": "Pi WhatsApp dispatch held: Pi WhatsApp approval validation failed: WhatsApp raw/compound send is held; use preview then exactly: python3 ~/.claude/skills/whatsapp-access/whatsapp_send.py JID 'approved text' --id PREVIEW_ID . No foreign transcript/history fallback is allowed.",
+    "isError": true,
+    "before": null,
+    "blocker": {
+      "kind": "approval",
+      "tried": "Checking task details",
+      "why": "Pi WhatsApp dispatch held: Pi WhatsApp approval validation failed: WhatsApp raw/compound send is held; use preview then exactly: python3 ~/.claude/skills/whatsapp-access/whatsapp_send.py JID 'approve…",
+      "need": null
+    }
+  },
+  {
+    "case": "deploy gate asks for ship it",
+    "tool": "bash",
+    "args": {
+      "command": "rsync -az dist/ root@host:/var/www/app/"
+    },
+    "text": "Deploy target is not a bounded git repository; explicit release evidence is required. In Pi, Zach can approve by typing \"ship it\" as his next message. Codex cannot enforce an ask hook decision; deployment remains blocked.",
+    "isError": true,
+    "before": null,
+    "blocker": {
+      "kind": "approval",
+      "tried": "Copying files",
+      "why": "Deploy target is not a bounded git repository; explicit release evidence is required.",
+      "need": "In Pi, Zach can approve by typing \"ship it\" as his next message."
+    }
+  },
+  {
+    "case": "deploy gate cannot resolve the repo",
+    "tool": "bash",
+    "args": {
+      "command": "ssh root@host 'cd /root/app && docker compose up -d'"
+    },
+    "text": "This deploy starts with 'cd /root/app', which the deploy gate cannot resolve, so it does not know which repo is shipping and has NOT reviewed anything. Ask Zach before shipping. Codex cannot enforce an ask hook decision; deployment remains blocked.",
+    "isError": true,
+    "before": null,
+    "blocker": {
+      "kind": "approval",
+      "tried": "Working on the server",
+      "why": "This deploy starts with 'cd /root/app', which the deploy gate cannot resolve, so it does not know which repo is shipping and has NOT reviewed anything.",
+      "need": "Ask Zach before shipping."
+    }
+  },
+  {
+    "case": "release review found blocking issues",
+    "tool": "bash",
+    "args": {
+      "command": "git push origin main"
+    },
+    "text": "Codex (gpt-6-astra) found blocking issues in what you are about to deploy to production. Validate and fix these findings, rerun affected proof, then retry once for a focused verification. Optional suggestions do not block. Do not work around this gate.\n\n- [P1] `src/lib/setasides.ts:126` calculates \"Later\" solely from incoming Stripe payouts.",
+    "isError": true,
+    "before": null,
+    "blocker": {
+      "kind": "blocked",
+      "tried": "Pushing code to GitHub",
+      "why": "Codex (gpt-6-astra) found blocking issues in what you are about to deploy to production.",
+      "need": null
+    }
+  },
+  {
+    "case": "shipping lineage out of automatic reviews",
+    "tool": "bash",
+    "args": {
+      "command": "git push origin main"
+    },
+    "text": "This shipping lineage has 2 blocking reviews and findings remain. No more automatic reviews. Show Zach the findings and ask for a scoped inspect recheck or an exact-content waive decision.",
+    "isError": true,
+    "before": null,
+    "blocker": {
+      "kind": "blocked",
+      "tried": "Pushing code to GitHub",
+      "why": "This shipping lineage has 2 blocking reviews and findings remain.",
+      "need": "Show Zach the findings and ask for a scoped inspect recheck or an exact-content waive decision."
+    }
+  },
+  {
+    "case": "Chrome background mode refused tab activation",
+    "tool": "chrome_tab",
+    "args": {
+      "action": "activate",
+      "targetId": "1"
+    },
+    "text": "Tab activation is blocked by background mode. Ask the user to run /chrome background off to allow foreground work.",
+    "isError": true,
+    "before": null,
+    "blocker": {
+      "kind": "blocked",
+      "tried": "Using the browser",
+      "why": "Tab activation is blocked by background mode.",
+      "need": "Ask the user to run /chrome background off to allow foreground work."
+    }
+  },
+  {
+    "case": "Chrome control locked",
+    "tool": "chrome_click",
+    "args": {
+      "selector": "#send"
+    },
+    "text": "Chrome control is locked. Run /chrome authorize to continue.",
+    "isError": true,
+    "before": "Chrome is locked. Run /chrome authorize.",
+    "blocker": {
+      "kind": "chrome",
+      "tried": "Using the page controls",
+      "why": "Chrome control is locked.",
+      "need": "Run /chrome authorize to continue."
+    }
+  },
+  {
+    "case": "worker mesh send to its own main refused",
+    "tool": "agent_send",
+    "args": {
+      "to": "/Users/zachweiss@Client›Main",
+      "body": "done"
+    },
+    "text": "Blocked: \"/Users/zachweiss@Client›Main\" is your own Herdr main or a sibling worker. Report through the group thread instead: python3 worker.py thread note --kind progress --text \"...\". A mesh message to a busy pane is held until its turn ends.",
+    "isError": true,
+    "before": null,
+    "blocker": {
+      "kind": "blocked",
+      "tried": "Messaging another pane",
+      "why": "Blocked: \"/Users/zachweiss@Client›Main\" is your own Herdr main or a sibling worker.",
+      "need": null
+    }
+  },
+  {
+    "case": "revoked operation",
+    "tool": "bash",
+    "args": {
+      "command": "op item get X"
+    },
+    "text": "Operation was not approved, was revoked, or its request changed. Do not retry it without a new explicit request.",
+    "isError": true,
+    "before": null,
+    "blocker": {
+      "kind": "approval",
+      "tried": "Getting a saved credential",
+      "why": "Operation was not approved, was revoked, or its request changed.",
+      "need": null
+    }
+  },
+  {
+    "case": "credential sign-in required",
+    "tool": "bash",
+    "args": {
+      "command": "op read op://Vault/Item/field"
+    },
+    "text": "Sign-in required: 1Password is locked. Unlock the 1Password app on the Mac, then retry.",
+    "isError": true,
+    "before": "Sign-in needed. Open this step's preview.",
+    "blocker": {
+      "kind": "signin",
+      "tried": "Getting a saved credential",
+      "why": "Sign-in required: 1Password is locked.",
+      "need": "Unlock the 1Password app on the Mac, then retry."
+    }
+  },
+  {
+    "case": "structured guard refusal (tool succeeded, blocked:true with reason)",
+    "tool": "release",
+    "args": {
+      "target": "prod"
+    },
+    "text": "{\"blocked\":true,\"reason\":\"Release guard held this push: approval required. Ask Zach to approve the exact release.\"}",
+    "isError": false,
+    "before": "Approval needed. Open this step's preview.",
+    "blocker": {
+      "kind": "approval",
+      "tried": "Using release",
+      "why": "Release guard held this push: approval required.",
+      "need": "Ask Zach to approve the exact release."
+    }
+  }
+]

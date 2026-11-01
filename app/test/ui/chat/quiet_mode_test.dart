@@ -231,18 +231,11 @@ List<ChatMessage> _holdsAndDrafts() => [
     at: 130,
   ),
   _tool(
-    'hold',
-    'mcp__custom-tools__notify_user',
-    args: {'category': 'input_needed'},
-    error: 'Approval required: confirm before sending to the client.',
-    at: 131,
-  ),
-  _tool(
     'cred',
     'request_credential',
     args: {'label': 'Stripe key'},
     error: 'Sign-in required on the Mac.',
-    at: 132,
+    at: 131,
   ),
   _tool(
     'draft',
@@ -250,6 +243,13 @@ List<ChatMessage> _holdsAndDrafts() => [
     args: {'code': 'panel()'},
     result:
         '┌────────────────────┐\n│ EMAIL DRAFT        │\n├────────────────────┤\n│ Hi Michael, exact  │\n│ body to approve.   │\n└────────────────────┘',
+    at: 132,
+  ),
+  _tool(
+    'hold',
+    'mcp__custom-tools__notify_user',
+    args: {'category': 'input_needed'},
+    error: 'Approval required: confirm before sending to the client.',
     at: 133,
   ),
   AssistantMsg(
@@ -517,10 +517,13 @@ void main() {
       find.text("Approval needed. Open this step's preview."),
       findsOneWidget,
     );
+    // A hold the agent moved past folds into a step: only the latest one in
+    // the turn stays prominent.
     expect(
       find.text("Sign-in needed. Open this step's preview."),
-      findsOneWidget,
+      findsNothing,
     );
+    expect(find.text('Worked for 49s · 1 step'), findsOneWidget);
     // An approval request from another pane is one meaningful line; its
     // full body is hidden until tapped.
     expect(
@@ -547,6 +550,13 @@ void main() {
     await tester.pumpAndSettle();
     expect(
       find.textContaining('confirm before sending to the client'),
+      findsWidgets,
+    );
+    // The preview opens with a plain summary; the raw output stays below.
+    expect(find.byKey(const Key('quiet-blocker-why')), findsOneWidget);
+    expect(find.text('Notifying Zach'), findsOneWidget);
+    expect(
+      find.text('Not identified from this step — see Details'),
       findsOneWidget,
     );
   });
@@ -664,6 +674,66 @@ void main() {
       expect(find.text('Worked for 2m 4s · 6 steps'), findsOneWidget);
     },
   );
+
+  // Fleet #133 demo: one Michael-style turn built from the real (sanitized)
+  // blocker fixtures renders on main (before) and this branch (after).
+  // RP_REVIEW_DIR=/tmp/rp-blockers/demo/after flutter test
+  // --plain-name 'blocker rows demo' test/ui/chat/quiet_mode_test.dart
+  testWidgets('blocker rows demo', (tester) async {
+    final fx =
+        (jsonDecode(
+                  File(
+                    'test/ui/chat/fixtures/blocker-views.json',
+                  ).readAsStringSync(),
+                )
+                as List)
+            .cast<Map<String, dynamic>>();
+    var n = 0;
+    ToolEvent real(String prefix) {
+      final f = fx.firstWhere((f) => (f['case'] as String).startsWith(prefix));
+      final isError = f['isError'] as bool;
+      n++;
+      return _tool(
+        'b$n',
+        f['tool'] as String,
+        args: f['args'],
+        result: isError ? null : f['text'],
+        error: isError ? f['text'] as String : null,
+        at: n,
+      );
+    }
+
+    await pump(tester, [
+      UserMsg(id: 'u', ts: _t0, text: 'Finish the release and send the recap.'),
+      _tool('r0', 'read', args: {'path': '/tmp/STATUS.md'}, result: 'ok'),
+      real('codemode reading the draft-format'),
+      real('rg over the client dashboard'),
+      real('failing test run whose test names'),
+      real('deploy gate asks for ship it'),
+      _tool('g0', 'bash', args: {'command': 'git status'}, result: 'clean'),
+      real('grep of a send script doc'),
+      real('passing test log tail'),
+      real('newsletter proposal read'),
+      real('Gmail send held'),
+      real('Gmail send held'),
+      _tool('r1', 'read', args: {'path': '/tmp/notes.md'}, result: 'notes'),
+      real('printing a worker handoff'),
+      real('fetched docs page titled'),
+      real('WhatsApp compound send held'),
+      AssistantMsg(
+        id: 'a',
+        ts: _t0.add(const Duration(seconds: 40)),
+        text: 'The WhatsApp send is held; I need your approval of the preview.',
+      ),
+    ]);
+    await capture(tester, 'blocker-rows');
+    final rows = find.textContaining('Open this step');
+    if (rows.evaluate().isNotEmpty) {
+      await tester.tap(rows.last);
+      await tester.pumpAndSettle();
+      await capture(tester, 'blocker-preview');
+    }
+  });
 
   // Fleet #117/#120 demo: the same transcript renders on main (before) and
   // this branch (after). RP_REVIEW_DIR=/tmp/rp-labels/demo/after flutter test

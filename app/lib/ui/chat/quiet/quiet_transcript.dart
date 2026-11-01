@@ -79,6 +79,18 @@ bool _plausible(DateTime? t) => t != null && t.year >= 2000;
 List<QuietItem> foldQuiet(List<ChatMessage> messages, {required bool working}) {
   final out = <QuietItem>[];
   final run = <ToolEvent>[];
+  // A blocker stays prominent only while it is the latest step of its turn;
+  // once any later step ran (the agent retried or handled it) it folds as an
+  // ordinary failed step, so repeats fold too. Same rule as the Mac.
+  final superseded = <String>{};
+  var later = false;
+  for (final m in messages.reversed) {
+    if (m is UserMsg) later = false;
+    if (m is ToolEvent && !isIncomingMessage(m)) {
+      if (later) superseded.add(m.id);
+      later = true;
+    }
+  }
 
   void flush(ChatMessage? closing) {
     if (run.isEmpty) return;
@@ -118,6 +130,18 @@ List<QuietItem> foldQuiet(List<ChatMessage> messages, {required bool working}) {
             rest.add(QuietNotice(t, view, label));
           }
         }
+      } else if (view.blocker != null && superseded.contains(t.id)) {
+        steps.add(t);
+        views.add(
+          QuietView(
+            draft: false,
+            prominent: false,
+            failed: true,
+            label: view.folded!,
+            blocker: view.blocker,
+            folded: view.folded,
+          ),
+        );
       } else if (view.prominent) {
         rest.add(QuietProminent(t, view));
       } else {

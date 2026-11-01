@@ -378,7 +378,41 @@ class QuietPreviewSheet extends StatelessWidget {
       }
     }
 
+    final blocker = presentation(tool).blocker;
+    final summaryStyle = _rowStyle(context, color: colors.text);
     final lines = <Widget>[
+      if (blocker != null) ...[
+        // Plain summary first; the full call and raw output follow intact.
+        Text('WHAT I WAS TRYING', style: heading),
+        const SizedBox(height: 4),
+        Text(
+          blocker.tried,
+          key: const Key('quiet-blocker-tried'),
+          style: summaryStyle,
+        ),
+        const SizedBox(height: 12),
+        Text('WHY IT WAS BLOCKED', style: heading),
+        const SizedBox(height: 4),
+        Text(
+          blocker.why,
+          key: const Key('quiet-blocker-why'),
+          style: summaryStyle,
+        ),
+        const SizedBox(height: 12),
+        Text('WHAT YOU NEED TO DO', style: heading),
+        const SizedBox(height: 4),
+        Text(
+          blocker.need ?? 'Not identified from this step — see Details',
+          key: const Key('quiet-blocker-need'),
+          style: summaryStyle,
+        ),
+        const SizedBox(height: 20),
+        Text(
+          'DETAILS: FULL COMMAND AND OUTPUT',
+          style: heading.copyWith(color: colors.text),
+        ),
+        const SizedBox(height: 12),
+      ],
       Text('ARGUMENTS', style: heading),
       const SizedBox(height: 4),
       ...blocks(prettyJson(tool.args)),

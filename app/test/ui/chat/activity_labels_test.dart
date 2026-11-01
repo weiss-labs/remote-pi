@@ -39,6 +39,43 @@ void main() {
     expect(fixtures.length, greaterThan(100));
   });
 
+  test('every shared blocker fixture matches the Mac', () {
+    final blockers =
+        jsonDecode(
+              File(
+                'test/ui/chat/fixtures/blocker-views.json',
+              ).readAsStringSync(),
+            )
+            as List;
+    final failures = <String>[];
+    for (final f in blockers.cast<Map<String, dynamic>>()) {
+      final isError = f['isError'] as bool;
+      final b = blockerView(
+        f['tool'] as String,
+        f['args'],
+        f['text'] as String,
+        isError,
+      );
+      final view = presentation(
+        ToolEvent(
+          id: 'x',
+          toolCallId: 'x',
+          tool: f['tool'] as String,
+          args: f['args'],
+          result: isError ? null : f['text'],
+          error: isError ? f['text'] as String : null,
+          status: isError ? ToolEventStatus.failed : ToolEventStatus.completed,
+        ),
+      );
+      if (jsonEncode(b?.toJson()) != jsonEncode(f['blocker']) ||
+          view.prominent != (f['blocker'] != null)) {
+        failures.add('${f['case']} -> ${jsonEncode(b?.toJson())}');
+      }
+    }
+    expect(failures, isEmpty, reason: failures.join('\n'));
+    expect(blockers.length, greaterThan(20));
+  });
+
   test('every shared notice fixture sorts like the Mac', () {
     final notices =
         jsonDecode(

@@ -174,7 +174,7 @@ void main() {
         presentation(
           _tool(
             'custom',
-            result: 'Chrome control is locked. Run /chrome authorize',
+            error: 'Chrome control is locked. Run /chrome authorize',
           ),
         ).label,
         "Chrome is locked on the Mac. Open this step's preview.",
@@ -186,6 +186,37 @@ void main() {
       ]) {
         expect(presentation(_tool('custom', error: text)).prominent, isTrue);
       }
+    });
+
+    test('output that only mentions approval or a guard never yells', () {
+      for (final text in [
+        'Chrome control is locked. Run /chrome authorize',
+        '75:| ads | launch/budget approval required |',
+        'the send guards hold any send whose preview does not match',
+      ]) {
+        expect(presentation(_tool('bash', result: text)).prominent, isFalse);
+      }
+      // Process output is never a refusal, even when the command failed.
+      expect(
+        presentation(
+          _tool(
+            'bash',
+            error: '✔ writes need approval\n\nCommand exited with code 1',
+          ),
+        ).prominent,
+        isFalse,
+      );
+      // A structured refusal of the call counts even on success.
+      expect(
+        presentation(
+          _tool(
+            'release',
+            result:
+                '{"blocked":true,"reason":"Release guard held: approval required."}',
+          ),
+        ).label,
+        "Approval needed. Open this step's preview.",
+      );
     });
 
     test('exact draft/approval panels are full-detail, in args or results', () {
@@ -458,15 +489,15 @@ void main() {
           _tool('read', id: 'a', ts: t0),
           _tool(
             'custom',
-            id: 'hold',
-            ts: t0,
-            error: 'Approval required: confirm before sending',
-          ),
-          _tool(
-            'custom',
             id: 'draft',
             ts: t0,
             result: 'EMAIL DRAFT\nExact body',
+          ),
+          _tool(
+            'custom',
+            id: 'hold',
+            ts: t0,
+            error: 'Approval required: confirm before sending',
           ),
           AssistantMsg(
             id: 'r',
@@ -481,10 +512,39 @@ void main() {
           QuietPass,
         ]);
         expect((items[0] as QuietGroup).label, 'Worked for 3s · 1 step');
-        expect((items[1] as QuietProminent).view.draft, isFalse);
-        expect((items[2] as QuietProminent).view.draft, isTrue);
+        expect((items[1] as QuietProminent).view.draft, isTrue);
+        expect((items[2] as QuietProminent).view.draft, isFalse);
       },
     );
+
+    test('a hold the agent moved past folds; repeats fold; drafts stay', () {
+      const held =
+          'Pi Gmail dispatch held: Pi approval validation failed: Latest Pi user input is not explicit approval of this email .';
+      final items = foldQuiet([
+        UserMsg(id: 'u', ts: t0, text: 'send it'),
+        _tool('bash', id: 'h1', ts: t0, error: held),
+        AssistantMsg(id: 'm', ts: t0, text: 'Retrying.'),
+        _tool('bash', id: 'h2', ts: t0, error: held),
+        _tool('custom', id: 'draft', ts: t0, result: 'EMAIL DRAFT\nExact body'),
+        _tool('read', id: 'r', ts: t0),
+        AssistantMsg(
+          id: 'z',
+          ts: t0.add(const Duration(seconds: 3)),
+          text: 'Done',
+        ),
+        UserMsg(id: 'u2', ts: t0, text: 'again'),
+        _tool('bash', id: 'h3', ts: t0, error: held),
+      ], working: false);
+      final prominent = items.whereType<QuietProminent>().toList();
+      expect(prominent.map((p) => p.tool.id), ['draft', 'h3']);
+      final groups = items.whereType<QuietGroup>().toList();
+      expect(groups.expand((g) => g.views).map((v) => v.label), [
+        'Could not run the command (approval needed)',
+        'Could not run the command (approval needed)',
+        'Read file',
+      ]);
+      expect(groups.expand((g) => g.views).every((v) => !v.prominent), isTrue);
+    });
 
     test('image paths in output are listed, Mac paths only, deduplicated', () {
       final paths = imagePaths(
