@@ -85,6 +85,7 @@ List<QuietItem> foldQuiet(List<ChatMessage> messages, {required bool working}) {
     final steps = <ToolEvent>[];
     final views = <QuietView>[];
     final rest = <QuietItem>[];
+    var routineNotices = 0;
     for (final t in run) {
       final view = presentation(t);
       if (isIncomingMessage(t)) {
@@ -100,6 +101,7 @@ List<QuietItem> foldQuiet(List<ChatMessage> messages, {required bool working}) {
           );
           if (!view.prominent && sorted.routine) {
             // Routine ack/progress: an inspectable step inside the group.
+            routineNotices++;
             steps.add(t);
             views.add(
               QuietView(
@@ -124,7 +126,13 @@ List<QuietItem> foldQuiet(List<ChatMessage> messages, {required bool working}) {
       }
     }
     final live = closing == null && working;
-    if (steps.isNotEmpty && !live) {
+    final previous = out.whereType<QuietGroup>().lastOrNull;
+    if (steps.isNotEmpty && routineNotices == steps.length) {
+      // Only routine pane traffic: never its own row. Inspectable inside the
+      // previous group when there is one (Zach, Nov 1).
+      previous?.steps.addAll(steps);
+      previous?.views.addAll(views);
+    } else if (steps.isNotEmpty && !live) {
       final start = steps.first.ts;
       final end = closing?.ts;
       final duration =

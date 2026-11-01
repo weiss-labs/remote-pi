@@ -289,6 +289,33 @@ void main() {
       expect(resultText(ack.result), 'Got it, on it.');
     });
 
+    test('routine-only traffic gets no row; folds into the previous group', () {
+      ToolEvent ack(String id) => _tool(
+        'agent-network',
+        id: id,
+        args: {'from': '/tmp@Haloprime›HaloPrime_Main›Main'},
+        result: {
+          'from': '/tmp@Haloprime›HaloPrime_Main›Main',
+          'message': 'Read and acked your result.',
+        },
+      );
+      expect(
+        foldQuiet([ack('m0'), ack('m1')], working: false),
+        isEmpty,
+        reason: 'idle pane, nothing to fold into',
+      );
+      final items = foldQuiet([
+        _tool('bash', id: 'b'),
+        const AssistantMsg(id: 'a', text: 'done'),
+        ack('m2'),
+      ], working: false);
+      expect(items.whereType<QuietGroup>().single.steps.map((s) => s.id), [
+        'b',
+        'm2',
+      ]);
+      expect(items.whereType<QuietNotice>(), isEmpty);
+    });
+
     test('an agent-network tool event needing attention is a notice', () {
       final mesh = _tool(
         'agent-network',

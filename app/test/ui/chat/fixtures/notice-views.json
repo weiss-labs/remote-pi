@@ -236,5 +236,19 @@
   "sender": "Site",
   "routine": false,
   "label": "Question · Site: Should I publish the page?"
+ },
+ {
+  "type": "herdr-thread",
+  "text": "#115 2026-10-30T17:44:14Z [main wD:p18] question: Should I publish it?",
+  "sender": "",
+  "routine": false,
+  "label": "Question · main: Should I publish it?"
+ },
+ {
+  "type": "herdr-thread",
+  "text": "#168 2026-11-01T17:53:44Z [main wD:p18] user: how is it going\n#169 2026-11-01T17:56:25Z [worker HP Sunday kits final] progress: Read-only pull finished.",
+  "sender": "",
+  "routine": true,
+  "label": null
  }
 ]

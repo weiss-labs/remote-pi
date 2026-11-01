@@ -797,7 +797,7 @@ String incomingLabel(String type, String text, {String? attribution}) {
       .allMatches(text)
       .map(
         (m) =>
-            _clean(m.group(1)).replaceAll(RegExp(r'\bw\d+:p\w+\b'), '').trim(),
+            _clean(m.group(1)).replaceAll(RegExp(r'\bw\w+:p\w+\b'), '').trim(),
       )
       .toSet();
   if (senders.length == 1) return 'Update from ${senders.first}';
@@ -871,7 +871,7 @@ NoticeView noticeView(String type, String text, [String sender = '']) {
               (m) => (
                 sender: _clean(
                   m.group(1),
-                ).replaceAll(RegExp(r'\bw\d+:p\w+\b'), '').trim(),
+                ).replaceAll(RegExp(r'\bw\w+:p\w+\b'), '').trim(),
                 kind: m.group(2)!,
                 text: m.group(3)!,
               ),
