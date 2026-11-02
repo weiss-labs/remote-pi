@@ -4232,6 +4232,52 @@ describe("session_shutdown teardown", () => {
     }
   });
 
+  test("a failed first Relay connect retries on its own and connects", async () => {
+    let connectAttempts = 0;
+    const cwd = `/tmp/remote-pi-first-connect-retry-${process.pid}-${Date.now()}`;
+    const ctx = makeMockCtx(cwd);
+    try {
+      process.env["REMOTE_PI_DIRECT_CONFIG"] = JSON.stringify({ agent_name: "first-connect-retry", auto_start_relay: true });
+      _setAutoInitedForTest(true);
+      _defaultConnectImpl = () => {
+        connectAttempts += 1;
+        return connectAttempts === 1 ? Promise.reject(new Error("AggregateError")) : Promise.resolve();
+      };
+      await captureHandler("remote-pi")("", ctx);
+      expect(ctx.ui.notify).toHaveBeenCalledWith(expect.stringContaining("retrying automatically"), "error");
+      await vi.waitFor(() => {
+        expect(connectAttempts).toBe(2);
+        expect(_getState()).toBe("started");
+      }, { timeout: 4000 });
+    } finally {
+      delete process.env["REMOTE_PI_DIRECT_CONFIG"];
+      await captureHandler("remote-pi stop")("", ctx);
+      _resetCwdLockForTest();
+      _setAutoInitedForTest(false);
+    }
+  });
+
+  test("relay stop during a first-connect retry wait cancels the retry", async () => {
+    let connectAttempts = 0;
+    const cwd = `/tmp/remote-pi-first-connect-stop-${process.pid}-${Date.now()}`;
+    const ctx = makeMockCtx(cwd);
+    try {
+      process.env["REMOTE_PI_DIRECT_CONFIG"] = JSON.stringify({ agent_name: "first-connect-stop", auto_start_relay: true });
+      _setAutoInitedForTest(true);
+      _defaultConnectImpl = () => { connectAttempts += 1; return Promise.reject(new Error("AggregateError")); };
+      await captureHandler("remote-pi")("", ctx);
+      expect(connectAttempts).toBe(1);
+      await captureHandler("remote-pi")("relay stop", ctx);
+      await new Promise((r) => setTimeout(r, 1500));
+      expect(connectAttempts).toBe(1);
+      expect(_getState()).toBe("idle");
+    } finally {
+      delete process.env["REMOTE_PI_DIRECT_CONFIG"];
+      _resetCwdLockForTest();
+      _setAutoInitedForTest(false);
+    }
+  });
+
   test("same-module session replacement silences a pending initial Relay rejection and starts fresh", async () => {
     const firstConnect = deferred<void>();
     let firstSettled = false;

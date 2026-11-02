@@ -1283,6 +1283,16 @@ function _getSyncLimit(): number {
 // ── Relay reconnect state ─────────────────────────────────────────────────────
 // Backoffs in ms: 1s, 2s, 5s, 10s, 30s, then stays at 30s.
 const RECONNECT_BACKOFFS_MS = [1_000, 2_000, 5_000, 10_000, 30_000];
+// A failed FIRST connect (network blip while many panes start at once) retries
+// on the same backoff instead of leaving the pane off the relay until /remote-pi.
+let _startRetryAttempt = 0;
+let _startRetryTimer: ReturnType<typeof setTimeout> | null = null;
+/** An explicit stop while idle must also cancel a pending first-connect retry. */
+function _cancelStartRetry(): void {
+  if (_startRetryTimer) { clearTimeout(_startRetryTimer); _startRetryTimer = null; }
+  _startRetryAttempt = 0;
+  _relayLifecycleGeneration += 1;
+}
 let _reconnectTimer: ReturnType<typeof setTimeout> | null = null;
 let _reconnectAttempt = 0;
 // Every initial connect/reconnect candidate captures this generation. Stop,
@@ -1845,7 +1855,7 @@ export async function _handleControl(cmd: string): Promise<void> {
       if (_getState() !== "idle") _goIdle("peer_stop");
       else {
         _rootLifecycleGeneration += 1;
-        _relayLifecycleGeneration += 1;
+        _cancelStartRetry();
       }
       _emitRelayState(true);
       return;
@@ -3237,9 +3247,21 @@ async function _cmdStart(ctx: Pick<ExtensionContext, "ui" | "cwd">): Promise<voi
       );
       return;
     }
-    ctx.ui.notify(`[remote-pi] relay connect failed: ${String(err)}`, "error");
+    if (_startRetryAttempt === 0) {
+      ctx.ui.notify(`[remote-pi] relay connect failed: ${String(err)}; retrying automatically`, "error");
+    }
+    const delay = RECONNECT_BACKOFFS_MS[Math.min(_startRetryAttempt, RECONNECT_BACKOFFS_MS.length - 1)]!;
+    _startRetryAttempt += 1;
+    if (_startRetryTimer) clearTimeout(_startRetryTimer);
+    _startRetryTimer = setTimeout(() => {
+      _startRetryTimer = null;
+      // Only if nothing (stop, relay-off, shutdown, a newer start) superseded this attempt.
+      if (isCurrentCandidate()) void _cmdStart(ctx);
+    }, delay);
+    _startRetryTimer.unref?.();
     return;
   }
+  _startRetryAttempt = 0;
 
   // The candidate is local until this publication point. Session shutdown,
   // stop/relay-off, or a newer start may have invalidated it while connect()
@@ -3670,6 +3692,7 @@ async function _cmdRelay(arg: string, ctx: ExtensionContext): Promise<void> {
     case "stop":
     case "off":
       if (_getState() === "idle") {
+        _cancelStartRetry();
         ctx.ui.notify("[remote-pi] Relay already disconnected.", "info");
       } else {
         _goIdle("peer_stop");
