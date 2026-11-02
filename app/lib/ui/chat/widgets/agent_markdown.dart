@@ -79,8 +79,17 @@ class AgentMarkdown extends StatelessWidget {
 
   static Future<void> _openLink(BuildContext context, String url) async {
     final messenger = ScaffoldMessenger.maybeOf(context);
+    // Markdown allows `[text](<url>)`; gpt_markdown passes the brackets through.
+    if (url.startsWith('<') && url.endsWith('>')) {
+      url = url.substring(1, url.length - 1);
+    }
     final uri = Uri.tryParse(url);
-    if (uri == null) return;
+    if (uri == null) {
+      messenger?.showSnackBar(
+        const SnackBar(content: Text('This link could not be opened.')),
+      );
+      return;
+    }
     if (uri.scheme == 'file') {
       final vm = context.read<ChatViewModel>();
       await showDialog<void>(

@@ -31,16 +31,17 @@ class PreviewChat extends ChangeNotifier implements ChatViewModel {
 }
 
 void main() {
-  Future<PreviewChat> tapFile(WidgetTester tester) async {
+  Future<PreviewChat> tapFile(
+    WidgetTester tester, [
+    String markdown = '[Synthetic PDF](file:///tmp/synthetic.pdf)',
+  ]) async {
     final vm = PreviewChat();
     await tester.pumpWidget(
       ChangeNotifierProvider<ChatViewModel>.value(
         value: vm,
         child: MaterialApp(
           theme: buildDarkTheme(),
-          home: const Scaffold(
-            body: AgentMarkdown('[Synthetic PDF](file:///tmp/synthetic.pdf)'),
-          ),
+          home: Scaffold(body: AgentMarkdown(markdown)),
         ),
       ),
     );
@@ -50,6 +51,17 @@ void main() {
     expect(find.text('File preview'), findsOneWidget);
     return vm;
   }
+
+  testWidgets('angle-bracket link <file://…> opens the same preview', (
+    tester,
+  ) async {
+    final vm = await tapFile(
+      tester,
+      '[Synthetic PDF](<file:///tmp/synthetic.pdf>)',
+    );
+    vm.result.complete();
+    await tester.pumpAndSettle();
+  });
 
   testWidgets(
     'PDF link uses paired preview and dismisses after native completion',
