@@ -321,7 +321,7 @@ export type ServerMessage =
   | { type: "queued_message_state"; id?: string; text?: string; items?: QueuedMessageItem[] }
   | { type: "steer_consumed"; id: string }
   | { type: "agent_chunk"; in_reply_to: string; delta: string }
-  | { type: "agent_done"; in_reply_to: string; usage?: Usage }
+  | { type: "agent_done"; in_reply_to: string; usage?: Usage; aborted?: boolean }
   /** The provider reply failed and Pi is retrying it: discard streamed text for this turn. */
   | { type: "agent_stream_reset"; in_reply_to: string }
   | { type: "agent_message"; in_reply_to: string; text: string; usage?: Usage }

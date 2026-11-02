@@ -1050,7 +1050,18 @@ let _sawAgentSettled = false;
 // ponytail: timer only bounds the hold; a retry delay configured past it ends the turn early (old behaviour).
 let _retryHoldTimer: ReturnType<typeof setTimeout> | null = null;
 
-function _settleHeldTurn(): void {
+let _completedTurnId: string | null = null;
+let _completionTimer: ReturnType<typeof setTimeout> | null = null;
+function _settleCompletedTurn(aborted?: boolean): void {
+  if (_completionTimer) { clearTimeout(_completionTimer); _completionTimer = null; }
+  const turn = _completedTurnId;
+  _completedTurnId = null;
+  if (!turn) return;
+  if (_anyPeerActive()) _broadcastToActive({ type: "agent_done", in_reply_to: turn, ...(aborted === undefined ? {} : {aborted}) });
+  if (_currentTurnId === turn) { _currentTurnId = null; _maybeDrainQueuedItem(); }
+}
+
+function _settleHeldTurn(aborted?: boolean): void {
   if (_retryHoldTimer) { clearTimeout(_retryHoldTimer); _retryHoldTimer = null; }
   const error = _heldProviderError;
   const held = _turnHeldForRetry;
@@ -1060,7 +1071,7 @@ function _settleHeldTurn(): void {
   _heldTurnId = null;
   if (error && _anyPeerActive()) _broadcastToActive(error);
   if (!held) return;
-  if (_anyPeerActive() && turn) _broadcastToActive({ type: "agent_done", in_reply_to: turn });
+  if (_anyPeerActive() && turn) _broadcastToActive({ type: "agent_done", in_reply_to: turn, ...(aborted === undefined ? {} : {aborted}) });
   // Only end the turn we held; a newer prompt keeps its own.
   if (_currentTurnId === turn) {
     _currentTurnId = null;
@@ -2378,15 +2389,17 @@ const extension: ExtensionFactory = (pi: ExtensionAPI): void => {
   });
 
   pi.on("agent_start", () => {
+    if (_completionTimer) { clearTimeout(_completionTimer); _completionTimer = null; }
     _notifications.start();
     _agentRunActive = true;
     _agentRunGeneration += 1;
   });
 
   // Pi >= 1.x event; the bundled dev SDK types predate it.
-  (pi.on as (event: string, handler: () => void) => void)("agent_settled", () => {
+  (pi.on as (event: string, handler: (event: {aborted?: boolean}) => void) => void)("agent_settled", (event) => {
     _sawAgentSettled = true;
-    _settleHeldTurn();
+    _settleHeldTurn(event?.aborted);
+    _settleCompletedTurn(event?.aborted);
   });
 
   pi.on("message_start", (event) => {
@@ -2494,14 +2507,18 @@ const extension: ExtensionFactory = (pi: ExtensionAPI): void => {
     // Buffer is fed by `message_end`; here we only finalize the outbound
     // turn signal to every connected owner. No buffer mutation.
     if (_heldProviderError) {
+      _completedTurnId = null;
+      if (_completionTimer) { clearTimeout(_completionTimer); _completionTimer = null; }
       // Possibly retried: keep the turn open until the next run's first message or agent_settled.
       _turnHeldForRetry = true;
       _heldTurnId = _currentTurnId;
-      _retryHoldTimer ??= setTimeout(_settleHeldTurn, _sawAgentSettled ? 60_000 : 15_000);
+      _retryHoldTimer ??= setTimeout(() => _settleHeldTurn(), _sawAgentSettled ? 60_000 : 15_000);
       _retryHoldTimer.unref?.();
     } else if (_anyPeerActive() && _currentTurnId) {
-      _broadcastToActive({ type: "agent_done", in_reply_to: _currentTurnId });
-      _currentTurnId = null;
+      // agent_end precedes retry/continuation. Only settlement proves outcome.
+      _completedTurnId = _currentTurnId;
+      _completionTimer ??= setTimeout(() => _settleCompletedTurn(), _sawAgentSettled ? 60_000 : 15_000);
+      _completionTimer.unref?.();
     }
     _flushPendingReceivedImagePreviews();
     _lastConsumedSteerText = null;
@@ -2688,6 +2705,8 @@ const extension: ExtensionFactory = (pi: ExtensionAPI): void => {
   // best-effort: every step is guarded so a partially-initialised instance
   // (e.g. shutdown lands mid-`_cmdRoot`) tears down without throwing.
   pi.on("session_shutdown", async () => {
+    if (_completionTimer) { clearTimeout(_completionTimer); _completionTimer = null; }
+    _completedTurnId = null;
     _artifacts.reset();
     _attachments.stop();
     _credentials.stop();

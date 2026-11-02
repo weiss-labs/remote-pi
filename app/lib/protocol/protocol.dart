@@ -1104,10 +1104,14 @@ class AgentStreamReset extends ServerMessage {
 class AgentDone extends ServerMessage {
   final String inReplyTo;
   final Usage? usage;
-  AgentDone({required this.inReplyTo, this.usage});
+
+  /// Null from older extensions, which cannot prove successful settlement.
+  final bool? aborted;
+  AgentDone({required this.inReplyTo, this.usage, this.aborted});
 
   factory AgentDone.fromJson(Map<String, dynamic> j) => AgentDone(
     inReplyTo: j['in_reply_to'] as String,
+    aborted: j['aborted'] is bool ? j['aborted'] as bool : null,
     usage: j['usage'] != null
         ? Usage.fromJson(j['usage'] as Map<String, dynamic>)
         : null,

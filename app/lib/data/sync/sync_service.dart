@@ -351,6 +351,7 @@ class SyncService extends Service {
   Future<void> clearQueuedMessages() => clearQueuedMessage();
 
   Future<void> cancel(String targetId) async {
+    _reviewTurnUnsafe = true;
     // User-driven cancel of this message → disarm its no-echo backstop too.
     _pendingSendTimers.remove(targetId)?.cancel();
     final ch = _conn.channel;
@@ -476,6 +477,9 @@ class SyncService extends Service {
     if (_pendingSyncRequest) requestSync();
   }
 
+  // Conservative across reconnects, errors, provider retries and local cancel.
+  bool _reviewTurnUnsafe = true;
+
   void _onServerMessage(ServerMessage msg, [String? originEpk]) {
     // Plan/32f — drop frames from a peer whose channel is no longer the active
     // session (a stale connection still draining after `switchTo`). Without
@@ -496,12 +500,19 @@ class SyncService extends Service {
         _setWorking(true, replyTo: inReplyTo);
 
       case AgentStreamReset():
+        _reviewTurnUnsafe = true;
         // Pi is retrying a failed reply; its partial text is not the answer.
         _discardStreamingState();
 
-      case AgentDone(:final inReplyTo):
-        // Finalize whatever text accumulated since the last tool boundary.
-        final text = _finalizeSegment();
+      case AgentDone(:final inReplyTo, :final aborted):
+        // Only the new explicit successful settlement proves a review is final.
+        final text = _finalizeSegment(
+          reviewFinalized:
+              aborted == false &&
+              !_reviewTurnUnsafe &&
+              _chunkReplyTo == inReplyTo,
+        );
+        _reviewTurnUnsafe = true;
         _clearSteeringLabel(inReplyTo);
         _setWorking(false, preview: text.isEmpty ? null : text);
 
@@ -569,6 +580,9 @@ class SyncService extends Service {
                   ts: DateTime.now(),
                 ),
         );
+        if (streamingBehavior != UserMessageStreamingBehavior.steer) {
+          _reviewTurnUnsafe = false;
+        }
         // Steering input should not start/replace the working turn bubble.
         if (streamingBehavior == UserMessageStreamingBehavior.steer) {
           _setActivity(SessionActivity.working, preview: text);
@@ -667,6 +681,7 @@ class SyncService extends Service {
         // A credential notice is advisory, not a terminal agent error.
         // Keep real stream/working lifecycle intact until its normal end event.
         if (code != 'credential_needed') {
+          _reviewTurnUnsafe = true;
           _discardStreamingState();
           _clearSteeringLabels();
           _setWorking(false);
@@ -1158,7 +1173,7 @@ class SyncService extends Service {
   /// renders sequentially. No-op (just clears the cursor) when there's no
   /// text — so a tool-only or empty turn never leaves a blank bubble.
   /// Returns the finalized text (empty if none).
-  String _finalizeSegment() {
+  String _finalizeSegment({bool reviewFinalized = false}) {
     // Drain any coalesced delta still sitting in the 16ms buffer.
     _flushTimer?.cancel();
     _flushTimer = null;
@@ -1182,6 +1197,7 @@ class SyncService extends Service {
           seq: seq,
           role: MsgRole.assistant,
           text: text,
+          reviewFinalized: reviewFinalized,
           ts: DateTime.now(),
         ),
       );

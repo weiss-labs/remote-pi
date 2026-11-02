@@ -13,6 +13,7 @@ class MessageRecord {
   final int seq;
   final MsgRole role;
   final String text;
+  final bool reviewFinalized;
 
   /// Plan/30 — attached image (user messages only).
   final MessageImage? image;
@@ -35,6 +36,7 @@ class MessageRecord {
     required this.seq,
     required this.role,
     this.text = '',
+    this.reviewFinalized = false,
     this.image,
     this.tool,
     required this.ts,
@@ -55,6 +57,7 @@ class MessageRecord {
     seq: seq ?? this.seq,
     role: role,
     text: text ?? this.text,
+    reviewFinalized: reviewFinalized,
     image: image ?? this.image,
     tool: tool ?? this.tool,
     ts: ts,
@@ -68,6 +71,7 @@ class MessageRecord {
     'seq': seq,
     'role': role.name,
     'text': text,
+    if (reviewFinalized) 'review_finalized': true,
     if (image != null) 'image': {'data': image!.data, 'mime': image!.mime},
     if (tool != null) 'tool': tool!.toJson(),
     'ts': ts.millisecondsSinceEpoch,
@@ -87,6 +91,7 @@ class MessageRecord {
         orElse: () => MsgRole.assistant,
       ),
       text: (j['text'] as String?) ?? '',
+      reviewFinalized: j['review_finalized'] == true,
       image: imageRaw is Map
           ? MessageImage(
               data: imageRaw['data'] as String,
@@ -116,7 +121,12 @@ class MessageRecord {
           image: image,
         );
       case MsgRole.assistant:
-        return AssistantMsg(id: id, ts: ts, text: text);
+        return AssistantMsg(
+          id: id,
+          ts: ts,
+          text: text,
+          reviewFinalized: reviewFinalized,
+        );
       case MsgRole.tool:
         final t = tool;
         return ToolEvent(

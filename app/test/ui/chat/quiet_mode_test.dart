@@ -266,6 +266,7 @@ void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
   setUpAll(() async {
     await loadSystemMono();
+    await loadSystemSans();
     final manifest =
         jsonDecode(await rootBundle.loadString('FontManifest.json')) as List;
     for (final entry in manifest.where(
@@ -341,6 +342,57 @@ void main() {
     );
     await tester.pump(const Duration(milliseconds: 300));
     return (vm, prefs);
+  }
+
+  for (final finalized in [false, true]) {
+    testWidgets('real draft replay ${finalized ? 'after' : 'before'}', (
+      tester,
+    ) async {
+      final fixture =
+          jsonDecode(
+                File(
+                  'test/ui/chat/fixtures/draft-dedup.json',
+                ).readAsStringSync(),
+              )
+              as Map<String, dynamic>;
+      final messages = <ChatMessage>[
+        const UserMsg(id: 'u', text: 'Change only the subject.'),
+        ToolEvent(
+          id: 'dedup',
+          toolCallId: 'dedup',
+          tool: 'bash',
+          args: const {'command': 'python3 email-preview.py'},
+          result: fixture['tool'],
+          status: ToolEventStatus.completed,
+        ),
+        AssistantMsg(
+          id: 'reply',
+          text: fixture['assistant'] as String,
+          reviewFinalized: finalized,
+        ),
+      ];
+      await pump(tester, messages);
+      final scroll = tester.state<ScrollableState>(
+        find.byType(Scrollable).first,
+      );
+      scroll.position.jumpTo(scroll.position.maxScrollExtent);
+      await tester.pumpAndSettle();
+      expect(
+        find.byKey(const Key('quiet-attention-dedup')),
+        finalized ? findsNothing : findsOneWidget,
+      );
+      await capture(tester, 'draft-dedup-${finalized ? 'after' : 'before'}');
+      if (finalized) {
+        await tester.tap(find.byKey(const Key('quiet-group-toggle-dedup')));
+        await tester.pump();
+        await tester.tap(find.byKey(const Key('quiet-step-dedup')));
+        await tester.pumpAndSettle();
+        expect(find.byKey(const Key('quiet-preview')), findsOneWidget);
+        expect(find.textContaining('Using keyring backend:'), findsOneWidget);
+        expect(find.textContaining('synthetic-preview-176'), findsOneWidget);
+        await capture(tester, 'draft-dedup-raw-preview');
+      }
+    });
   }
 
   testWidgets(

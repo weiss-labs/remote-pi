@@ -257,8 +257,8 @@ class QuietNoticeLine extends StatelessWidget {
   }
 }
 
-/// An exact-text draft/approval panel inside a tool step: never folded,
-/// never summarised. Shows the complete arguments and output.
+/// A draft/approval panel that is not repeated in a finalized reply.
+/// Raw arguments and output remain available in the step preview.
 class QuietAttentionCard extends StatelessWidget {
   const QuietAttentionCard({super.key, required this.tool, required this.view});
   final ToolEvent tool;
@@ -269,7 +269,7 @@ class QuietAttentionCard extends StatelessWidget {
     final colors = context.colors;
     final body = [
       if (hasDraftPanel(tool.args)) prettyJson(tool.args),
-      resultText(tool.result),
+      quietDraftOutput(resultText(tool.result)),
       if (tool.error != null) sanitize(tool.error!),
     ].where((s) => s.trim().isNotEmpty).join('\n\n');
     return Container(
@@ -568,7 +568,10 @@ class _QuietMessageListState extends State<QuietMessageList> {
 
   @override
   Widget build(BuildContext context) {
-    final items = foldQuiet(widget.messages, working: widget.working);
+    final items = foldQuiet(
+      widget.messages,
+      working: widget.working || widget.streaming != null,
+    );
     final tail = <Widget>[
       if (widget.streaming != null)
         KeyedSubtree(

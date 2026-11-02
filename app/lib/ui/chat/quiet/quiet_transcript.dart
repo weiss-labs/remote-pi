@@ -79,6 +79,38 @@ bool _plausible(DateTime? t) => t != null && t.year >= 2000;
 List<QuietItem> foldQuiet(List<ChatMessage> messages, {required bool working}) {
   final out = <QuietItem>[];
   final run = <ToolEvent>[];
+  final repeatedDrafts = <String>{};
+  final turnTools = <ToolEvent>[];
+  AssistantMsg? finalReply;
+  void finishTurn({required bool live}) {
+    final reply = finalReply;
+    if (!live && reply != null && reply.reviewFinalized) {
+      final panels = draftIdentities(reply.text).toSet();
+      for (final tool in turnTools) {
+        final text = resultText(tool.result);
+        final identities = draftIdentities(text);
+        // Fold only if EVERY draft in the output is a complete panel the
+        // reply repeated exactly.
+        if (identities.isNotEmpty &&
+            identities.length == draftHeadings(text) &&
+            identities.every(panels.contains)) {
+          repeatedDrafts.add(tool.id);
+        }
+      }
+    }
+    turnTools.clear();
+    finalReply = null;
+  }
+
+  for (final message in messages) {
+    if (message is UserMsg) finishTurn(live: false);
+    if (message is ToolEvent) {
+      turnTools.add(message);
+      finalReply = null;
+    }
+    if (message is AssistantMsg) finalReply = message;
+  }
+  finishTurn(live: working);
   // A blocker stays prominent only while it is the latest step of its turn;
   // once any later step ran (the agent retried or handled it) it folds as an
   // ordinary failed step, so repeats fold too. Same rule as the Mac.
@@ -99,7 +131,15 @@ List<QuietItem> foldQuiet(List<ChatMessage> messages, {required bool working}) {
     final rest = <QuietItem>[];
     var routineNotices = 0;
     for (final t in run) {
-      final view = presentation(t);
+      final original = presentation(t);
+      final view = original.draft && repeatedDrafts.contains(t.id)
+          ? QuietView(
+              draft: false,
+              prominent: false,
+              failed: original.failed,
+              label: summary(t.tool, t.args),
+            )
+          : original;
       if (isIncomingMessage(t)) {
         if (view.draft) {
           rest.add(QuietProminent(t, view));

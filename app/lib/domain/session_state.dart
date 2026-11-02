@@ -118,14 +118,26 @@ class UserMsg extends ChatMessage {
 
 class AssistantMsg extends ChatMessage {
   final String text;
-  const AssistantMsg({required super.id, super.ts, required this.text});
+
+  /// Local display evidence, true only after an explicit successful settlement.
+  /// Older history and partial/error/aborted replies remain unknown (false).
+  final bool reviewFinalized;
+  const AssistantMsg({
+    required super.id,
+    super.ts,
+    required this.text,
+    this.reviewFinalized = false,
+  });
 
   @override
   bool operator ==(Object other) =>
-      other is AssistantMsg && other.id == id && other.text == text;
+      other is AssistantMsg &&
+      other.id == id &&
+      other.text == text &&
+      other.reviewFinalized == reviewFinalized;
 
   @override
-  int get hashCode => Object.hash(id, text);
+  int get hashCode => Object.hash(id, text, reviewFinalized);
 }
 
 class ToolEvent extends ChatMessage {

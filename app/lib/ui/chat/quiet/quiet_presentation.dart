@@ -8,6 +8,48 @@ import 'dart:convert';
 
 import 'package:app/domain/session_state.dart';
 
+/// Exact normalized canonical panels, including every field and saved link.
+/// Incomplete panels never qualify for folding.
+/// Every draft heading line, complete panel or not.
+int draftHeadings(String text) => RegExp(
+  r'''^[^\p{L}\p{N}\n(\[{"'`]*(?:EMAIL|WHATSAPP|IMESSAGE|SMS) DRAFT\b''',
+  multiLine: true,
+  unicode: true,
+).allMatches(text).length;
+
+List<String> draftIdentities(String text) {
+  final plain = text
+      .replaceAll(RegExp(r'\x1b\[[0-?]*[ -/]*[@-~]'), '')
+      .replaceAll(RegExp(r'\r\n?'), '\n');
+  final box = RegExp(
+    r'^┌[─┬]+┐[^\n]*\n│[^\n]*\b(?:EMAIL|WHATSAPP|IMESSAGE|SMS) DRAFT\b[^\n]*\n[\s\S]*?^└[─┴]+┘[^\n]*',
+    multiLine: true,
+  );
+  return [
+    for (final match in box.allMatches(plain))
+      if (!match[0]!.contains('EMAIL DRAFT') ||
+          RegExp(
+            r'^\s*(?:```\s*)?(\[[^\n]+\]\(https?:\/\/[^\n]+\))',
+          ).hasMatch(plain.substring(match.end)))
+        match[0]!.split('\n').map((s) => s.trimRight()).join('\n') +
+            (RegExp(r'^\s*(?:```\s*)?(\[[^\n]+\]\(https?:\/\/[^\n]+\))')
+                    .firstMatch(plain.substring(match.end))
+                    ?.group(1)
+                    ?.replaceFirst(RegExp(r'^'), '\n') ??
+                ''),
+  ];
+}
+
+/// Quiet surface only. Raw output remains available in the step preview.
+String quietDraftOutput(String text) => text
+    .split('\n')
+    .where(
+      (line) =>
+          !line.startsWith('Using keyring backend:') &&
+          line.trim() != 'Needs your approval, shown in full',
+    )
+    .join('\n');
+
 /// How one tool step presents in quiet mode.
 ///
 /// `draft`      → an exact-text approval/draft panel: ALWAYS shown in full.

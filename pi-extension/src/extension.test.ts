@@ -1551,7 +1551,7 @@ describe("multi-channel broadcast (W2D)", () => {
     }
   });
 
-  test("queued drain waits for both agent_end and turn_end regardless of ordering", async () => {
+  test("queued drain waits for turn_end and final settlement regardless of ordering", async () => {
     await _pairForTest("ownerA__1234567890");
     const harness = captureEventHarness();
     const sendUserMessage = vi.fn();
@@ -1571,6 +1571,8 @@ describe("multi-channel broadcast (W2D)", () => {
     harness.handler("agent_end")({ type: "agent_end" });
     expect(sendUserMessage).not.toHaveBeenCalledWith("after A", { deliverAs: "steer" });
     harness.handler("turn_end")({ type: "turn_end", turnIndex: 0, timestamp: 0 });
+    expect(sendUserMessage).not.toHaveBeenCalledWith("after A", { deliverAs: "steer" });
+    harness.handler("agent_settled")({ type: "agent_settled", aborted: false });
     expect(sendUserMessage).toHaveBeenCalledWith("after A", { deliverAs: "steer" });
     const statesA = relayRef.current!.send.mock.calls.slice(sendsBeforeA)
       .map((c) => c[0] as string).map(decodeSentCt)
@@ -1590,6 +1592,8 @@ describe("multi-channel broadcast (W2D)", () => {
     harness.handler("turn_end")({ type: "turn_end", turnIndex: 1, timestamp: 1 });
     expect(sendUserMessage).not.toHaveBeenCalledWith("after B", { deliverAs: "steer" });
     harness.handler("agent_end")({ type: "agent_end" });
+    expect(sendUserMessage).not.toHaveBeenCalledWith("after B", { deliverAs: "steer" });
+    harness.handler("agent_settled")({ type: "agent_settled", aborted: false });
     expect(sendUserMessage).toHaveBeenCalledWith("after B", { deliverAs: "steer" });
     const statesB = relayRef.current!.send.mock.calls.slice(sendsBeforeB)
       .map((c) => c[0] as string).map(decodeSentCt)
@@ -2378,6 +2382,22 @@ describe("multi-channel broadcast (W2D)", () => {
   }
   const failed = { type: "message_end", message: { role: "assistant", stopReason: "error", errorMessage: "terminated", content: [] } };
 
+  for (const aborted of [false, true]) {
+    test(`draft review outcome is explicit only at settlement (aborted=${aborted})`, async () => {
+      await _pairForTest("ownerA__1234567890");
+      _setCurrentTurnIdForTest("draft-outcome");
+      const since = relayRef.current!.send.mock.calls.length;
+      captureEventHandler("agent_start")({type:"agent_start"});
+      captureEventHandler("agent_end")({type:"agent_end",messages:[]});
+      expect(turnFrames(since).filter(m => m.type === "agent_done")).toHaveLength(0);
+      captureEventHandler("agent_settled")({type:"agent_settled",aborted});
+      expect(turnFrames(since).filter(m => m.type === "agent_done")).toEqual([
+        expect.objectContaining({type:"agent_done",in_reply_to:"draft-outcome",aborted}),
+      ]);
+      expect(_getCurrentTurnIdForTest()).toBeNull();
+    });
+  }
+
   test("provider error that Pi retries → no error; partial text reset; retry streams into the same turn", async () => {
     await _pairForTest("ownerA__1234567890");
     _setSawAgentSettledForTest(true);
@@ -2450,6 +2470,8 @@ describe("multi-channel broadcast (W2D)", () => {
       expect(turnFrames(since).map((m) => m.type)).toEqual(expect.arrayContaining(["agent_stream_reset", "agent_chunk"]));
       expect(turnFrames(since).map((m) => m.type)).not.toContain("error");
       captureEventHandler("agent_end")({ type: "agent_end", messages: [] });
+      vi.advanceTimersByTime(15_000);
+      expect(turnFrames(since).find(m => m.type === "agent_done")).not.toHaveProperty("aborted");
       expect(_getCurrentTurnIdForTest()).toBeNull();
 
       _setCurrentTurnIdForTest("turn-5");

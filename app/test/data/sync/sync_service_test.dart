@@ -380,6 +380,63 @@ void main() {
     s.sync.dispose();
   });
 
+  for (final outcome in <bool?>[false, true, null]) {
+    test(
+      'draft completion evidence requires explicit success ($outcome)',
+      () async {
+        final s = await setup();
+        s.ch.push(UserInput(id: 'review', text: 'Review example'));
+        s.ch.push(AgentChunk(inReplyTo: 'review', delta: 'exact panel text'));
+        await _settle();
+        s.ch.push(AgentDone(inReplyTo: 'review', aborted: outcome));
+        await _settle();
+        final reply = messages(
+          s.epk,
+        ).where((m) => m.role == MsgRole.assistant).single;
+        expect(reply.reviewFinalized, outcome == false);
+        expect(reply.text, 'exact panel text');
+        s.conn.dispose();
+        s.sync.dispose();
+      },
+    );
+  }
+
+  test('stale completion cannot certify another turn draft', () async {
+    final s = await setup();
+    s.ch.push(UserInput(id: 'review', text: 'Review example'));
+    s.ch.push(AgentChunk(inReplyTo: 'review', delta: 'exact panel text'));
+    await _settle();
+    s.ch.push(AgentDone(inReplyTo: 'older-turn', aborted: false));
+    await _settle();
+    expect(
+      messages(
+        s.epk,
+      ).where((m) => m.role == MsgRole.assistant).single.reviewFinalized,
+      false,
+    );
+    s.conn.dispose();
+    s.sync.dispose();
+  });
+
+  test('provider retry cannot certify a draft review', () async {
+    final s = await setup();
+    s.ch.push(UserInput(id: 'review', text: 'Review example'));
+    s.ch.push(AgentChunk(inReplyTo: 'review', delta: 'partial text'));
+    s.ch.push(AgentStreamReset(inReplyTo: 'review'));
+    s.ch.push(AgentChunk(inReplyTo: 'review', delta: 'exact panel text'));
+    await _settle();
+    s.ch.push(AgentDone(inReplyTo: 'review', aborted: false));
+    await _settle();
+    expect(
+      messages(
+        s.epk,
+      ).where((m) => m.role == MsgRole.assistant).single.reviewFinalized,
+      false,
+    );
+    s.conn.dispose();
+    s.sync.dispose();
+  });
+
   test('a retried reply drops the failed attempt\'s partial text', () async {
     final s = await setup();
     s.ch.push(AgentChunk(inReplyTo: 'r1', delta: 'half an ans'));
