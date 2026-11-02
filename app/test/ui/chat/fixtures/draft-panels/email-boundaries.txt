@@ -1,0 +1,19 @@
+┌──────────────────────────────────────────────────────────────┐
+│ EMAIL DRAFT                                                  │
+├─────────┬────────────────────────────────────────────────────┤
+│ To      │ Alexander Longname-Example <alexander@example.invalid> │
+│         │ Bartholomew Longname-Example <bart@example.invalid> │
+│ From    │ zach@example.invalid                               │
+│ Subject │ AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA   │
+│         │ bb                                                 │
+│ Attach  │ first-attachment-name-30-chars.pdf                 │
+│         │ second-attachment-name-30-char.pdf                 │
+├─────────┴────────────────────────────────────────────────────┤
+│ one one one one one one one one one one one one one one one  │
+│ one                                                          │
+│ Thanks,                                                      │
+│ Zach                                                         │
+│                                                              │
+│ Use [portal](https://example.invalid/private) or             │
+│ https://example.invalid/a_(b) today.                         │
+└──────────────────────────────────────────────────────────────┘

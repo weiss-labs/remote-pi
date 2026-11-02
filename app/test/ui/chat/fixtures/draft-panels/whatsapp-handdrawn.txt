@@ -1,0 +1,12 @@
+┌──────────────────────────────────────────────────────────────┐
+│ WHATSAPP DRAFT                                               │
+│ To: Shimon Example | +1 555-420-1594                           │
+├──────────────────────────────────────────────────────────────┤
+│ Fixed, Google sign-in now keeps you on example.com with       │
+│ your admin access. Both old addresses redirect there too.     │
+│                                                              │
+│ Use Continue with Google with shimon@example.invalid. The     │
+│ password I sent you is for Gmail. If you'd rather have a      │
+│ separate website password, you can set one through Forgot    │
+│ password.                                                    │
+└──────────────────────────────────────────────────────────────┘

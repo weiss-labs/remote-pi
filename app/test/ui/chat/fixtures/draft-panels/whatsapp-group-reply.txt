@@ -1,0 +1,18 @@
+┌──────────────────────────────────────────────────────────────┐
+│ WHATSAPP DRAFT                                               │
+├──────────┬───────────────────────────────────────────────────┤
+│ To       │ Ops Sales (120360000000000001@g.us)               │
+│ From     │ 15550009999:22@s.whatsapp.net                     │
+│ Tags     │ 100000000000003@lid                               │
+│ Reply to │ "[imageMessage:                                   │
+│          │ 2026-11-01_171408_Y.s._120360000000000001.jp…"    │
+│          │ (Y.s., 2026-11-01 17:14 UTC)                      │
+│ Msg id   │ 3CA4766A587B19BD27ED                              │
+├──────────┴───────────────────────────────────────────────────┤
+│ @100000000000003 the app never got confirmation from the     │
+│ accounting system for your order during the sync issue on    │
+│ Friday, so it stopped trying rather than risk a duplicate.   │
+│ Leave this order as it is for now, no need to submit it      │
+│ again. See https://example.invalid/orders/2802463 for the    │
+│ status.                                                      │
+└──────────────────────────────────────────────────────────────┘

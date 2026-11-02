@@ -1,0 +1,25 @@
+┌──────────────────────────────────────────────────────────────┐
+│ WHATSAPP DRAFT                                               │
+├──────────┬───────────────────────────────────────────────────┤
+│ To       │ Verified phone +15550005678                       │
+│          │ (15550005678@s.whatsapp.net)                      │
+│ From     │ 15550009999:20@s.whatsapp.net                     │
+│ Phone    │ +15550005678                                      │
+│ LID      │ 100000000000002@lid                               │
+│ Attach   │ 1. webkit-390-11-collection-rows.png (64 KB,      │
+│          │ sha256 9fa9bf2d5410)                              │
+│ Attach   │ 2. webkit-390-12-draft-restore.png (51 KB, sha256 │
+│          │ 80bfcb7280a2)                                     │
+├──────────┴───────────────────────────────────────────────────┤
+│ Fixed both things you found. Close and reopen the app first. │
+│                                                              │
+│ 1. Collections: on the order screen, tap Add type under any  │
+│ design to add Bracelet, Earrings, Pendant and so on. Each    │
+│ type gets its own weight, price and quantity. Up to 60 rows  │
+│ per order.                                                   │
+│ 2. Your work now saves as you go. If you leave, open Orders  │
+│ and tap Resume draft.                                        │
+│                                                              │
+│ If anything else bugs you, tap Suggest at the top and type   │
+│ it. I see every one.                                         │
+└──────────────────────────────────────────────────────────────┘

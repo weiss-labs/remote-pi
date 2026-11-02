@@ -1,0 +1,15 @@
+┌──────────────────────────────────────────────────────────────┐
+│ EMAIL DRAFT · Contents preview                               │
+├─────────┬────────────────────────────────────────────────────┤
+│ To/From │ zach@example.invalid                               │
+│ Subject │ AI Radar Digest | October 2, 2026                  │
+├─────────┴────────────────────────────────────────────────────┤
+│ New closing recommendations:                                 │
+│                                                              │
+│ • Client A: test that labels and colors agree across         │
+│ dashboard views, including missing-data cases.               │
+│ • Client B: evaluate the model offline against five          │
+│ already-approved styles.                                     │
+│                                                              │
+│ Full instructions, success checks and sources in the draft.  │
+└──────────────────────────────────────────────────────────────┘

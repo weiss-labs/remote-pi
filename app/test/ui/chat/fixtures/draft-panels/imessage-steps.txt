@@ -1,0 +1,16 @@
+┌──────────────────────────────────────────────────────────────┐
+│ IMESSAGE DRAFT                                               │
+├─────────┬────────────────────────────────────────────────────┤
+│ To      │ Suzi Example (suzi@example.invalid)                │
+├─────────┴────────────────────────────────────────────────────┤
+│ @Ryan the dashboard account and the list are set up. The     │
+│ last step is his Telegram scorecard bot, and he has to start │
+│ it himself.                                                  │
+│                                                              │
+│ Can you have him do this:                                    │
+│ 1. Open https://t.me/ExampleScorecardBot                     │
+│ 2. Tap Start                                                 │
+│ 3. Send his first and last name (Ryan Example)               │
+│                                                              │
+│ Let me know once he has, and I'll finish connecting him.     │
+└──────────────────────────────────────────────────────────────┘

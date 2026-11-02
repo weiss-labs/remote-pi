@@ -1,0 +1,11 @@
+┌──────────────────────────────────────────────────────────────┐
+│ EMAIL DRAFT                                                  │
+├─────────┬────────────────────────────────────────────────────┤
+│ To      │ a@example.invalid                                  │
+│ From    │ zach@example.invalid                               │
+│ Subject │ Hi                                                 │
+├─────────┴────────────────────────────────────────────────────┤
+│ Short body.                                                  │
+└──────────────────────────────────────────────────────────────┘
+[Edit & send this email in Gmail](https://mail.example.invalid/#drafts?compose=abc)
+Preview id: 0123456789abcdef

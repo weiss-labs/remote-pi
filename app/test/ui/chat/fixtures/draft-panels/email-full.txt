@@ -1,0 +1,29 @@
+┌──────────────────────────────────────────────────────────────┐
+│ EMAIL DRAFT                                                  │
+├─────────┬────────────────────────────────────────────────────┤
+│ To      │ Erick Example <erick@example.invalid>              │
+│         │ Dish Websites <dish@example.invalid>               │
+│ Cc      │ Chris Example <chris@example.invalid>              │
+│         │ Ryan Example <ryan@example.invalid>                │
+│ From    │ zach@example.invalid                               │
+│ Subject │ Urgent PHP security update for                     │
+│         │ internet.example.invalid                           │
+│ Attach  │ GSX-20261004-ADD01-REV1.pdf                        │
+├─────────┴────────────────────────────────────────────────────┤
+│ Hi Erick,                                                    │
+│                                                              │
+│ PHP released emergency fixes today for two critical          │
+│ vulnerabilities that can let an attacker take over a server  │
+│ without logging in. Can you please have your hosting team    │
+│ confirm today that its PHP installation is patched?          │
+│                                                              │
+│ The official PHP advisory is at https://www.php.net/.        │
+│                                                              │
+│ Thanks,                                                      │
+│ Zach                                                         │
+│                                                              │
+│ Zach Weiss                                                   │
+│ Founder & CEO, Weiss Labs                                    │
+│ zach@example.invalid                                         │
+│ https://example.invalid                                      │
+└──────────────────────────────────────────────────────────────┘

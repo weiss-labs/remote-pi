@@ -1,0 +1,17 @@
+┌──────────────────────────────────────────────────────────────┐
+│ WHATSAPP DRAFT                                               │
+├──────────┬───────────────────────────────────────────────────┤
+│ To       │ Verified phone +15550001234 (100000000000001@lid) │
+│ From     │ 15550009999:20@s.whatsapp.net                     │
+│ Phone    │ +15550001234                                      │
+│ LID      │ 100000000000001@lid                               │
+├──────────┴───────────────────────────────────────────────────┤
+│ Good catch Sam. That order on your pick list is in the       │
+│ system now as 2802463, same 7 items, for tomorrow.           │
+│                                                              │
+│ What happened is the accounting app turned it down once when │
+│ it came in and the program never tried again. I fixed that,  │
+│ now it tries again on its own. And if an order still isn't   │
+│ in, the pick list will say NOT IN QUICKBOOKS YET at the top  │
+│ so you'll know right away.                                   │
+└──────────────────────────────────────────────────────────────┘
