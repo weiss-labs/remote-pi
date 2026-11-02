@@ -582,6 +582,53 @@ void main() {
       vm.dispose();
     });
 
+    test(
+      'Weiss Labs: ZachOS Main is always pinned, first, and cannot be unpinned',
+      () async {
+        final ch = _ControllableChannel();
+        final storage = _FakeStorage([_peerA]);
+        final conn = ConnectionManager(
+          factory: (_, _) async => ch,
+          storage: storage,
+          emitDebounce: Duration.zero,
+        );
+        final vm = HomeViewModel(
+          storage,
+          Preferences(_FakeSecureStorage()),
+          conn,
+        );
+        await conn.connectTo(_peerA);
+        await Future<void>.delayed(const Duration(milliseconds: 10));
+        ch.pushControl(
+          const RoomAnnounced(
+            peer: 'epk_A',
+            roomId: 'r1',
+            name: 'Michael_Nussen›Main›Main',
+            startedAt: 1,
+          ),
+        );
+        ch.pushControl(
+          const RoomAnnounced(
+            peer: 'epk_A',
+            roomId: 'r2',
+            name: 'ZachOS›ZachOS_Main›Main',
+            startedAt: 2,
+          ),
+        );
+        await Future<void>.delayed(const Duration(milliseconds: 10));
+        final items = vm.visibleItems;
+        final home = items.firstWhere((i) => i.room.roomId == 'r2');
+        final other = items.firstWhere((i) => i.room.roomId == 'r1');
+        expect(vm.isPinned(home), isTrue);
+        expect(vm.isPinned(other), isFalse);
+        await vm.togglePin(home);
+        expect(vm.isPinned(home), isTrue);
+        await vm.togglePin(other);
+        expect(vm.sharedPanes().take(2).map((p) => p.room), ['r2', 'r1']);
+        vm.dispose();
+      },
+    );
+
     test('counts / visibleItems are empty-safe outside a HomeList', () {
       final storage = _FakeStorage([_peerA]);
       final prefs = Preferences(_FakeSecureStorage());
@@ -609,48 +656,69 @@ class _RecordingInbox implements ShareInbox {
 }
 
 void plan74SharedPanesTests() {
-  test('sharedPanes publishes Herdr workspace/tab/pane rows on every Home update', () async {
-    final ch = _ControllableChannel();
-    final storage = _FakeStorage([_peerA]);
-    final conn = ConnectionManager(
-      factory: (_, _) async => ch,
-      storage: storage,
-      emitDebounce: Duration.zero,
-    );
-    final prefs = Preferences(_FakeSecureStorage());
-    final inbox = _RecordingInbox();
-    final vm = HomeViewModel(storage, prefs, conn, inbox);
-    await conn.connectTo(_peerA);
-    await Future<void>.delayed(const Duration(milliseconds: 10));
-    ch.pushControl(
-      const RoomAnnounced(peer: 'epk_A', roomId: 'r1', name: 'ZachOS›Agents›main', startedAt: 1),
-    );
-    ch.pushControl(
-      const RoomAnnounced(peer: 'epk_A', roomId: 'r2', name: 'ZachOS›2›review', startedAt: 2),
-    );
-    ch.pushControl(
-      const RoomAnnounced(peer: 'epk_A', roomId: 'r3', name: 'plain_pane', startedAt: 3),
-    );
-    await Future<void>.delayed(const Duration(milliseconds: 20));
+  test(
+    'sharedPanes publishes Herdr workspace/tab/pane rows on every Home update',
+    () async {
+      final ch = _ControllableChannel();
+      final storage = _FakeStorage([_peerA]);
+      final conn = ConnectionManager(
+        factory: (_, _) async => ch,
+        storage: storage,
+        emitDebounce: Duration.zero,
+      );
+      final prefs = Preferences(_FakeSecureStorage());
+      final inbox = _RecordingInbox();
+      final vm = HomeViewModel(storage, prefs, conn, inbox);
+      await conn.connectTo(_peerA);
+      await Future<void>.delayed(const Duration(milliseconds: 10));
+      ch.pushControl(
+        const RoomAnnounced(
+          peer: 'epk_A',
+          roomId: 'r1',
+          name: 'ZachOS›Agents›main',
+          startedAt: 1,
+        ),
+      );
+      ch.pushControl(
+        const RoomAnnounced(
+          peer: 'epk_A',
+          roomId: 'r2',
+          name: 'ZachOS›2›review',
+          startedAt: 2,
+        ),
+      );
+      ch.pushControl(
+        const RoomAnnounced(
+          peer: 'epk_A',
+          roomId: 'r3',
+          name: 'plain_pane',
+          startedAt: 3,
+        ),
+      );
+      await Future<void>.delayed(const Duration(milliseconds: 20));
 
-    final rows = vm.sharedPanes();
-    expect(rows.map((r) => r.room).toSet(), {'r1', 'r2', 'r3'});
-    final main = rows.singleWhere((r) => r.room == 'r1');
-    expect(main.workspace, 'ZachOS');
-    expect(main.tab, 'Agents');
-    expect(main.pane, 'main');
-    expect(main.device, 'Pi A');
-    expect(main.peer, 'epk_A');
-    // Numeric Herdr tab names are skipped, like Home.
-    expect(rows.singleWhere((r) => r.room == 'r2').tab, isNull);
-    final plain = rows.singleWhere((r) => r.room == 'r3');
-    expect(plain.workspace, 'Other');
-    expect(plain.pane, 'plain pane');
-    // Every state emit republished the snapshot to the App Group.
-    expect(inbox.published.map((r) => r.room), rows.map((r) => r.room));
-    expect(inbox.published.first.toJson().keys, containsAll(['peer', 'room', 'workspace', 'pane', 'device', 'online']));
-    vm.dispose();
-    conn.dispose();
-    await ch.close();
-  });
+      final rows = vm.sharedPanes();
+      expect(rows.map((r) => r.room).toSet(), {'r1', 'r2', 'r3'});
+      final main = rows.singleWhere((r) => r.room == 'r1');
+      expect(main.workspace, 'ZachOS');
+      expect(main.tab, 'Agents');
+      expect(main.pane, 'main');
+      expect(main.device, 'Pi A');
+      expect(main.peer, 'epk_A');
+      // Numeric Herdr tab names are skipped, like Home.
+      expect(rows.singleWhere((r) => r.room == 'r2').tab, isNull);
+      final plain = rows.singleWhere((r) => r.room == 'r3');
+      expect(plain.workspace, 'Other');
+      expect(plain.pane, 'plain pane');
+      // Every state emit republished the snapshot to the App Group.
+      expect(inbox.published.map((r) => r.room), rows.map((r) => r.room));
+      expect(
+        inbox.published.first.toJson().keys,
+        containsAll(['peer', 'room', 'workspace', 'pane', 'device', 'online']),
+      );
+      vm.dispose();
+      conn.dispose();
+      await ch.close();
+    },
+  );
 }

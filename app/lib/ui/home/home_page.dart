@@ -356,7 +356,12 @@ class HomePage extends StatelessWidget {
             : panePath(a).join('/').compareTo(panePath(b).join('/'));
       });
     final pinnedRows = <Widget>[];
-    final pinned = sorted.where(vm.isPinned).toList();
+    final pinned = sorted.where(vm.isPinned).toList()
+      ..sort(
+        (a, b) => (HomeViewModel.isHomePane(b) ? 1 : 0).compareTo(
+          HomeViewModel.isHomePane(a) ? 1 : 0,
+        ),
+      );
     if (pinned.isNotEmpty) {
       pinnedRows.add(const _TreeHeader(label: 'PINNED', depth: 0));
       for (final it in pinned) {
@@ -479,7 +484,9 @@ class HomePage extends StatelessWidget {
     final pinned = vm.isPinned(it);
     return Dismissible(
       key: ValueKey('pin-${it.peer.remoteEpk}-${it.room.roomId}'),
-      direction: DismissDirection.startToEnd,
+      direction: HomeViewModel.isHomePane(it)
+          ? DismissDirection.none
+          : DismissDirection.startToEnd,
       // Swipe right = toggle pin. Never actually dismisses the row.
       confirmDismiss: (_) async {
         await vm.togglePin(it);
@@ -545,20 +552,21 @@ class HomePage extends StatelessWidget {
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              ListTile(
-                leading: Icon(
-                  vm.isPinned(it) ? LucideIcons.pinOff : LucideIcons.pin,
-                  color: colors.accent,
+              if (!HomeViewModel.isHomePane(it))
+                ListTile(
+                  leading: Icon(
+                    vm.isPinned(it) ? LucideIcons.pinOff : LucideIcons.pin,
+                    color: colors.accent,
+                  ),
+                  title: Text(
+                    vm.isPinned(it) ? 'Unpin' : 'Pin to top',
+                    style: TextStyle(color: colors.text),
+                  ),
+                  onTap: () {
+                    Navigator.of(sheetCtx).pop();
+                    vm.togglePin(it);
+                  },
                 ),
-                title: Text(
-                  vm.isPinned(it) ? 'Unpin' : 'Pin to top',
-                  style: TextStyle(color: colors.text),
-                ),
-                onTap: () {
-                  Navigator.of(sheetCtx).pop();
-                  vm.togglePin(it);
-                },
-              ),
               ListTile(
                 leading: Icon(LucideIcons.pencil, color: colors.accent),
                 title: Text(

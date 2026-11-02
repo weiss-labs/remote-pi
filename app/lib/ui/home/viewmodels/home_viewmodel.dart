@@ -91,7 +91,10 @@ class HomeViewModel extends ViewModel<HomeState> {
     }
 
     return [
-      for (final it in byRecency(all.where(isPinned).toList()))
+      for (final it in [
+        ...all.where(isHomePane),
+        ...byRecency(all.where((i) => isPinned(i) && !isHomePane(i)).toList()),
+      ])
         row(it, 'Pinned'),
       for (final ws in orderWorkspaces(byWorkspace.keys))
         for (final it in byRecency(byWorkspace[ws]!))
@@ -277,10 +280,15 @@ class HomeViewModel extends ViewModel<HomeState> {
     it.room.roomId,
   );
 
-  // Weiss Labs: pins.
+  // Weiss Labs: pins. ZachOS › ZachOS Main › Main is always pinned and first,
+  // by name: a manual pin is keyed by room id, which changes when a pane restarts.
+  static bool isHomePane(HomeItem it) =>
+      panePath(it).map((p) => p.toLowerCase()).join('/') ==
+      'zachos/zachos main/main';
   bool isPinned(HomeItem it) =>
-      _prefs.isPinned(it.peer.remoteEpk, it.room.roomId);
+      isHomePane(it) || _prefs.isPinned(it.peer.remoteEpk, it.room.roomId);
   Future<void> togglePin(HomeItem it) async {
+    if (isHomePane(it)) return;
     await _prefs.togglePinned(it.peer.remoteEpk, it.room.roomId);
     notifyListeners();
   }
